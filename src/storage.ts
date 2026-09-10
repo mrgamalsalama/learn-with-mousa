@@ -5,13 +5,15 @@ const CURRENT_USER_KEY = 'lwm_current_user';
 const ACTIVITIES_KEY = 'lwm_activities_data';
 const SUBMISSIONS_KEY = 'lwm_submissions_data';
 
-// الحساب الافتراضي للمشرف العام
+// الحساب الافتراضي للمؤسس / المشرف العام
 const DEFAULT_ADMIN: UserProfile = {
   id: 'admin-1',
-  name: 'جمال سلامة (المشرف العام)',
+  name: 'جمال سلامة (المؤسس والمشرف العام)',
   username: 'admin',
   password: '123',
   role: 'super_admin',
+  loginCount: 1,
+  lastLogin: new Date().toLocaleString('ar-EG'),
 };
 
 // --- دوال إدارة المستخدمين ---
@@ -51,6 +53,20 @@ export function getCurrentUser(): UserProfile | null {
   } catch {
     return null;
   }
+}
+
+// دالة تسجيل الدخول مع زيادة عداد الزيارات وتحديث تاريخ آخر نشاط تلقائياً
+export function recordUserLogin(user: UserProfile): UserProfile {
+  const nowStr = new Date().toLocaleString('ar-EG');
+  const updatedUser: UserProfile = {
+    ...user,
+    loginCount: (user.loginCount || 0) + 1,
+    lastLogin: nowStr,
+  };
+
+  saveUser(updatedUser);
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+  return updatedUser;
 }
 
 export function setCurrentUser(user: UserProfile | null): void {
