@@ -40,7 +40,7 @@ export default function App() {
   const [tempAssignedGrades, setTempAssignedGrades] = useState<GradeLevel[]>([]);
   const [tempAssignedTracks, setTempAssignedTracks] = useState<ArabicTrack[]>(['arabic-a']);
 
-  // عارض الكتاب التفاعلي المصور (Interactive Reader State)
+  // عارض الكتاب التفاعلي المباشر (Direct Reader State)
   const [activeReadingBook, setActiveReadingBook] = useState<BookItem | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
@@ -104,22 +104,6 @@ export default function App() {
     }
   }, []);
 
-  // التحكم في تقليب صفحات القصة عبر لوحة المفاتيح
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!activeReadingBook || !activeReadingBook.pages || activeReadingBook.pages.length === 0) return;
-      if (e.key === 'ArrowRight' || e.key === ' ') {
-        nextPage();
-      } else if (e.key === 'ArrowLeft') {
-        prevPage();
-      } else if (e.key === 'Escape') {
-        closeReader();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeReadingBook, currentPageIndex]);
-
   const openReader = (book: BookItem) => {
     setActiveReadingBook(book);
     setCurrentPageIndex(0);
@@ -128,19 +112,6 @@ export default function App() {
   const closeReader = () => {
     setActiveReadingBook(null);
     setCurrentPageIndex(0);
-  };
-
-  const nextPage = () => {
-    if (!activeReadingBook?.pages) return;
-    if (currentPageIndex < activeReadingBook.pages.length - 1) {
-      setCurrentPageIndex(prev => prev + 1);
-    }
-  };
-
-  const prevPage = () => {
-    if (currentPageIndex > 0) {
-      setCurrentPageIndex(prev => prev - 1);
-    }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -428,23 +399,33 @@ export default function App() {
     return gId;
   };
 
-  // المكون الموحد للقارئ التفاعلي المدمج
+  // المكون الموحد للقارئ المدمج الصافي
   const renderSharedReader = () => {
     if (!activeReadingBook) return null;
+
+    // استخراج معرّف الكتاب النقي
+    const cleanId = activeReadingBook.id.replace('bt_', '');
+    // رابط القارئ المباشر الصافي
+    const directReaderUrl = `https://read.booktime.org/ar/books/${cleanId}`;
+
     return (
-      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col z-50 p-2 sm:p-6 text-slate-100">
-        <div className="flex items-center justify-between bg-slate-900/90 px-6 py-3.5 rounded-2xl mb-3 border border-slate-800 shadow-xl">
+      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col z-50 p-2 sm:p-4 text-slate-100">
+        {/* شريط علوي أنيق للتحكم */}
+        <div className="flex items-center justify-between bg-slate-900/95 px-6 py-3 rounded-2xl mb-2 border border-slate-800 shadow-xl">
           <div>
             <h2 className="font-extrabold text-sm sm:text-base text-white">{activeReadingBook.title}</h2>
             <span className="text-[11px] text-emerald-400 font-semibold">{activeReadingBook.author}</span>
           </div>
 
-          <div className="flex items-center gap-4">
-            {activeReadingBook.pages && activeReadingBook.pages.length > 0 && (
-              <span className="px-3 py-1 bg-slate-800 rounded-xl text-xs font-bold text-slate-300 border border-slate-700">
-                صفحة {currentPageIndex + 1} من {activeReadingBook.pages.length}
-              </span>
-            )}
+          <div className="flex items-center gap-3">
+            <a
+              href={directReaderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> فتح بملء الشاشة
+            </a>
             <button
               onClick={closeReader}
               className="p-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-xl transition shadow-xs"
@@ -455,89 +436,15 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-slate-900 rounded-3xl border border-slate-800/80 p-2">
-          {activeReadingBook.pages && activeReadingBook.pages.length > 0 ? (
-            <div className="w-full h-full flex items-center justify-center select-none">
-              <img
-                src={activeReadingBook.pages[currentPageIndex]}
-                alt={`الصفحة ${currentPageIndex + 1}`}
-                className="max-h-full max-w-full object-contain rounded-xl shadow-2xl transition-all duration-300"
-              />
-
-              <button
-                onClick={prevPage}
-                disabled={currentPageIndex === 0}
-                className={`absolute left-4 top-1/2 -translate-y-1/2 p-3.5 rounded-2xl backdrop-blur-md transition shadow-lg ${
-                  currentPageIndex === 0
-                    ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
-                    : 'bg-slate-800/80 hover:bg-emerald-600 text-white'
-                }`}
-                title="الصفحة السابقة"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-
-              <button
-                onClick={nextPage}
-                disabled={currentPageIndex === activeReadingBook.pages.length - 1}
-                className={`absolute right-4 top-1/2 -translate-y-1/2 p-3.5 rounded-2xl backdrop-blur-md transition shadow-lg ${
-                  currentPageIndex === activeReadingBook.pages.length - 1
-                    ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
-                    : 'bg-slate-800/80 hover:bg-emerald-600 text-white'
-                }`}
-                title="الصفحة التالية"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            </div>
-          ) : (
-            <div className="text-center p-8 max-w-md bg-slate-800/80 rounded-3xl border border-slate-700">
-              <img
-                src={activeReadingBook.coverUrl}
-                alt={activeReadingBook.title}
-                className="w-40 h-40 object-cover rounded-2xl mx-auto mb-4 shadow-md"
-              />
-              <h3 className="font-bold text-base text-white mb-2">{activeReadingBook.title}</h3>
-              <p className="text-xs text-slate-400 mb-6">هذا الكتاب متاح للقراءة المباشرة عبر الرابط الأصلي:</p>
-              <a
-                href={activeReadingBook.readUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg"
-              >
-                <ExternalLink className="w-4 h-4" /> فتح الكتاب في نافذة القراءة
-              </a>
-            </div>
-          )}
+        {/* الحاوية التفاعلية للقارئ الصافي */}
+        <div className="flex-1 w-full h-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl relative">
+          <iframe
+            src={directReaderUrl}
+            title={activeReadingBook.title}
+            className="w-full h-full border-none"
+            allow="fullscreen"
+          />
         </div>
-
-        {activeReadingBook.pages && activeReadingBook.pages.length > 0 && (
-          <div className="mt-3 bg-slate-900/90 px-6 py-3 rounded-2xl border border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {activeReadingBook.pages.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setCurrentPageIndex(idx)}
-                  className={`h-2 rounded-full transition-all ${
-                    idx === currentPageIndex ? 'w-8 bg-emerald-500' : 'w-2 bg-slate-700 hover:bg-slate-600'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {currentPageIndex === activeReadingBook.pages.length - 1 && (
-              <button
-                onClick={() => {
-                  alert('أحسنت صنعاً! لقد أتممت قراءة هذه القصة بنجاح 🌟');
-                  closeReader();
-                }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-md shadow-emerald-600/30"
-              >
-                <Award className="w-4 h-4" /> أنهيت قراءة القصة
-              </button>
-            )}
-          </div>
-        )}
       </div>
     );
   };
@@ -1255,11 +1162,9 @@ export default function App() {
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                         />
                         <div className="absolute top-2 right-2 flex flex-col gap-1">
-                          {book.pages && book.pages.length > 0 && (
-                            <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-bold shadow-xs">
-                              تفاعلي مصور ({book.pages.length} صفحة)
-                            </span>
-                          )}
+                          <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-bold shadow-xs">
+                            قراءة مباشرة تفاعلية
+                          </span>
                           <span className="px-2 py-0.5 bg-slate-900/80 backdrop-blur-xs text-white rounded-md text-[10px] font-bold">
                             {book.category || 'كتب مصورة'}
                           </span>
