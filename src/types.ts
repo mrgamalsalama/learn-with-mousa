@@ -74,6 +74,7 @@ export interface BookItem {
   readUrl: string;
   category?: string;
   targetAge?: string;
+  section?: string; // قسم أو اسم المكتبة (مثل: "مكتبة بوك تايم", "مكتبة هنداوي", إلخ)
   pages?: string[]; // روابط صور الصفحات المصورة للقارئ التفاعلي المدمج
   assignedGrades: GradeLevel[];
   assignedTracks: ArabicTrack[];
