@@ -32,6 +32,9 @@ export default function App() {
   // تبويبات لوحة الطالب
   const [studentTab, setStudentTab] = useState<'activities' | 'library'>('activities');
 
+  // مرشح تصفية الأقسام والمكتبات
+  const [selectedSection, setSelectedSection] = useState<string>('all');
+
   // نافذة بنك القصص داخل استمارة النشاط
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
 
@@ -466,6 +469,15 @@ export default function App() {
       </div>
     );
   };
+
+  // استخراج الأقسام المتاحة ديناميكياً لتصنيف المكتبات
+  const availableSections = ['all', ...new Set(books.map(b => b.section || 'مكتبة بوك تايم'))];
+
+  // تصفية الكتب بناءً على القسم المختار
+  const filteredBooks = books.filter(b => {
+    const sec = b.section || 'مكتبة بوك تايم';
+    return selectedSection === 'all' || sec === selectedSection;
+  });
 
   // ================= 1. شاشة تسجيل الدخول الموحدة =================
   if (!currentUser) {
@@ -1139,7 +1151,7 @@ export default function App() {
                 teacherTab === 'library' ? 'bg-emerald-800 text-white' : 'bg-white border border-slate-200 text-slate-600'
               }`}
             >
-              <Library className="w-4 h-4 text-emerald-400" /> المستودع القرائي وإسناد الكتب ({books.length})
+              <Library className="w-4 h-4 text-emerald-400" /> المستودع القرائي وإسناد الكتب ({filteredBooks.length})
             </button>
             <button
               onClick={() => setTeacherTab('grades')}
@@ -1164,12 +1176,35 @@ export default function App() {
                   </p>
                 </div>
                 <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
-                  إجمالي الكتب بالمستودع: {books.length} كتاب
+                  إجمالي الكتب: {filteredBooks.length} كتاب
                 </div>
               </div>
 
+              {/* أزرار تصفية الأقسام والمكتبات */}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedSection('all')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    selectedSection === 'all' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  جميع الأقسام ({books.length})
+                </button>
+                {availableSections.filter(s => s !== 'all').map(sec => (
+                  <button
+                    key={sec}
+                    onClick={() => setSelectedSection(sec)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                      selectedSection === sec ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    📚 {sec}
+                  </button>
+                ))}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {books.map((book) => {
+                {filteredBooks.map((book) => {
                   const isAssigned = book.assignedGrades?.some(g => teacherAllowedGrades.includes(g));
                   return (
                     <div key={book.id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
@@ -1181,10 +1216,7 @@ export default function App() {
                         />
                         <div className="absolute top-2 right-2 flex flex-col gap-1">
                           <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-bold shadow-xs">
-                            قراءة تفاعلية
-                          </span>
-                          <span className="px-2 py-0.5 bg-slate-900/80 backdrop-blur-xs text-white rounded-md text-[10px] font-bold">
-                            {book.category || 'كتب مصورة'}
+                            {book.section || 'مكتبة بوك تايم'}
                           </span>
                         </div>
                       </div>
