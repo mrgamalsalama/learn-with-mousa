@@ -2,291 +2,443 @@ import { BookItem } from './types';
 
 export const INITIAL_BOOKS: BookItem[] = [
   {
-    id: "bt_13816809",
-    title: "نوماً هنيئاً أيها الجَمَل الصغير!",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/13816809_ar.webp?v=f997f774bce8f45aq5cab9565712d3dc",
-    readUrl: "https://www.booktime.org/ar/books/13816809",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/13816809_ar.webp?v=f997f774bce8f45aq5cab9565712d3dc",
-      "https://downloads.booktime.org/books/ar/13816809/page_1.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_2.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_3.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_4.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_5.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_6.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_7.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_8.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_9.webp",
-      "https://downloads.booktime.org/books/ar/13816809/page_10.webp"
+    "id": "bt_65854712",
+    "title": "قصة مصورة 65854712",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/65854712_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/65854712",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_50275201",
-    title: "الدببة الثلاثة وحكايات أخرى",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/50275201_ar.webp?v=107ecddeb60d315a891e271752b40c21",
-    readUrl: "https://www.booktime.org/ar/books/50275201",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/50275201_ar.webp?v=107ecddeb60d315a891e271752b40c21",
-      "https://downloads.booktime.org/books/ar/50275201/page_1.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_2.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_3.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_4.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_5.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_6.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_7.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_8.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_9.webp",
-      "https://downloads.booktime.org/books/ar/50275201/page_10.webp"
+    "id": "bt_50275201",
+    "title": "قصة مصورة 50275201",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/50275201_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/50275201",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_34567675",
-    title: "الصغير توتو وقصص أخرى",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/34567675_ar.webp?v=d1b5b8c3b2e0cae7f650a52d202b52ee",
-    readUrl: "https://www.booktime.org/ar/books/34567675",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/34567675_ar.webp?v=d1b5b8c3b2e0cae7f650a52d202b52ee",
-      "https://downloads.booktime.org/books/ar/34567675/page_1.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_2.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_3.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_4.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_5.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_6.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_7.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_8.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_9.webp",
-      "https://downloads.booktime.org/books/ar/34567675/page_10.webp"
+    "id": "bt_98238516",
+    "title": "قصة مصورة 98238516",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/98238516_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/98238516",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_93272685",
-    title: "من أنا؟ من أكون؟",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/93272685_ar.webp?v=f4e9f01a59fa59675d9208f05c693769",
-    readUrl: "https://www.booktime.org/ar/books/93272685",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/93272685_ar.webp?v=f4e9f01a59fa59675d9208f05c693769",
-      "https://downloads.booktime.org/books/ar/93272685/page_1.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_2.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_3.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_4.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_5.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_6.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_7.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_8.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_9.webp",
-      "https://downloads.booktime.org/books/ar/93272685/page_10.webp"
+    "id": "bt_72670195",
+    "title": "قصة مصورة 72670195",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/72670195_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/72670195",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_56094245",
-    title: "المطر الذهبي وقصص أخرى",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/56094245_ar.webp?v=e4847e4393be663fbb57c83b78bf4cf4",
-    readUrl: "https://www.booktime.org/ar/books/56094245",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/56094245_ar.webp?v=e4847e4393be663fbb57c83b78bf4cf4",
-      "https://downloads.booktime.org/books/ar/56094245/page_1.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_2.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_3.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_4.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_5.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_6.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_7.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_8.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_9.webp",
-      "https://downloads.booktime.org/books/ar/56094245/page_10.webp"
+    "id": "bt_31965491",
+    "title": "قصة مصورة 31965491",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/31965491_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/31965491",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_83562375",
-    title: "لؤلؤة الخليج",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/83562375_ar.webp?v=70a4482b7dc1a2da49fb60ee21a4c6d7",
-    readUrl: "https://www.booktime.org/ar/books/83562375",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/83562375_ar.webp?v=70a4482b7dc1a2da49fb60ee21a4c6d7",
-      "https://downloads.booktime.org/books/ar/83562375/page_1.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_2.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_3.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_4.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_5.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_6.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_7.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_8.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_9.webp",
-      "https://downloads.booktime.org/books/ar/83562375/page_10.webp"
+    "id": "bt_45215898",
+    "title": "قصة مصورة 45215898",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/45215898_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/45215898",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_84261649",
-    title: "العملاق الأناني",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/84261649_ar.webp?v=7f6e6578d051c784463d46a9d1fe980e",
-    readUrl: "https://www.booktime.org/ar/books/84261649",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/84261649_ar.webp?v=7f6e6578d051c784463d46a9d1fe980e",
-      "https://downloads.booktime.org/books/ar/84261649/page_1.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_2.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_3.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_4.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_5.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_6.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_7.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_8.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_9.webp",
-      "https://downloads.booktime.org/books/ar/84261649/page_10.webp"
+    "id": "bt_89817248",
+    "title": "قصة مصورة 89817248",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/89817248_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/89817248",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_65854712",
-    title: "حكاية نور",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/65854712_ar.webp?v=80c6a8f8479e2afa8a64f56befb140dc",
-    readUrl: "https://www.booktime.org/ar/books/65854712",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/65854712_ar.webp?v=80c6a8f8479e2afa8a64f56befb140dc",
-      "https://downloads.booktime.org/books/ar/65854712/page_1.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_2.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_3.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_4.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_5.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_6.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_7.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_8.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_9.webp",
-      "https://downloads.booktime.org/books/ar/65854712/page_10.webp"
+    "id": "bt_83562375",
+    "title": "قصة مصورة 83562375",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/83562375_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/83562375",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_53217986",
-    title: "نساء صغيرات",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/53217986_ar.webp?v=900391274d915af0bc69dfc1db719a22",
-    readUrl: "https://www.booktime.org/ar/books/53217986",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/53217986_ar.webp?v=900391274d915af0bc69dfc1db719a22",
-      "https://downloads.booktime.org/books/ar/53217986/page_1.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_2.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_3.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_4.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_5.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_6.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_7.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_8.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_9.webp",
-      "https://downloads.booktime.org/books/ar/53217986/page_10.webp"
+    "id": "bt_12986239",
+    "title": "قصة مصورة 12986239",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/12986239_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/12986239",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_34684021",
-    title: "كوكب الأرض",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/34684021_ar.webp?v=4de4e39e396dbe607aa9d00f51ff51cb",
-    readUrl: "https://www.booktime.org/ar/books/34684021",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/34684021_ar.webp?v=4de4e39e396dbe607aa9d00f51ff51cb",
-      "https://downloads.booktime.org/books/ar/34684021/page_1.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_2.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_3.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_4.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_5.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_6.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_7.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_8.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_9.webp",
-      "https://downloads.booktime.org/books/ar/34684021/page_10.webp"
+    "id": "bt_34684021",
+    "title": "قصة مصورة 34684021",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/34684021_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/34684021",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_45020153",
-    title: "جسر الأرواح التائهة",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/45020153_ar.webp?v=2df62542202225316d8e95435fbdc1f3",
-    readUrl: "https://www.booktime.org/ar/books/45020153",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/45020153_ar.webp?v=2df62542202225316d8e95435fbdc1f3",
-      "https://downloads.booktime.org/books/ar/45020153/page_1.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_2.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_3.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_4.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_5.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_6.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_7.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_8.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_9.webp",
-      "https://downloads.booktime.org/books/ar/45020153/page_10.webp"
+    "id": "bt_74567340",
+    "title": "قصة مصورة 74567340",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/74567340_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/74567340",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   },
   {
-    id: "bt_72670195",
-    title: "لغز ساعة الصفر",
-    author: "مؤسسة هنداوي (بوك تايم)",
-    coverUrl: "https://downloads.booktime.org/covers/ar/72670195_ar.webp?v=9b9d5306ef64722c3b933a6ebeb6f396",
-    readUrl: "https://www.booktime.org/ar/books/72670195",
-    category: "كتب وقصص مصورة",
-    targetAge: "لجميع المراحل",
-    pages: [
-      "https://downloads.booktime.org/covers/ar/72670195_ar.webp?v=9b9d5306ef64722c3b933a6ebeb6f396",
-      "https://downloads.booktime.org/books/ar/72670195/page_1.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_2.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_3.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_4.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_5.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_6.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_7.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_8.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_9.webp",
-      "https://downloads.booktime.org/books/ar/72670195/page_10.webp"
+    "id": "bt_35868615",
+    "title": "قصة مصورة 35868615",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/35868615_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/35868615",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
     ],
-    assignedGrades: ["grade-1", "grade-2", "grade-3"],
-    assignedTracks: ["arabic-a", "arabic-b"]
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_90764069",
+    "title": "قصة مصورة 90764069",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/90764069_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/90764069",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_34567675",
+    "title": "قصة مصورة 34567675",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/34567675_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/34567675",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_84261649",
+    "title": "قصة مصورة 84261649",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/84261649_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/84261649",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_56094245",
+    "title": "قصة مصورة 56094245",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/56094245_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/56094245",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_53217986",
+    "title": "قصة مصورة 53217986",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/53217986_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/53217986",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_98045706",
+    "title": "قصة مصورة 98045706",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/98045706_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/98045706",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_93272685",
+    "title": "قصة مصورة 93272685",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/93272685_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/93272685",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
+  },
+  {
+    "id": "bt_45020153",
+    "title": "قصة مصورة 45020153",
+    "author": "مؤسسة هنداوي (بوك تايم)",
+    "coverUrl": "https://downloads.booktime.org/covers/ar/45020153_ar.webp",
+    "readUrl": "https://read.booktime.org/ar/books/45020153",
+    "category": "قصص تفاعلية مصورة",
+    "targetAge": "لجميع المراحل",
+    "section": "مكتبة بوك تايم",
+    "assignedGrades": [
+      "kg",
+      "grade-1",
+      "grade-2",
+      "grade-3",
+      "grade-4",
+      "grade-5"
+    ],
+    "assignedTracks": [
+      "arabic-a",
+      "arabic-b"
+    ]
   }
 ];
