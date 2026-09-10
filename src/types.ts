@@ -65,17 +65,18 @@ export interface StoryBankItem {
   questions: Question[];
 }
 
-// عنصر المكتبة الرقمية الشاملة (كتب بوك تايم والمستودع القرائي)
+// عنصر المكتبة الرقمية وقارئ القصص التفاعلي
 export interface BookItem {
   id: string;
   title: string;
   author?: string;
   coverUrl: string;
-  readUrl: string; // رابط قراءة الكتاب المباشر
-  category?: string; // كتب مصورة، قصص قصيرة، مبتدئ
-  targetAge?: string; // مثلاً: 4-6، 7-9
-  assignedGrades: GradeLevel[]; // الصفوف التي اعتمدها المعلم لهذا الكتاب
-  assignedTracks: ArabicTrack[]; // المسارات المسموح لها بالقراءة
+  readUrl: string;
+  category?: string;
+  targetAge?: string;
+  pages?: string[]; // روابط صور الصفحات المصورة للقارئ التفاعلي المدمج
+  assignedGrades: GradeLevel[];
+  assignedTracks: ArabicTrack[];
   assignedByTeacherId?: string;
 }
 
