@@ -1,7 +1,9 @@
-import { UserProfile } from './types';
+import { UserProfile, Activity, StudentSubmission } from './types';
 
 const USERS_KEY = 'lwm_users_data';
 const CURRENT_USER_KEY = 'lwm_current_user';
+const ACTIVITIES_KEY = 'lwm_activities_data';
+const SUBMISSIONS_KEY = 'lwm_submissions_data';
 
 // الحساب الافتراضي للمشرف العام
 const DEFAULT_ADMIN: UserProfile = {
@@ -12,6 +14,7 @@ const DEFAULT_ADMIN: UserProfile = {
   role: 'super_admin',
 };
 
+// --- دوال إدارة المستخدمين ---
 export function getUsers(): UserProfile[] {
   try {
     const data = localStorage.getItem(USERS_KEY);
@@ -56,4 +59,46 @@ export function setCurrentUser(user: UserProfile | null): void {
   } else {
     localStorage.removeItem(CURRENT_USER_KEY);
   }
+}
+
+// --- دوال إدارة الأنشطة التفاعلية ---
+export function getActivities(): Activity[] {
+  try {
+    const data = localStorage.getItem(ACTIVITIES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveActivity(activity: Activity): void {
+  const activities = getActivities();
+  const index = activities.findIndex((a) => a.id === activity.id);
+  if (index >= 0) {
+    activities[index] = activity;
+  } else {
+    activities.unshift(activity);
+  }
+  localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
+}
+
+export function deleteActivity(id: string): void {
+  const activities = getActivities().filter((a) => a.id !== id);
+  localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
+}
+
+// --- دوال رصد نتائج وحلول الطلاب ---
+export function getSubmissions(): StudentSubmission[] {
+  try {
+    const data = localStorage.getItem(SUBMISSIONS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSubmission(sub: StudentSubmission): void {
+  const subs = getSubmissions();
+  subs.unshift(sub);
+  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(subs));
 }
