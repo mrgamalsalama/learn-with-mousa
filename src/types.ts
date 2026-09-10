@@ -53,16 +53,30 @@ export interface Question {
   points: number;
 }
 
-// عنصر بنك القصص والأسئلة الإسلامية والتربوية
+// عنصر بنك القصص والأسئلة التأسيسي
 export interface StoryBankItem {
   id: string;
   title: string;
-  moralTopic: string; // القيمة الأخلاقية (بر الوالدين، الأمانة، التسامح...)
+  moralTopic: string;
   stage: SchoolStage;
   grade: GradeLevel;
   track: ArabicTrack;
   passage: string;
   questions: Question[];
+}
+
+// عنصر المكتبة الرقمية الشاملة (كتب بوك تايم والمستودع القرائي)
+export interface BookItem {
+  id: string;
+  title: string;
+  author?: string;
+  coverUrl: string;
+  readUrl: string; // رابط قراءة الكتاب المباشر
+  category?: string; // كتب مصورة، قصص قصيرة، مبتدئ
+  targetAge?: string; // مثلاً: 4-6، 7-9
+  assignedGrades: GradeLevel[]; // الصفوف التي اعتمدها المعلم لهذا الكتاب
+  assignedTracks: ArabicTrack[]; // المسارات المسموح لها بالقراءة
+  assignedByTeacherId?: string;
 }
 
 // النشاط التفاعلي
