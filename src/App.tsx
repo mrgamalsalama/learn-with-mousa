@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2,
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check,
-  Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock
+  Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock,
+  Library, Download
 } from 'lucide-react';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
-  STAGES_CONFIG, Activity, Question, StudentSubmission 
+  STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem 
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
-  getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission 
+  getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
+  getStoryBank
 } from './storage';
 
 export default function App() {
@@ -18,12 +20,16 @@ export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
+  const [storyBank, setStoryBank] = useState<StoryBankItem[]>([]);
 
   // تبويبات لوحة المشرف العام
-  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents'>('teachers');
+  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
 
   // تبويبات لوحة المعلم
   const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades'>('activities');
+
+  // نافذة بنك القصص الإسلامية داخل شاشة إنشاء النشاط
+  const [isBankModalOpen, setIsBankModalOpen] = useState(false);
 
   // بيانات تسجيل الدخول
   const [loginUsername, setLoginUsername] = useState('');
@@ -45,7 +51,7 @@ export default function App() {
   const [studentGrade, setStudentGrade] = useState<GradeLevel>('grade-1');
   const [studentTrack, setStudentTrack] = useState<ArabicTrack>('arabic-a');
 
-  // بيانات ولي الأمر (اختيار الطالب التابع له)
+  // بيانات ولي الأمر
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
   // استمارة بناء نشاط جديد (المعلم)
@@ -76,8 +82,8 @@ export default function App() {
     setUsers(loadedUsers);
     setActivities(getActivities());
     setSubmissions(getSubmissions());
+    setStoryBank(getStoryBank());
 
-    // تهيئة أول طالب لولي الأمر إن وُجد
     const firstStudent = loadedUsers.find(u => u.role === 'student');
     if (firstStudent) {
       setSelectedStudentId(firstStudent.id);
@@ -93,7 +99,6 @@ export default function App() {
     );
 
     if (found) {
-      // تسجيل الدخول مع زيادة عداد الزيارات وتسجيل الوقت تلقائياً
       const updatedUser = recordUserLogin(found);
       setUser(updatedUser);
       setUsers(getUsers());
@@ -134,7 +139,17 @@ export default function App() {
     );
   };
 
-  // إضافة حساب من قِبل المؤسس
+  // سحب محتوى قصة وأسئلتها بنقرة زر واحدة إلى نموذج المعلم
+  const handleImportStory = (story: StoryBankItem) => {
+    setActTitle(story.title);
+    setActPassage(story.passage);
+    setActGrade(story.grade);
+    setActTrack(story.track);
+    setQuestions(story.questions);
+    setIsBankModalOpen(false);
+    alert(`تم سحب قصة «${story.title}» وأسئلتها بنجاح! يمكنك الآن تعديلها أو نشرها مباشرة.`);
+  };
+
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formUsername || !formPassword) return;
@@ -201,7 +216,6 @@ export default function App() {
     }
   };
 
-  // دوال المعلم لبناء الأسئلة
   const addQuestion = () => {
     setQuestions([
       ...questions,
@@ -290,7 +304,6 @@ export default function App() {
     setTeacherTab('activities');
   };
 
-  // تسليم حل النشاط من الطالب
   const handleSubmitQuiz = () => {
     if (!selectedActivityToSolve || !currentUser) return;
 
@@ -429,7 +442,6 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* استمارة إضافة الحسابات وتوزيع الصلاحيات */}
           <div className="lg:col-span-5">
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <h2 className="font-bold text-base mb-4 flex items-center gap-2 text-slate-800">
@@ -513,21 +525,16 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* صلاحيات رئيس القسم أو المعلم */}
                 {(formRole === 'teacher' || formRole === 'hod') && (
                   <div className="pt-4 border-t border-slate-100 space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">
-                        المسار اللغوي المصرح به:
-                      </label>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">المسار اللغوي المصرح به:</label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => toggleTrack('arabic-a')}
                           className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                            selectedTracks.includes('arabic-a')
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-                              : 'bg-white border-slate-200 text-slate-600'
+                            selectedTracks.includes('arabic-a') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
                           }`}
                         >
                           <span>ناطقين (Arabic A)</span>
@@ -537,9 +544,7 @@ export default function App() {
                           type="button"
                           onClick={() => toggleTrack('arabic-b')}
                           className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                            selectedTracks.includes('arabic-b')
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-                              : 'bg-white border-slate-200 text-slate-600'
+                            selectedTracks.includes('arabic-b') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
                           }`}
                         >
                           <span>غير ناطقين (Arabic B)</span>
@@ -549,15 +554,11 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">
-                        الصفوف المصرح له بها (حدد الصفوف بدقة):
-                      </label>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">الصفوف المصرح له بها:</label>
                       <div className="space-y-3 max-h-56 overflow-y-auto pr-1 border border-slate-100 p-2 rounded-2xl bg-slate-50/50">
                         {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
                           <div key={st} className="space-y-1">
-                            <span className="text-[11px] font-bold text-slate-500 block">
-                              {STAGES_CONFIG[st].nameAr}
-                            </span>
+                            <span className="text-[11px] font-bold text-slate-500 block">{STAGES_CONFIG[st].nameAr}</span>
                             <div className="grid grid-cols-2 gap-1.5">
                               {STAGES_CONFIG[st].grades.map((g) => (
                                 <button
@@ -565,9 +566,7 @@ export default function App() {
                                   type="button"
                                   onClick={() => toggleGrade(g.id)}
                                   className={`p-2 rounded-lg border text-right text-[11px] font-semibold transition flex items-center justify-between ${
-                                    selectedGrades.includes(g.id)
-                                      ? 'bg-emerald-600 text-white border-emerald-600'
-                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                                    selectedGrades.includes(g.id) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                                   }`}
                                 >
                                   <span>{g.labelAr}</span>
@@ -582,7 +581,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* خيارات الطالب */}
                 {formRole === 'student' && (
                   <div className="pt-3 border-t border-slate-100 space-y-3">
                     <div>
@@ -629,13 +627,12 @@ export default function App() {
                   </div>
                 )}
 
-                {/* خيارات ولي الأمر: ربط الحساب بالطالب */}
                 {formRole === 'parent' && (
                   <div className="pt-3 border-t border-slate-100 space-y-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">اختر الطالب التابع لولي الأمر:</label>
                       {studentsList.length === 0 ? (
-                        <p className="text-xs text-rose-500 font-medium">تنبيه: يجب إضافة حساب طالب أولاً ليتم ربطه بولي أمره.</p>
+                        <p className="text-xs text-rose-500 font-medium">يجب إضافة حساب طالب أولاً.</p>
                       ) : (
                         <select
                           value={selectedStudentId}
@@ -663,18 +660,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* استعراض القوائم */}
           <div className="lg:col-span-7">
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-slate-100">
-                <button
-                  onClick={() => setAdminTab('hods')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    adminTab === 'hods' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  رؤساء الأقسام ({hodsList.length})
-                </button>
                 <button
                   onClick={() => setAdminTab('teachers')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
@@ -682,6 +670,14 @@ export default function App() {
                   }`}
                 >
                   المعلمون ({teachersList.length})
+                </button>
+                <button
+                  onClick={() => setAdminTab('hods')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                    adminTab === 'hods' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  رؤساء الأقسام ({hodsList.length})
                 </button>
                 <button
                   onClick={() => setAdminTab('students')}
@@ -699,40 +695,39 @@ export default function App() {
                 >
                   أولياء الأمور ({parentsList.length})
                 </button>
+                <button
+                  onClick={() => setAdminTab('bank')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                    adminTab === 'bank' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  }`}
+                >
+                  <Library className="w-3.5 h-3.5" /> بنك القصص الإسلامية ({storyBank.length})
+                </button>
               </div>
 
-              {/* قائمة رؤساء الأقسام */}
-              {adminTab === 'hods' && (
+              {adminTab === 'bank' && (
                 <div className="space-y-3">
-                  {hodsList.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة رؤساء أقسام حتى الآن.</p>
-                  ) : (
-                    hodsList.map((h) => (
-                      <div key={h.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-800">{h.name}</h4>
-                          <span className="text-[11px] text-slate-500">اسم الدخول: <b>{h.username}</b> • كلمة السر: <b>{h.password}</b></span>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {h.allowedGrades?.map((gId) => (
-                              <span key={gId} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold">
-                                {getGradeLabel(gId)}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteUser(h.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                  {storyBank.map((s) => (
+                    <div key={s.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-extrabold text-sm text-slate-800">{s.title}</h4>
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
+                          {s.moralTopic}
+                        </span>
                       </div>
-                    ))
-                  )}
+                      <p className="text-xs text-slate-600 mb-2 line-clamp-2 leading-relaxed">{s.passage}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                        <span>المستوى: {getGradeLabel(s.grade)}</span>
+                        <span>•</span>
+                        <span>المسار: {s.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}</span>
+                        <span>•</span>
+                        <span>الأسئلة: {s.questions.length} أسئلة</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* قائمة المعلمين */}
               {adminTab === 'teachers' && (
                 <div className="space-y-3">
                   {teachersList.length === 0 ? (
@@ -770,71 +765,87 @@ export default function App() {
                 </div>
               )}
 
-              {/* قائمة الطلاب */}
+              {adminTab === 'hods' && (
+                <div className="space-y-3">
+                  {hodsList.map((h) => (
+                    <div key={h.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800">{h.name}</h4>
+                        <span className="text-[11px] text-slate-500">اسم الدخول: <b>{h.username}</b> • كلمة السر: <b>{h.password}</b></span>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {h.allowedGrades?.map((gId) => (
+                            <span key={gId} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold">
+                              {getGradeLabel(gId)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteUser(h.id)}
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {adminTab === 'students' && (
                 <div className="space-y-3">
-                  {studentsList.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة طلاب حتى الآن.</p>
-                  ) : (
-                    studentsList.map((st) => (
-                      <div key={st.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                  {studentsList.map((st) => (
+                    <div key={st.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800">{st.name}</h4>
+                        <span className="text-[11px] text-slate-500">اسم الدخول: <b>{st.username}</b> • كلمة السر: <b>{st.password}</b></span>
+                        <div className="flex gap-2 mt-2">
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
+                            {st.stage ? STAGES_CONFIG[st.stage]?.nameAr : ''}
+                          </span>
+                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md text-[10px] font-bold">
+                            {getGradeLabel(st.grade!)}
+                          </span>
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">
+                            {st.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteUser(st.id)}
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {adminTab === 'parents' && (
+                <div className="space-y-3">
+                  {parentsList.map((p) => {
+                    const linkedStudent = users.find((u) => u.id === p.studentId);
+                    return (
+                      <div key={p.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
                         <div>
-                          <h4 className="font-bold text-sm text-slate-800">{st.name}</h4>
-                          <span className="text-[11px] text-slate-500">اسم الدخول: <b>{st.username}</b> • كلمة السر: <b>{st.password}</b></span>
-                          <div className="flex gap-2 mt-2">
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                              {st.stage ? STAGES_CONFIG[st.stage]?.nameAr : ''}
-                            </span>
-                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md text-[10px] font-bold">
-                              {getGradeLabel(st.grade!)}
-                            </span>
-                            <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">
-                              {st.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
-                            </span>
+                          <h4 className="font-bold text-sm text-slate-800">{p.name}</h4>
+                          <span className="text-[11px] text-slate-500">اسم الدخول: <b>{p.username}</b> • كلمة السر: <b>{p.password}</b></span>
+                          <div className="mt-2 text-xs">
+                            <span className="text-slate-500">ولي أمر الطالب: </span>
+                            <b className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                              {linkedStudent ? linkedStudent.name : 'غير محدد'}
+                            </b>
                           </div>
                         </div>
                         <button
-                          onClick={() => handleDeleteUser(st.id)}
+                          onClick={() => handleDeleteUser(p.id)}
                           className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* قائمة أولياء الأمور */}
-              {adminTab === 'parents' && (
-                <div className="space-y-3">
-                  {parentsList.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة حسابات أولياء أمور حتى الآن.</p>
-                  ) : (
-                    parentsList.map((p) => {
-                      const linkedStudent = users.find((u) => u.id === p.studentId);
-                      return (
-                        <div key={p.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                          <div>
-                            <h4 className="font-bold text-sm text-slate-800">{p.name}</h4>
-                            <span className="text-[11px] text-slate-500">اسم الدخول: <b>{p.username}</b> • كلمة السر: <b>{p.password}</b></span>
-                            <div className="mt-2 text-xs">
-                              <span className="text-slate-500">ولي أمر الطالب: </span>
-                              <b className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                                {linkedStudent ? linkedStudent.name : 'غير محدد'}
-                              </b>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteUser(p.id)}
-                            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -861,9 +872,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | لوحة رئيس القسم</h1>
-              <p className="text-xs text-slate-500 font-medium">
-                رئيس القسم: <b className="text-slate-800">{currentUser.name}</b>
-              </p>
+              <p className="text-xs text-slate-500 font-medium">رئيس القسم: <b className="text-slate-800">{currentUser.name}</b></p>
             </div>
           </div>
 
@@ -876,7 +885,6 @@ export default function App() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-          {/* بطاقات الإحصاءات السريعة */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
@@ -905,28 +913,23 @@ export default function App() {
                 <BarChart3 className="w-6 h-6" />
               </div>
               <div>
-                <span className="text-xs text-slate-500 font-medium">حلول واختبارات الطلاب</span>
+                <span className="text-xs text-slate-500 font-medium">حلول الطلاب</span>
                 <h3 className="text-xl font-bold text-slate-800">{departmentSubmissions.length} حل مكتمل</h3>
               </div>
             </div>
           </div>
 
-          {/* تقرير متابعة أداء وزيارات المعلمين */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
             <h2 className="font-bold text-base mb-2 text-slate-800 flex items-center gap-2">
               <Clock className="w-5 h-5 text-emerald-600" /> تقرير نشاط وزيارات المعلمين
             </h2>
-            <p className="text-xs text-slate-500 mb-4">
-              متابعة معدلات دخول المعلمين، وتاريخ آخر ظهور، وحصيلة الأنشطة المنشورة لكل معلم.
-            </p>
-
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto mt-4">
               <table className="w-full text-right text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400">
                     <th className="pb-3 font-semibold">اسم المعلم</th>
                     <th className="pb-3 font-semibold">الصفوف المسندة</th>
-                    <th className="pb-3 font-semibold">عدد الأنشطة المنشورة</th>
+                    <th className="pb-3 font-semibold">الأنشطة المنشورة</th>
                     <th className="pb-3 font-semibold">عدد مرات الدخول</th>
                     <th className="pb-3 font-semibold">آخر تسجيل دخول</th>
                   </tr>
@@ -976,9 +979,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة المعلم</h1>
-              <p className="text-xs text-slate-500 font-medium">
-                المعلم: <b className="text-slate-800">{currentUser.name}</b>
-              </p>
+              <p className="text-xs text-slate-500 font-medium">المعلم: <b className="text-slate-800">{currentUser.name}</b></p>
             </div>
           </div>
 
@@ -1018,14 +1019,76 @@ export default function App() {
             </button>
           </div>
 
+          {/* تبويب: إنشاء نشاط جديد */}
           {teacherTab === 'create' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs max-w-3xl mx-auto">
-              <h2 className="font-extrabold text-lg mb-1 flex items-center gap-2 text-slate-800">
-                <Sparkles className="w-5 h-5 text-emerald-600" /> بناء نشاط تفاعلي جديد
-              </h2>
-              <p className="text-xs text-slate-500 mb-6">
-                سيظهر هذا النشاط لصفوفك ومساراتك المعتمدة فقط.
-              </p>
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs max-w-3xl mx-auto relative">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+                <div>
+                  <h2 className="font-extrabold text-lg flex items-center gap-2 text-slate-800">
+                    <Sparkles className="w-5 h-5 text-emerald-600" /> بناء نشاط تفاعلي جديد
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">صمم نشاطك أو اسحب قصة وأسئلة إسلامية جاهزة بنقرة زر.</p>
+                </div>
+
+                {/* زر فتح بنك القصص الإسلامية */}
+                <button
+                  type="button"
+                  onClick={() => setIsBankModalOpen(true)}
+                  className="px-4 py-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-2 shadow-xs"
+                >
+                  <Library className="w-4 h-4 text-emerald-600" /> اختيار من بنك القصص الإسلامية
+                </button>
+              </div>
+
+              {/* نافذة استعراض واختيار القصص الإسلامية */}
+              {isBankModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-3xl p-6 max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-slate-200 shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Library className="w-5 h-5 text-emerald-600" />
+                        <h3 className="font-extrabold text-sm text-slate-800">بنك القصص والأسئلة الإسلامية والتربوية</h3>
+                      </div>
+                      <button
+                        onClick={() => setIsBankModalOpen(false)}
+                        className="text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 rounded-lg"
+                      >
+                        إغلاق ✕
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-slate-500 mb-4">
+                      اختر قصة من القصص التالية لسحب نصها وأسئلتها التفاعلية مباشرة إلى استمارتك:
+                    </p>
+
+                    <div className="space-y-3">
+                      {storyBank.map((story) => (
+                        <div key={story.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50/70 transition flex flex-col justify-between gap-3">
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <h4 className="font-bold text-sm text-emerald-950">{story.title}</h4>
+                              <span className="px-2 py-0.5 bg-emerald-200/70 text-emerald-900 rounded-md text-[10px] font-bold">
+                                {story.moralTopic}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed mb-2">{story.passage}</p>
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              المستوى: {getGradeLabel(story.grade)} • المسار: {story.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'} • الأسئلة: {story.questions.length}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleImportStory(story)}
+                            className="self-end px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5" /> سحب هذه القصة والأسئلة للنشاط
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {teacherAllowedGrades.length === 0 ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs">
@@ -1042,9 +1105,7 @@ export default function App() {
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
                       >
                         {teacherAllowedGrades.map((gId) => (
-                          <option key={gId} value={gId}>
-                            {getGradeLabel(gId)}
-                          </option>
+                          <option key={gId} value={gId}>{getGradeLabel(gId)}</option>
                         ))}
                       </select>
                     </div>
@@ -1070,7 +1131,7 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="مثال: نشاط تدريبي على المبتدأ والخبر"
+                      placeholder="عنوان النشاط"
                       value={actTitle}
                       onChange={(e) => setActTitle(e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -1080,11 +1141,11 @@ export default function App() {
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">نص قرائي أو قصة (اختياري)</label>
                     <textarea
-                      rows={3}
-                      placeholder="نص أو قصة ليقرأها الطالب قبل حل الأسئلة..."
+                      rows={4}
+                      placeholder="نص أو قصة ليقرأها الطالب قبل الأسئلة..."
                       value={actPassage}
                       onChange={(e) => setActPassage(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none leading-relaxed"
                     />
                   </div>
 
@@ -1103,9 +1164,7 @@ export default function App() {
                     {questions.map((q, qIndex) => (
                       <div key={q.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-extrabold text-emerald-800">
-                            السؤال رقم ({qIndex + 1})
-                          </span>
+                          <span className="text-xs font-extrabold text-emerald-800">السؤال رقم ({qIndex + 1})</span>
                           {questions.length > 1 && (
                             <button
                               type="button"
@@ -1127,9 +1186,7 @@ export default function App() {
                         />
 
                         <div className="space-y-2 pt-2">
-                          <label className="block text-[11px] font-bold text-slate-600">
-                            الخيارات (اضغط الدائرة للإجابة الصحيحة):
-                          </label>
+                          <label className="block text-[11px] font-bold text-slate-600">الخيارات (اختر الدائرة للإجابة الصحيحة):</label>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {q.options?.map((opt, optIndex) => (
                               <div key={optIndex} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
@@ -1172,7 +1229,7 @@ export default function App() {
                 <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80">
                   <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <h3 className="font-bold text-slate-700 text-sm">لا توجد أنشطة منشورة بعد</h3>
-                  <p className="text-xs text-slate-400 mt-1 mb-4">أنشئ نشاطك الأول لطلاب صفوفك الآن.</p>
+                  <p className="text-xs text-slate-400 mt-1 mb-4">أنشئ نشاطك الأول أو اسحب من بنك القصص الإسلامية.</p>
                   <button
                     onClick={() => setTeacherTab('create')}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
@@ -1425,7 +1482,6 @@ export default function App() {
     const student = users.find((u) => u.id === currentUser.studentId);
     const studentSubs = submissions.filter((s) => s.studentId === currentUser.studentId);
 
-    // حساب الإحصاءات
     const totalEarned = studentSubs.reduce((acc, curr) => acc + curr.score, 0);
     const totalPossible = studentSubs.reduce((acc, curr) => acc + curr.totalPoints, 0);
     const avgPercentage = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
@@ -1439,9 +1495,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة ولي الأمر</h1>
-              <p className="text-xs text-slate-500 font-medium">
-                مرحباً بك: <b className="text-slate-800">{currentUser.name}</b>
-              </p>
+              <p className="text-xs text-slate-500 font-medium">مرحباً بك: <b className="text-slate-800">{currentUser.name}</b></p>
             </div>
           </div>
 
@@ -1456,11 +1510,10 @@ export default function App() {
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
           {!student ? (
             <div className="bg-white rounded-3xl p-8 text-center border border-slate-200">
-              <p className="text-xs text-rose-500">لم يتم العثور على حساب الطالب المرتبط. يرجى مراجعة إدارة المنصة.</p>
+              <p className="text-xs text-rose-500">لم يتم العثور على حساب الطالب المرتبط.</p>
             </div>
           ) : (
             <>
-              {/* بطاقة الطالب والإحصائيات العامة */}
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
                   <div>
@@ -1498,7 +1551,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* سجل الأنشطة والواجبات التفصيلي */}
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
                 <h3 className="font-extrabold text-sm mb-4 text-slate-800">سجل إجابات ودرجات الأنشطة المكتملة</h3>
                 {studentSubs.length === 0 ? (
