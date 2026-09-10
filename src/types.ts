@@ -1,5 +1,5 @@
 // أدوار المستخدمين في المنظومة
-export type UserRole = 'super_admin' | 'hod' | 'teacher' | 'student';
+export type UserRole = 'super_admin' | 'hod' | 'teacher' | 'student' | 'parent';
 
 // مسارات اللغة العربية
 export type ArabicTrack = 'arabic-a' | 'arabic-b'; // A: ناطقين، B: غير ناطقين
@@ -36,6 +36,9 @@ export interface UserProfile {
   grade?: GradeLevel;
   track?: ArabicTrack;
   teacherId?: string;
+
+  // بيانات ولي الأمر (الربط بحساب الطالب)
+  studentId?: string;
 }
 
 // أنواع الأسئلة
