@@ -21,15 +21,55 @@ export interface UserProfile {
   username: string;
   role: UserRole;
   password?: string;
-  // بيانات خاصة بالمعلم
+  // بيانات المعلم
   allowedStages?: SchoolStage[];
   allowedGrades?: GradeLevel[];
   allowedTracks?: ArabicTrack[];
-  // بيانات خاصة بالطالب
+  // بيانات الطالب
   stage?: SchoolStage;
   grade?: GradeLevel;
   track?: ArabicTrack;
   teacherId?: string;
+}
+
+// أنواع الأسئلة في الأنشطة التفاعلية
+export type QuestionType = 'multiple_choice' | 'true_false' | 'fill_blank';
+
+export interface Question {
+  id: string;
+  text: string;
+  type: QuestionType;
+  options?: string[]; // للخيارات المتعددة
+  correctAnswer: string;
+  points: number;
+}
+
+// النشاط التفاعلي
+export interface Activity {
+  id: string;
+  title: string;
+  description?: string;
+  passage?: string; // نص قرائي أو قصة إذا وُجدت
+  teacherId: string;
+  teacherName: string;
+  stage: SchoolStage;
+  grade: GradeLevel;
+  track: ArabicTrack;
+  questions: Question[];
+  createdAt: string;
+}
+
+// رصد نتيجة الطالب
+export interface StudentSubmission {
+  id: string;
+  activityId: string;
+  activityTitle: string;
+  studentId: string;
+  studentName: string;
+  score: number;
+  totalPoints: number;
+  submittedAt: string;
+  answers: Record<string, string>;
 }
 
 // ثوابت المسميات بالعربية
