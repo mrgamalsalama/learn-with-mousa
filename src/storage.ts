@@ -1,13 +1,14 @@
-import { UserProfile, Activity, StudentSubmission, StoryBankItem } from './types';
+import { UserProfile, Activity, StudentSubmission, StoryBankItem, BookItem, GradeLevel, ArabicTrack } from './types';
 import { INITIAL_STORY_BANK } from './storyBank';
+import { INITIAL_BOOKS } from './booksData';
 
 const USERS_KEY = 'lwm_users_data';
 const CURRENT_USER_KEY = 'lwm_current_user';
 const ACTIVITIES_KEY = 'lwm_activities_data';
 const SUBMISSIONS_KEY = 'lwm_submissions_data';
 const STORY_BANK_KEY = 'lwm_story_bank_data';
+const BOOKS_KEY = 'lwm_books_repository';
 
-// الحساب الافتراضي للمؤسس / المشرف العام
 const DEFAULT_ADMIN: UserProfile = {
   id: 'admin-1',
   name: 'جمال سلامة (المؤسس والمشرف العام)',
@@ -18,7 +19,7 @@ const DEFAULT_ADMIN: UserProfile = {
   lastLogin: new Date().toLocaleString('ar-EG'),
 };
 
-// --- دوال إدارة المستخدمين ---
+// --- المستخدمون ---
 export function getUsers(): UserProfile[] {
   try {
     const data = localStorage.getItem(USERS_KEY);
@@ -64,7 +65,6 @@ export function recordUserLogin(user: UserProfile): UserProfile {
     loginCount: (user.loginCount || 0) + 1,
     lastLogin: nowStr,
   };
-
   saveUser(updatedUser);
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
   return updatedUser;
@@ -78,7 +78,7 @@ export function setCurrentUser(user: UserProfile | null): void {
   }
 }
 
-// --- دوال إدارة بنك القصص والأسئلة الإسلامية ---
+// --- بنك القصص الإسلامية ---
 export function getStoryBank(): StoryBankItem[] {
   try {
     const data = localStorage.getItem(STORY_BANK_KEY);
@@ -103,12 +103,42 @@ export function saveStoryBankItem(item: StoryBankItem): void {
   localStorage.setItem(STORY_BANK_KEY, JSON.stringify(bank));
 }
 
-export function deleteStoryBankItem(id: string): void {
-  const bank = getStoryBank().filter((s) => s.id !== id);
-  localStorage.setItem(STORY_BANK_KEY, JSON.stringify(bank));
+// --- مستودع الكتب الرقمية الشامل (بوك تايم والمكتبة الرقمية) ---
+export function getBooksRepository(): BookItem[] {
+  try {
+    const data = localStorage.getItem(BOOKS_KEY);
+    if (!data) {
+      localStorage.setItem(BOOKS_KEY, JSON.stringify(INITIAL_BOOKS));
+      return INITIAL_BOOKS;
+    }
+    return JSON.parse(data);
+  } catch {
+    return INITIAL_BOOKS;
+  }
 }
 
-// --- دوال إدارة الأنشطة التفاعلية ---
+export function saveBooksRepository(books: BookItem[]): void {
+  localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+}
+
+// دالة تحكم المعلم في إسناد الكتاب لصف ومسار معين أو إلغائه
+export function updateBookAssignment(
+  bookId: string, 
+  grades: GradeLevel[], 
+  tracks: ArabicTrack[], 
+  teacherId: string
+): void {
+  const books = getBooksRepository();
+  const index = books.findIndex((b) => b.id === bookId);
+  if (index >= 0) {
+    books[index].assignedGrades = grades;
+    books[index].assignedTracks = tracks;
+    books[index].assignedByTeacherId = teacherId;
+    saveBooksRepository(books);
+  }
+}
+
+// --- الأنشطة التفاعلية ---
 export function getActivities(): Activity[] {
   try {
     const data = localStorage.getItem(ACTIVITIES_KEY);
@@ -134,7 +164,7 @@ export function deleteActivity(id: string): void {
   localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
 }
 
-// --- دوال رصد نتائج وحلول الطلاب ---
+// --- رصد حلول الطلاب ---
 export function getSubmissions(): StudentSubmission[] {
   try {
     const data = localStorage.getItem(SUBMISSIONS_KEY);
