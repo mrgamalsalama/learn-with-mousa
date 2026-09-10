@@ -1,9 +1,11 @@
-import { UserProfile, Activity, StudentSubmission } from './types';
+import { UserProfile, Activity, StudentSubmission, StoryBankItem } from './types';
+import { INITIAL_STORY_BANK } from './storyBank';
 
 const USERS_KEY = 'lwm_users_data';
 const CURRENT_USER_KEY = 'lwm_current_user';
 const ACTIVITIES_KEY = 'lwm_activities_data';
 const SUBMISSIONS_KEY = 'lwm_submissions_data';
+const STORY_BANK_KEY = 'lwm_story_bank_data';
 
 // الحساب الافتراضي للمؤسس / المشرف العام
 const DEFAULT_ADMIN: UserProfile = {
@@ -55,7 +57,6 @@ export function getCurrentUser(): UserProfile | null {
   }
 }
 
-// دالة تسجيل الدخول مع زيادة عداد الزيارات وتحديث تاريخ آخر نشاط تلقائياً
 export function recordUserLogin(user: UserProfile): UserProfile {
   const nowStr = new Date().toLocaleString('ar-EG');
   const updatedUser: UserProfile = {
@@ -75,6 +76,36 @@ export function setCurrentUser(user: UserProfile | null): void {
   } else {
     localStorage.removeItem(CURRENT_USER_KEY);
   }
+}
+
+// --- دوال إدارة بنك القصص والأسئلة الإسلامية ---
+export function getStoryBank(): StoryBankItem[] {
+  try {
+    const data = localStorage.getItem(STORY_BANK_KEY);
+    if (!data) {
+      localStorage.setItem(STORY_BANK_KEY, JSON.stringify(INITIAL_STORY_BANK));
+      return INITIAL_STORY_BANK;
+    }
+    return JSON.parse(data);
+  } catch {
+    return INITIAL_STORY_BANK;
+  }
+}
+
+export function saveStoryBankItem(item: StoryBankItem): void {
+  const bank = getStoryBank();
+  const index = bank.findIndex((s) => s.id === item.id);
+  if (index >= 0) {
+    bank[index] = item;
+  } else {
+    bank.unshift(item);
+  }
+  localStorage.setItem(STORY_BANK_KEY, JSON.stringify(bank));
+}
+
+export function deleteStoryBankItem(id: string): void {
+  const bank = getStoryBank().filter((s) => s.id !== id);
+  localStorage.setItem(STORY_BANK_KEY, JSON.stringify(bank));
 }
 
 // --- دوال إدارة الأنشطة التفاعلية ---
