@@ -3,16 +3,16 @@ import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2,
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check,
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock,
-  Library, Download
+  Library, Download, Eye, CheckSquare, ExternalLink, X
 } from 'lucide-react';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
-  STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem 
+  STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem 
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
-  getStoryBank
+  getStoryBank, getBooksRepository, updateBookAssignment
 } from './storage';
 
 export default function App() {
@@ -21,15 +21,27 @@ export default function App() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
   const [storyBank, setStoryBank] = useState<StoryBankItem[]>([]);
+  const [books, setBooks] = useState<BookItem[]>([]);
 
   // تبويبات لوحة المشرف العام
   const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
 
   // تبويبات لوحة المعلم
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades'>('activities');
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades' | 'library'>('activities');
 
-  // نافذة بنك القصص الإسلامية داخل شاشة إنشاء النشاط
+  // تبويبات لوحة الطالب
+  const [studentTab, setStudentTab] = useState<'activities' | 'library'>('activities');
+
+  // نافذة بنك القصص داخل استمارة النشاط
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+
+  // نافذة إسناد الكتاب لصفوف المعلم
+  const [selectedBookForAssign, setSelectedBookForAssign] = useState<BookItem | null>(null);
+  const [tempAssignedGrades, setTempAssignedGrades] = useState<GradeLevel[]>([]);
+  const [tempAssignedTracks, setTempAssignedTracks] = useState<ArabicTrack[]>(['arabic-a']);
+
+  // عارض الكتاب التفاعلي (Reader Modal)
+  const [activeReadingBook, setActiveReadingBook] = useState<BookItem | null>(null);
 
   // بيانات تسجيل الدخول
   const [loginUsername, setLoginUsername] = useState('');
@@ -83,6 +95,7 @@ export default function App() {
     setActivities(getActivities());
     setSubmissions(getSubmissions());
     setStoryBank(getStoryBank());
+    setBooks(getBooksRepository());
 
     const firstStudent = loadedUsers.find(u => u.role === 'student');
     if (firstStudent) {
@@ -123,6 +136,7 @@ export default function App() {
     setLoginPassword('');
     setSelectedActivityToSolve(null);
     setQuizFinished(false);
+    setActiveReadingBook(null);
   };
 
   const toggleGrade = (gId: GradeLevel) => {
@@ -139,7 +153,39 @@ export default function App() {
     );
   };
 
-  // سحب محتوى قصة وأسئلتها بنقرة زر واحدة إلى نموذج المعلم
+  // دوال إسناد الكتاب لصفوف المعلم
+  const openAssignModal = (book: BookItem) => {
+    setSelectedBookForAssign(book);
+    setTempAssignedGrades(book.assignedGrades || []);
+    setTempAssignedTracks(book.assignedTracks || ['arabic-a']);
+  };
+
+  const toggleAssignGrade = (gId: GradeLevel) => {
+    setTempAssignedGrades(prev =>
+      prev.includes(gId) ? prev.filter(g => g !== gId) : [...prev, gId]
+    );
+  };
+
+  const toggleAssignTrack = (t: ArabicTrack) => {
+    setTempAssignedTracks(prev =>
+      prev.includes(t) ? (prev.length > 1 ? prev.filter(item => item !== t) : prev) : [...prev, t]
+    );
+  };
+
+  const saveBookAssignment = () => {
+    if (!selectedBookForAssign || !currentUser) return;
+    updateBookAssignment(
+      selectedBookForAssign.id,
+      tempAssignedGrades,
+      tempAssignedTracks,
+      currentUser.id
+    );
+    setBooks(getBooksRepository());
+    setSelectedBookForAssign(null);
+    alert('تم تحديث إسناد الكتاب لصفوفك المحددة بنجاح!');
+  };
+
+  // استيراد قصة من البنك
   const handleImportStory = (story: StoryBankItem) => {
     setActTitle(story.title);
     setActPassage(story.passage);
@@ -147,7 +193,7 @@ export default function App() {
     setActTrack(story.track);
     setQuestions(story.questions);
     setIsBankModalOpen(false);
-    alert(`تم سحب قصة «${story.title}» وأسئلتها بنجاح! يمكنك الآن تعديلها أو نشرها مباشرة.`);
+    alert(`تم سحب قصة «${story.title}» وأسئلتها بنجاح!`);
   };
 
   const handleAddUser = (e: React.FormEvent) => {
@@ -199,14 +245,13 @@ export default function App() {
     };
 
     saveUser(newUser);
-    const updatedList = getUsers();
-    setUsers(updatedList);
+    setUsers(getUsers());
     setFormName('');
     setFormUsername('');
     setFormPassword('');
     setSelectedGrades([]);
     setSelectedTracks(['arabic-a']);
-    alert('تم إضافة الحساب بنجاح وتعيين الصلاحيات المحددة!');
+    alert('تم إضافة الحساب وتحديد الصلاحيات بنجاح!');
   };
 
   const handleDeleteUser = (id: string) => {
@@ -300,7 +345,7 @@ export default function App() {
         points: 5,
       },
     ]);
-    alert('تم نشر النشاط التفاعلي لطلاب الصف والمسار المحدد بنجاح!');
+    alert('تم نشر النشاط التفاعلي لطلاب الصف المحدد بنجاح!');
     setTeacherTab('activities');
   };
 
@@ -354,7 +399,7 @@ export default function App() {
             م
           </div>
           <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-1">منصة تعلَّم مع موسى</h1>
-          <p className="text-slate-500 text-xs text-center mb-6">بوابة تسجيل الدخول للنظام المركزي</p>
+          <p className="text-slate-500 text-xs text-center mb-6">بوابة الدخول للنظام المركزي</p>
 
           {loginError && (
             <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl text-center font-medium">
@@ -403,7 +448,7 @@ export default function App() {
 
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
             <span className="text-[11px] text-slate-400">
-              بيانات الدخول للمؤسس: <b>admin</b> / كلمة المرور: <b>123</b>
+              دخول المؤسس الافتراضي: <b>admin</b> / كلمة المرور: <b>123</b>
             </span>
           </div>
         </div>
@@ -493,7 +538,7 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    placeholder="الاسم الثلاثي أو اللقب"
+                    placeholder="الاسم الكامل"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -528,7 +573,7 @@ export default function App() {
                 {(formRole === 'teacher' || formRole === 'hod') && (
                   <div className="pt-4 border-t border-slate-100 space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">المسار اللغوي المصرح به:</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">المسار المصرح به:</label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -554,7 +599,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">الصفوف المصرح له بها:</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">الصفوف المصرح بها:</label>
                       <div className="space-y-3 max-h-56 overflow-y-auto pr-1 border border-slate-100 p-2 rounded-2xl bg-slate-50/50">
                         {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
                           <div key={st} className="space-y-1">
@@ -731,7 +776,7 @@ export default function App() {
               {adminTab === 'teachers' && (
                 <div className="space-y-3">
                   {teachersList.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة معلمين حتى الآن.</p>
+                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة معلمين بعد.</p>
                   ) : (
                     teachersList.map((t) => (
                       <div key={t.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -992,7 +1037,7 @@ export default function App() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 py-8">
-          <div className="flex gap-3 mb-6">
+          <div className="flex flex-wrap gap-2 mb-6">
             <button
               onClick={() => setTeacherTab('activities')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
@@ -1007,7 +1052,15 @@ export default function App() {
                 teacherTab === 'create' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
               }`}
             >
-              <Plus className="w-4 h-4" /> إنشاء نشاط تفاعلي جديد
+              <Plus className="w-4 h-4" /> إنشاء نشاط تفاعلي
+            </button>
+            <button
+              onClick={() => setTeacherTab('library')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'library' ? 'bg-emerald-800 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <Library className="w-4 h-4 text-emerald-500" /> المستودع القرائي وإسناد الكتب ({books.length})
             </button>
             <button
               onClick={() => setTeacherTab('grades')}
@@ -1018,6 +1071,181 @@ export default function App() {
               <Award className="w-4 h-4" /> رصد درجات الطلاب ({submissions.length})
             </button>
           </div>
+
+          {/* تبويب: المستودع القرائي الشامل وإسناد الكتب */}
+          {teacherTab === 'library' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Library className="w-5 h-5 text-emerald-600" /> المستودع القرائي المركزي (بوك تايم / هنداوي)
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    اختر القصص والكتب الملائمة لمناهجك وأسندها لصفوفك لتظهر في مكتبة الطالب فوراً.
+                  </p>
+                </div>
+                <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                  إجمالي الكتب بالمستودع: {books.length} كتاب
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {books.map((book) => {
+                  const isAssigned = book.assignedGrades?.some(g => teacherAllowedGrades.includes(g));
+                  return (
+                    <div key={book.id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                      <div className="relative h-44 bg-slate-100 overflow-hidden group">
+                        <img 
+                          src={book.coverUrl} 
+                          alt={book.title} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        <div className="absolute top-2 right-2 flex flex-col gap-1">
+                          <span className="px-2 py-0.5 bg-slate-900/80 backdrop-blur-xs text-white rounded-md text-[10px] font-bold">
+                            {book.targetAge}
+                          </span>
+                          <span className="px-2 py-0.5 bg-emerald-700/90 backdrop-blur-xs text-white rounded-md text-[10px] font-bold">
+                            {book.category}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-800 mb-1 line-clamp-1">{book.title}</h3>
+                          <span className="text-[11px] text-slate-400 block mb-3">{book.author}</span>
+
+                          {/* حالة الإسناد الحالية */}
+                          <div className="mb-3">
+                            <span className="text-[10px] text-slate-400 font-semibold block mb-1">الصفوف المسند إليها:</span>
+                            {book.assignedGrades && book.assignedGrades.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {book.assignedGrades.map(gId => (
+                                  <span key={gId} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-bold">
+                                    {getGradeLabel(gId)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-rose-500 font-medium">غير مسند لأي صف بعد</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-3 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => openAssignModal(book)}
+                            className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                              isAssigned 
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                            }`}
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            {isAssigned ? 'تعديل إسناد الصفوف' : 'إسناد الكتاب لصفوفي'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveReadingBook(book)}
+                            className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-500" /> معاينة وقراءة الكتاب
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
+          {selectedBookForAssign && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-800">إسناد الكتاب لطلابك</h3>
+                    <span className="text-xs text-emerald-700 font-semibold">{selectedBookForAssign.title}</span>
+                  </div>
+                  <button onClick={() => setSelectedBookForAssign(null)} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-2">
+                      اختر الصفوف المصرح لك بها لتظهر القصة في مكتبتهم:
+                    </label>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {teacherAllowedGrades.map((gId) => (
+                        <button
+                          key={gId}
+                          type="button"
+                          onClick={() => toggleAssignGrade(gId)}
+                          className={`w-full p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                            tempAssignedGrades.includes(gId)
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>{getGradeLabel(gId)}</span>
+                          {tempAssignedGrades.includes(gId) && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-2">المسار المتاح له القراءة:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleAssignTrack('arabic-a')}
+                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                          tempAssignedTracks.includes('arabic-a') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <span>ناطقين</span>
+                        {tempAssignedTracks.includes('arabic-a') && <Check className="w-3 h-3 text-emerald-600" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleAssignTrack('arabic-b')}
+                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                          tempAssignedTracks.includes('arabic-b') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <span>غير ناطقين</span>
+                        {tempAssignedTracks.includes('arabic-b') && <Check className="w-3 h-3 text-emerald-600" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={saveBookAssignment}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                  >
+                    حفظ التعيين
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBookForAssign(null)}
+                    className="px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* تبويب: إنشاء نشاط جديد */}
           {teacherTab === 'create' && (
@@ -1030,7 +1258,6 @@ export default function App() {
                   <p className="text-xs text-slate-500 mt-0.5">صمم نشاطك أو اسحب قصة وأسئلة إسلامية جاهزة بنقرة زر.</p>
                 </div>
 
-                {/* زر فتح بنك القصص الإسلامية */}
                 <button
                   type="button"
                   onClick={() => setIsBankModalOpen(true)}
@@ -1040,7 +1267,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* نافذة استعراض واختيار القصص الإسلامية */}
               {isBankModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-3xl p-6 max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-slate-200 shadow-2xl">
@@ -1056,10 +1282,6 @@ export default function App() {
                         إغلاق ✕
                       </button>
                     </div>
-
-                    <p className="text-xs text-slate-500 mb-4">
-                      اختر قصة من القصص التالية لسحب نصها وأسئلتها التفاعلية مباشرة إلى استمارتك:
-                    </p>
 
                     <div className="space-y-3">
                       {storyBank.map((story) => (
@@ -1098,7 +1320,7 @@ export default function App() {
                 <form onSubmit={handleSaveActivity} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">الصف المستهدف (المصرح لك به فقط)</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">الصف المستهدف</label>
                       <select
                         value={actGrade}
                         onChange={(e) => setActGrade(e.target.value as GradeLevel)}
@@ -1111,7 +1333,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">المسار اللغوي المصرح لك به</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">المسار اللغوي</label>
                       <select
                         value={actTrack}
                         onChange={(e) => setActTrack(e.target.value as ArabicTrack)}
@@ -1281,7 +1503,7 @@ export default function App() {
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
               <h2 className="font-extrabold text-base mb-4 text-slate-800">قائمة درجات وحلول الطلاب</h2>
               {submissions.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة حتى الآن.</p>
+                <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة بعد.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-right text-xs">
@@ -1320,6 +1542,41 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* عارض الكتاب التفاعلي لمعاينة المعلم */}
+        {activeReadingBook && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col z-50 p-4">
+            <div className="flex items-center justify-between bg-white px-6 py-3 rounded-2xl mb-3 shadow-lg">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800">{activeReadingBook.title}</h3>
+                <span className="text-[11px] text-slate-400">{activeReadingBook.author}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={activeReadingBook.readUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-100"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> فتح في نافذة مستقلة
+                </a>
+                <button
+                  onClick={() => setActiveReadingBook(null)}
+                  className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-200">
+              <iframe
+                src={activeReadingBook.readUrl}
+                title={activeReadingBook.title}
+                className="w-full h-full border-none"
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1328,6 +1585,11 @@ export default function App() {
   if (currentUser.role === 'student') {
     const studentActivities = activities.filter(
       (a) => a.grade === currentUser.grade && a.track === currentUser.track
+    );
+
+    // فلترة الكتب: يظهر للطالب فقط ما قام معلمه بإسناده لصفه ومساره
+    const studentAssignedBooks = books.filter(
+      (b) => b.assignedGrades?.includes(currentUser.grade!) && b.assignedTracks?.includes(currentUser.track!)
     );
 
     return (
@@ -1353,126 +1615,228 @@ export default function App() {
           </button>
         </header>
 
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          {selectedActivityToSolve ? (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-              {!quizFinished ? (
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-                    <div>
-                      <h2 className="text-base font-bold text-slate-800">{selectedActivityToSolve.title}</h2>
-                      <p className="text-xs text-slate-500">إعداد الأستاذ: {selectedActivityToSolve.teacherName}</p>
-                    </div>
-                    <button
-                      onClick={() => setSelectedActivityToSolve(null)}
-                      className="text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      إلغاء والعودة
-                    </button>
-                  </div>
+        <main className="max-w-5xl mx-auto px-4 py-8">
+          {/* تبويبات الطالب: الأنشطة ومكتبتي المصورة */}
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setStudentTab('activities')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'activities' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <FileText className="w-4 h-4" /> الأنشطة والواجبات ({studentActivities.length})
+            </button>
+            <button
+              onClick={() => setStudentTab('library')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'library' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <Library className="w-4 h-4 text-emerald-400" /> رف القراءة ومكتبتي المصورة ({studentAssignedBooks.length})
+            </button>
+          </div>
 
-                  {selectedActivityToSolve.passage && (
-                    <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 mb-6 text-sm text-slate-700 leading-relaxed">
-                      <b className="block text-emerald-800 text-xs mb-1">اقرأ الفقرة التالية بعناية:</b>
-                      {selectedActivityToSolve.passage}
-                    </div>
-                  )}
-
-                  <div className="space-y-6">
-                    {selectedActivityToSolve.questions.map((q, idx) => (
-                      <div key={q.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <h4 className="font-bold text-sm text-slate-800 mb-3">
-                          {idx + 1}. {q.text}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {q.options?.map((opt, optIdx) => (
-                            <label
-                              key={optIdx}
-                              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition text-xs font-semibold ${
-                                studentAnswers[q.id] === opt
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name={`solve_${q.id}`}
-                                value={opt}
-                                checked={studentAnswers[q.id] === opt}
-                                onChange={() => setStudentAnswers({ ...studentAnswers, [q.id]: opt })}
-                                className="hidden"
-                              />
-                              <span>{opt}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={handleSubmitQuiz}
-                    className="w-full mt-6 py-3 bg-emerald-600 text-white font-bold rounded-2xl text-sm hover:bg-emerald-700 transition flex items-center justify-center gap-2"
-                  >
-                    <Send className="w-4 h-4" /> تسليم الإجابات وإنهاء النشاط
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Award className="w-8 h-8" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-1">أحسنت صنعاً! تم تسليم إجابتك</h3>
-                  <p className="text-xs text-slate-500 mb-4">نتيجتك في هذا النشاط:</p>
-                  <div className="text-3xl font-extrabold text-emerald-600 mb-6">
-                    {lastScore?.score} / {lastScore?.total}
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSelectedActivityToSolve(null);
-                      setQuizFinished(false);
-                      setStudentAnswers({});
-                    }}
-                    className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
-                  >
-                    العودة لقائمة الأنشطة
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
+          {/* تبويب: رف القراءة والمكتبة المصورة للطالب */}
+          {studentTab === 'library' && (
             <div>
-              <h2 className="font-extrabold text-base mb-4 text-slate-800">أنشطة صَفّك الدراسي الحالية</h2>
-              {studentActivities.length === 0 ? (
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-extrabold text-base text-slate-800">قصصك وكتبك المختارة من معلمك</h2>
+                  <p className="text-xs text-slate-400">استمتع بقراءة القصص المصورة لتنمية مهاراتك اللغوية.</p>
+                </div>
+              </div>
+
+              {studentAssignedBooks.length === 0 ? (
                 <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
-                  <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <h4 className="font-bold text-slate-700 text-sm">لا توجد أنشطة جديدة موجهة لصفك حالياً</h4>
-                  <p className="text-xs text-slate-400 mt-1">سيقوم معلمك بنشر الأنشطة والواجبات هنا قريباً.</p>
+                  <Library className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <h4 className="font-bold text-slate-700 text-sm">رف القراءة فارغ حالياً</h4>
+                  <p className="text-xs text-slate-400 mt-1">سيقوم معلمك بإسناد قصص وكتب ممتعة لصفك قريباً.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {studentActivities.map((act) => (
-                    <div key={act.id} className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-                      <div>
-                        <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 mb-2 inline-block">
-                          نشاط متاح
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {studentAssignedBooks.map((book) => (
+                    <div key={book.id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                      <div className="relative h-44 bg-slate-100 overflow-hidden">
+                        <img 
+                          src={book.coverUrl} 
+                          alt={book.title} 
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute top-2 right-2 px-2 py-0.5 bg-emerald-700/90 backdrop-blur-xs text-white rounded-md text-[9px] font-bold">
+                          {book.category}
                         </span>
-                        <h3 className="font-bold text-slate-800 text-sm mb-1">{act.title}</h3>
-                        <p className="text-xs text-slate-400 mb-4">إعداد: {act.teacherName} • {act.questions.length} أسئلة</p>
                       </div>
-                      <button
-                        onClick={() => setSelectedActivityToSolve(act)}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
-                      >
-                        بدء حل النشاط الآن
-                      </button>
+
+                      <div className="p-3 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-extrabold text-xs text-slate-800 mb-0.5 line-clamp-1">{book.title}</h3>
+                          <span className="text-[10px] text-slate-400 block mb-3">{book.author}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveReadingBook(book)}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" /> اقرأ القصة الآن
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
           )}
+
+          {/* تبويب الأنشطة */}
+          {studentTab === 'activities' && (
+            <div>
+              {selectedActivityToSolve ? (
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+                  {!quizFinished ? (
+                    <div>
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                        <div>
+                          <h2 className="text-base font-bold text-slate-800">{selectedActivityToSolve.title}</h2>
+                          <p className="text-xs text-slate-500">إعداد الأستاذ: {selectedActivityToSolve.teacherName}</p>
+                        </div>
+                        <button
+                          onClick={() => setSelectedActivityToSolve(null)}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          إلغاء والعودة
+                        </button>
+                      </div>
+
+                      {selectedActivityToSolve.passage && (
+                        <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 mb-6 text-sm text-slate-700 leading-relaxed">
+                          <b className="block text-emerald-800 text-xs mb-1">اقرأ الفقرة التالية بعناية:</b>
+                          {selectedActivityToSolve.passage}
+                        </div>
+                      )}
+
+                      <div className="space-y-6">
+                        {selectedActivityToSolve.questions.map((q, idx) => (
+                          <div key={q.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <h4 className="font-bold text-sm text-slate-800 mb-3">
+                              {idx + 1}. {q.text}
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {q.options?.map((opt, optIdx) => (
+                                <label
+                                  key={optIdx}
+                                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition text-xs font-semibold ${
+                                    studentAnswers[q.id] === opt
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`solve_${q.id}`}
+                                    value={opt}
+                                    checked={studentAnswers[q.id] === opt}
+                                    onChange={() => setStudentAnswers({ ...studentAnswers, [q.id]: opt })}
+                                    className="hidden"
+                                  />
+                                  <span>{opt}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={handleSubmitQuiz}
+                        className="w-full mt-6 py-3 bg-emerald-600 text-white font-bold rounded-2xl text-sm hover:bg-emerald-700 transition flex items-center justify-center gap-2"
+                      >
+                        <Send className="w-4 h-4" /> تسليم الإجابات وإنهاء النشاط
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Award className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1">أحسنت صنعاً! تم تسليم إجابتك</h3>
+                      <p className="text-xs text-slate-500 mb-4">نتيجتك في هذا النشاط:</p>
+                      <div className="text-3xl font-extrabold text-emerald-600 mb-6">
+                        {lastScore?.score} / {lastScore?.total}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedActivityToSolve(null);
+                          setQuizFinished(false);
+                          setStudentAnswers({});
+                        }}
+                        className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+                      >
+                        العودة لقائمة الأنشطة
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <h2 className="font-extrabold text-base mb-4 text-slate-800">أنشطة صَفّك الدراسي الحالية</h2>
+                  {studentActivities.length === 0 ? (
+                    <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+                      <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <h4 className="font-bold text-slate-700 text-sm">لا توجد أنشطة جديدة موجهة لصفك حالياً</h4>
+                      <p className="text-xs text-slate-400 mt-1">سيقوم معلمك بنشر الأنشطة والواجبات هنا قريباً.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {studentActivities.map((act) => (
+                        <div key={act.id} className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+                          <div>
+                            <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 mb-2 inline-block">
+                              نشاط متاح
+                            </span>
+                            <h3 className="font-bold text-slate-800 text-sm mb-1">{act.title}</h3>
+                            <p className="text-xs text-slate-400 mb-4">إعداد: {act.teacherName} • {act.questions.length} أسئلة</p>
+                          </div>
+                          <button
+                            onClick={() => setSelectedActivityToSolve(act)}
+                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                          >
+                            بدء حل النشاط الآن
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </main>
+
+        {/* عارض الكتاب التفاعلي للطالب */}
+        {activeReadingBook && (
+          <div className="fixed inset-0 bg-slate-900/85 backdrop-blur-md flex flex-col z-50 p-3 sm:p-6">
+            <div className="flex items-center justify-between bg-white px-5 py-3 rounded-2xl mb-3 shadow-lg">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800">{activeReadingBook.title}</h3>
+                <span className="text-[11px] text-slate-400">{activeReadingBook.author}</span>
+              </div>
+              <button
+                onClick={() => setActiveReadingBook(null)}
+                className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-200">
+              <iframe
+                src={activeReadingBook.readUrl}
+                title={activeReadingBook.title}
+                className="w-full h-full border-none"
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1539,7 +1903,7 @@ export default function App() {
                     <span className="text-base font-extrabold text-slate-800">{studentSubs.length}</span>
                   </div>
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-[11px] text-slate-400 block mb-1">مجموع الدرجات المكتسبة</span>
+                    <span className="text-[11px] text-slate-400 block mb-1">مجموع الدرجات</span>
                     <span className="text-base font-extrabold text-emerald-600">{totalEarned} نقطة</span>
                   </div>
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 col-span-2 sm:col-span-1">
@@ -1554,7 +1918,7 @@ export default function App() {
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
                 <h3 className="font-extrabold text-sm mb-4 text-slate-800">سجل إجابات ودرجات الأنشطة المكتملة</h3>
                 {studentSubs.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-8">لم يقم الطالب بإكمال أي نشاط حتى الآن.</p>
+                  <p className="text-xs text-slate-400 text-center py-8">لم يكمل الطالب أي نشاط حتى الآن.</p>
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {studentSubs.map((sub) => {
