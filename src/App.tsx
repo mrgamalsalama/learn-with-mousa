@@ -399,51 +399,69 @@ export default function App() {
     return gId;
   };
 
-  // المكون الموحد للقارئ المدمج الصافي
+  // المكون الموحد للقارئ التفاعلي المدمج الخالي من الحجب
   const renderSharedReader = () => {
     if (!activeReadingBook) return null;
 
-    // استخراج معرّف الكتاب النقي
     const cleanId = activeReadingBook.id.replace('bt_', '');
-    // رابط القارئ المباشر الصافي
     const directReaderUrl = `https://read.booktime.org/ar/books/${cleanId}`;
 
+    const handleLaunchReader = () => {
+      const w = window.screen.availWidth;
+      const h = window.screen.availHeight;
+      window.open(
+        directReaderUrl,
+        'BookReaderWindow',
+        `width=${w},height=${h},top=0,left=0,toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+      );
+    };
+
     return (
-      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col z-50 p-2 sm:p-4 text-slate-100">
-        {/* شريط علوي أنيق للتحكم */}
-        <div className="flex items-center justify-between bg-slate-900/95 px-6 py-3 rounded-2xl mb-2 border border-slate-800 shadow-xl">
-          <div>
-            <h2 className="font-extrabold text-sm sm:text-base text-white">{activeReadingBook.title}</h2>
-            <span className="text-[11px] text-emerald-400 font-semibold">{activeReadingBook.author}</span>
+      <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl relative overflow-hidden">
+          {/* زر الإغلاق */}
+          <button
+            onClick={closeReader}
+            className="absolute top-4 left-4 p-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-xl transition"
+            title="إغلاق"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {/* صورة الغلاف */}
+          <div className="w-48 h-64 mx-auto rounded-2xl overflow-hidden shadow-2xl mb-5 border border-slate-700/80 bg-slate-800">
+            <img
+              src={activeReadingBook.coverUrl}
+              alt={activeReadingBook.title}
+              className="w-full h-full object-cover"
+            />
           </div>
 
-          <div className="flex items-center gap-3">
-            <a
-              href={directReaderUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
-            >
-              <ExternalLink className="w-3.5 h-3.5" /> فتح بملء الشاشة
-            </a>
+          <h3 className="text-lg font-black text-white mb-1">{activeReadingBook.title}</h3>
+          <p className="text-xs text-emerald-400 font-medium mb-6">
+            {activeReadingBook.author} • {activeReadingBook.category || 'قصص تفاعلية'}
+          </p>
+
+          <div className="space-y-3">
             <button
-              onClick={closeReader}
-              className="p-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-xl transition shadow-xs"
-              title="إغلاق القارئ"
+              type="button"
+              onClick={handleLaunchReader}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30"
             >
-              <X className="w-5 h-5" />
+              <BookOpen className="w-5 h-5" /> ابدأ قراءة القصة الآن
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                alert('رائع! يمكنك الآن التوجه لحل الأنشطة والأسئلة المرتبطة بهذه القصة 🌟');
+                closeReader();
+              }}
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-bold transition"
+            >
+              أنهيت القراءة (العودة للمنصة والأنشطة)
             </button>
           </div>
-        </div>
-
-        {/* الحاوية التفاعلية للقارئ الصافي */}
-        <div className="flex-1 w-full h-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl relative">
-          <iframe
-            src={directReaderUrl}
-            title={activeReadingBook.title}
-            className="w-full h-full border-none"
-            allow="fullscreen"
-          />
         </div>
       </div>
     );
@@ -1163,7 +1181,7 @@ export default function App() {
                         />
                         <div className="absolute top-2 right-2 flex flex-col gap-1">
                           <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-bold shadow-xs">
-                            قراءة مباشرة تفاعلية
+                            قراءة تفاعلية
                           </span>
                           <span className="px-2 py-0.5 bg-slate-900/80 backdrop-blur-xs text-white rounded-md text-[10px] font-bold">
                             {book.category || 'كتب مصورة'}
