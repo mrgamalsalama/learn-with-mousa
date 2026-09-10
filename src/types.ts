@@ -37,7 +37,7 @@ export interface UserProfile {
   track?: ArabicTrack;
   teacherId?: string;
 
-  // بيانات ولي الأمر (الربط بحساب الطالب)
+  // بيانات ولي الأمر
   studentId?: string;
 }
 
@@ -51,6 +51,18 @@ export interface Question {
   options?: string[];
   correctAnswer: string;
   points: number;
+}
+
+// عنصر بنك القصص والأسئلة الإسلامية والتربوية
+export interface StoryBankItem {
+  id: string;
+  title: string;
+  moralTopic: string; // القيمة الأخلاقية (بر الوالدين، الأمانة، التسامح...)
+  stage: SchoolStage;
+  grade: GradeLevel;
+  track: ArabicTrack;
+  passage: string;
+  questions: Question[];
 }
 
 // النشاط التفاعلي
