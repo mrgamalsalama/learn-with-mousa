@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2,
-  Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles
+  Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check
 } from 'lucide-react';
 import { 
   UserProfile, SchoolStage, GradeLevel, ArabicTrack, 
@@ -34,7 +34,12 @@ export default function App() {
   const [formName, setFormName] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
-  const [selectedStages, setSelectedStages] = useState<SchoolStage[]>([]);
+
+  // صلاحيات المعلم المحددة بدقة (صفوف محددة + مسارات محددة)
+  const [selectedGrades, setSelectedGrades] = useState<GradeLevel[]>([]);
+  const [selectedTracks, setSelectedTracks] = useState<ArabicTrack[]>(['arabic-a']);
+
+  // بيانات الطالب
   const [studentStage, setStudentStage] = useState<SchoolStage>('primary');
   const [studentGrade, setStudentGrade] = useState<GradeLevel>('grade-1');
   const [studentTrack, setStudentTrack] = useState<ArabicTrack>('arabic-a');
@@ -42,7 +47,6 @@ export default function App() {
   // استمارة بناء نشاط جديد (المعلم)
   const [actTitle, setActTitle] = useState('');
   const [actPassage, setActPassage] = useState('');
-  const [actStage, setActStage] = useState<SchoolStage>('primary');
   const [actGrade, setActGrade] = useState<GradeLevel>('grade-1');
   const [actTrack, setActTrack] = useState<ArabicTrack>('arabic-a');
   const [questions, setQuestions] = useState<Question[]>([
@@ -80,9 +84,13 @@ export default function App() {
     if (found) {
       setCurrentUser(found);
       setUser(found);
-      if (found.role === 'teacher' && found.allowedStages && found.allowedStages.length > 0) {
-        setActStage(found.allowedStages[0]);
-        setActGrade(STAGES_CONFIG[found.allowedStages[0]].grades[0].id);
+      if (found.role === 'teacher') {
+        if (found.allowedGrades && found.allowedGrades.length > 0) {
+          setActGrade(found.allowedGrades[0]);
+        }
+        if (found.allowedTracks && found.allowedTracks.length > 0) {
+          setActTrack(found.allowedTracks[0]);
+        }
       }
     } else {
       setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة');
@@ -98,10 +106,38 @@ export default function App() {
     setQuizFinished(false);
   };
 
+  // تبديل اختيار الصفوف للمعلم
+  const toggleGrade = (gId: GradeLevel) => {
+    setSelectedGrades((prev) =>
+      prev.includes(gId) ? prev.filter((g) => g !== gId) : [...prev, gId]
+    );
+  };
+
+  // تبديل المسارات للمعلم
+  const toggleTrack = (track: ArabicTrack) => {
+    setSelectedTracks((prev) =>
+      prev.includes(track)
+        ? prev.length > 1 ? prev.filter((t) => t !== track) : prev
+        : [...prev, track]
+    );
+  };
+
   // إضافة مستخدم من المشرف
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formUsername || !formPassword) return;
+
+    if (formRole === 'teacher' && selectedGrades.length === 0) {
+      alert('يرجى تحديد صف دراسي واحد على الأقل للمعلم!');
+      return;
+    }
+
+    // استنتاج المراحل بناء على الصفوف المختارة
+    const stagesOfSelectedGrades: SchoolStage[] = [];
+    (Object.keys(STAGES_CONFIG) as SchoolStage[]).forEach((st) => {
+      const hasAny = STAGES_CONFIG[st].grades.some((g) => selectedGrades.includes(g.id));
+      if (hasAny) stagesOfSelectedGrades.push(st);
+    });
 
     const newUser: UserProfile = {
       id: 'usr_' + Date.now(),
@@ -110,8 +146,16 @@ export default function App() {
       password: formPassword,
       role: formRole,
       ...(formRole === 'teacher'
-        ? { allowedStages: selectedStages }
-        : { stage: studentStage, grade: studentGrade, track: studentTrack }),
+        ? {
+            allowedGrades: selectedGrades,
+            allowedStages: stagesOfSelectedGrades,
+            allowedTracks: selectedTracks,
+          }
+        : {
+            stage: studentStage,
+            grade: studentGrade,
+            track: studentTrack,
+          }),
     };
 
     saveUser(newUser);
@@ -119,8 +163,9 @@ export default function App() {
     setFormName('');
     setFormUsername('');
     setFormPassword('');
-    setSelectedStages([]);
-    alert('تم إضافة الحساب بنجاح وتعيين الصلاحيات!');
+    setSelectedGrades([]);
+    setSelectedTracks(['arabic-a']);
+    alert('تم إضافة الحساب بنجاح وتعيين الصفوف والمسارات المحددة!');
   };
 
   const handleDeleteUser = (id: string) => {
@@ -130,13 +175,7 @@ export default function App() {
     }
   };
 
-  const toggleStage = (st: SchoolStage) => {
-    setSelectedStages((prev) =>
-      prev.includes(st) ? prev.filter((s) => s !== st) : [...prev, st]
-    );
-  };
-
-  // دوال المعلم لإدارة الأسئلة والأنشطة
+  // دوال المعلم لإدارة الأسئلة
   const addQuestion = () => {
     setQuestions([
       ...questions,
@@ -180,7 +219,6 @@ export default function App() {
     e.preventDefault();
     if (!currentUser || !actTitle) return;
 
-    // التحقق من تعبئة الإجابات الصحيحة
     for (let i = 0; i < questions.length; i++) {
       if (!questions[i].text.trim() || !questions[i].correctAnswer) {
         alert(`يرجى كتابة نص السؤال رقم (${i + 1}) وتحديد الإجابة الصحيحة له.`);
@@ -188,13 +226,21 @@ export default function App() {
       }
     }
 
+    // العثور على المرحلة التابع لها هذا الصف
+    let derivedStage: SchoolStage = 'primary';
+    (Object.keys(STAGES_CONFIG) as SchoolStage[]).forEach((st) => {
+      if (STAGES_CONFIG[st].grades.some((g) => g.id === actGrade)) {
+        derivedStage = st;
+      }
+    });
+
     const newActivity: Activity = {
       id: 'act_' + Date.now(),
       title: actTitle,
       passage: actPassage,
       teacherId: currentUser.id,
       teacherName: currentUser.name,
-      stage: actStage,
+      stage: derivedStage,
       grade: actGrade,
       track: actTrack,
       questions,
@@ -215,7 +261,7 @@ export default function App() {
         points: 5,
       },
     ]);
-    alert('تم نشر النشاط التفاعلي لطلاب الصف المحدد بنجاح!');
+    alert('تم نشر النشاط التفاعلي لطلاب الصف والمسار المحدد بنجاح!');
     setTeacherTab('activities');
   };
 
@@ -249,6 +295,15 @@ export default function App() {
     setSubmissions(getSubmissions());
     setLastScore({ score: earnedPoints, total: totalPoints });
     setQuizFinished(true);
+  };
+
+  // Helper لجلب اسم الصف بالعربية
+  const getGradeLabel = (gId: GradeLevel): string => {
+    for (const st of Object.values(STAGES_CONFIG)) {
+      const found = st.grades.find((g) => g.id === gId);
+      if (found) return found.labelAr;
+    }
+    return gId;
   };
 
   // ================= 1. شاشة تسجيل الدخول =================
@@ -345,10 +400,10 @@ export default function App() {
           </button>
         </header>
 
-        <main className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* استمارة إضافة الحسابات */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs sticky top-24">
+        <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* استمارة إضافة الحسابات وتحديد الصلاحيات */}
+          <div className="lg:col-span-5">
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <h2 className="font-bold text-base mb-4 flex items-center gap-2 text-slate-800">
                 <Plus className="w-5 h-5 text-emerald-600" /> إضافة مستخدم جديد
               </h2>
@@ -384,7 +439,7 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    placeholder="مثال: أ/ محمد أحمد"
+                    placeholder={formRole === 'teacher' ? 'مثال: أ/ محمد أحمد' : 'مثال: أحمد خالد'}
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -397,7 +452,7 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="teacher1"
+                      placeholder={formRole === 'teacher' ? 'teacher1' : 'student1'}
                       value={formUsername}
                       onChange={(e) => setFormUsername(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -416,31 +471,78 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* صلاحيات المعلم الدقيقة (صفوف فردية + مسارات) */}
                 {formRole === 'teacher' && (
-                  <div className="pt-3 border-t border-slate-100 space-y-3">
-                    <label className="block text-xs font-bold text-slate-700">
-                      المراحل المسموح للمعلم بدخولها فقط:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
+                  <div className="pt-4 border-t border-slate-100 space-y-4">
+                    {/* اختيار المسار */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">
+                        المسار اللغوي المصرح به للمعلم:
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
                         <button
-                          key={st}
                           type="button"
-                          onClick={() => toggleStage(st)}
-                          className={`p-2 rounded-xl border text-right text-[11px] font-semibold transition flex items-center justify-between ${
-                            selectedStages.includes(st)
+                          onClick={() => toggleTrack('arabic-a')}
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                            selectedTracks.includes('arabic-a')
                               ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                              : 'bg-white border-slate-200 text-slate-600'
                           }`}
                         >
-                          <span>{STAGES_CONFIG[st].nameAr}</span>
-                          {selectedStages.includes(st) && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                          <span>ناطقين (Arabic A)</span>
+                          {selectedTracks.includes('arabic-a') && <Check className="w-3.5 h-3.5 text-emerald-600" />}
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          onClick={() => toggleTrack('arabic-b')}
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                            selectedTracks.includes('arabic-b')
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                              : 'bg-white border-slate-200 text-slate-600'
+                          }`}
+                        >
+                          <span>غير ناطقين (Arabic B)</span>
+                          {selectedTracks.includes('arabic-b') && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* اختيار الصفوف الفردية مصنفة حسب المرحلة */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">
+                        الصفوف المصرح له بتدريسها (حدد الصفوف بدقة):
+                      </label>
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-1 border border-slate-100 p-2 rounded-2xl bg-slate-50/50">
+                        {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
+                          <div key={st} className="space-y-1">
+                            <span className="text-[11px] font-bold text-slate-500 block">
+                              {STAGES_CONFIG[st].nameAr}
+                            </span>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {STAGES_CONFIG[st].grades.map((g) => (
+                                <button
+                                  key={g.id}
+                                  type="button"
+                                  onClick={() => toggleGrade(g.id)}
+                                  className={`p-2 rounded-lg border text-right text-[11px] font-semibold transition flex items-center justify-between ${
+                                    selectedGrades.includes(g.id)
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span>{g.labelAr}</span>
+                                  {selectedGrades.includes(g.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
 
+                {/* خيارات صف ومرحلة الطالب */}
                 {formRole === 'student' && (
                   <div className="pt-3 border-t border-slate-100 space-y-3">
                     <div>
@@ -489,7 +591,7 @@ export default function App() {
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-md shadow-emerald-600/20"
                 >
                   حفظ وتأكيد الحساب
                 </button>
@@ -498,8 +600,8 @@ export default function App() {
           </div>
 
           {/* استعراض القوائم */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
+          <div className="lg:col-span-7">
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <div className="flex gap-2 mb-6 pb-4 border-b border-slate-100">
                 <button
                   onClick={() => setAdminTab('teachers')}
@@ -525,25 +627,36 @@ export default function App() {
                     <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة معلمين حتى الآن.</p>
                   ) : (
                     teachersList.map((t) => (
-                      <div key={t.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div key={t.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                           <h4 className="font-bold text-sm text-slate-800">{t.name}</h4>
                           <span className="text-[11px] text-slate-500">اسم المستخدم: <b>{t.username}</b> • كلمة السر: <b>{t.password}</b></span>
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {t.allowedStages && t.allowedStages.length > 0 ? (
-                              t.allowedStages.map((st) => (
-                                <span key={st} className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
-                                  {STAGES_CONFIG[st]?.nameAr}
+                          
+                          {/* عرض المسارات المخصصة */}
+                          <div className="flex gap-1.5 mt-2">
+                            {t.allowedTracks?.map((tr) => (
+                              <span key={tr} className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
+                                {tr === 'arabic-a' ? 'ناطقين (Arabic A)' : 'غير ناطقين (Arabic B)'}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* عرض الصفوف المحددة بدقة */}
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {t.allowedGrades && t.allowedGrades.length > 0 ? (
+                              t.allowedGrades.map((gId) => (
+                                <span key={gId} className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
+                                  {getGradeLabel(gId)}
                                 </span>
                               ))
                             ) : (
-                              <span className="text-[10px] text-rose-500 font-medium">لم يتم تحديد مراحل بعد</span>
+                              <span className="text-[10px] text-rose-500 font-medium">لم يتم تحديد صفوف بعد</span>
                             )}
                           </div>
                         </div>
                         <button
                           onClick={() => handleDeleteUser(t.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                          className="self-end sm:self-center p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -559,7 +672,7 @@ export default function App() {
                     <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة طلاب حتى الآن.</p>
                   ) : (
                     studentsList.map((st) => (
-                      <div key={st.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div key={st.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
                         <div>
                           <h4 className="font-bold text-sm text-slate-800">{st.name}</h4>
                           <span className="text-[11px] text-slate-500">اسم الدخول: <b>{st.username}</b> • كلمة السر: <b>{st.password}</b></span>
@@ -568,7 +681,7 @@ export default function App() {
                               {st.stage ? STAGES_CONFIG[st.stage]?.nameAr : ''}
                             </span>
                             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md text-[10px] font-bold">
-                              {st.grade}
+                              {getGradeLabel(st.grade!)}
                             </span>
                             <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">
                               {st.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
@@ -595,7 +708,8 @@ export default function App() {
 
   // ================= 3. واجهة المعلم (Teacher Portal) =================
   if (currentUser.role === 'teacher') {
-    const allowedStages = currentUser.allowedStages || [];
+    const teacherAllowedGrades = currentUser.allowedGrades || [];
+    const teacherAllowedTracks = currentUser.allowedTracks || ['arabic-a'];
     const teacherActivities = activities.filter((a) => a.teacherId === currentUser.id);
 
     return (
@@ -613,18 +727,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-            >
-              <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
-            </button>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+          >
+            <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
+          </button>
         </header>
 
         <main className="max-w-6xl mx-auto px-4 py-8">
-          {/* شريط التبويبات للمعلم */}
+          {/* تبويبات المعلم */}
           <div className="flex gap-3 mb-6">
             <button
               onClick={() => setTeacherTab('activities')}
@@ -656,58 +768,46 @@ export default function App() {
           {teacherTab === 'create' && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs max-w-3xl mx-auto">
               <h2 className="font-extrabold text-lg mb-1 flex items-center gap-2 text-slate-800">
-                <Sparkles className="w-5 h-5 text-emerald-600" /> بناء نشاط تعليمي تفاعلي
+                <Sparkles className="w-5 h-5 text-emerald-600" /> بناء نشاط تفاعلي جديد
               </h2>
               <p className="text-xs text-slate-500 mb-6">
-                صمم أسئلة تفاعلية لطلاب صفوفك المعتمدة ليتم حلها مباشرة.
+                سيظهر هذا النشاط لصفوفك ومساراتك المعتمدة فقط.
               </p>
 
-              {allowedStages.length === 0 ? (
+              {teacherAllowedGrades.length === 0 ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs">
-                  تنبيه: لم يقم المشرف العام بتعيين أي مراحل دراسية لحسابك بعد. يرجى مراجعة إدارة المنصة.
+                  تنبيه: لم يحدد لك المشرف العام صفوفاً دراسية بعد. يرجى التواصل مع الإدارة.
                 </div>
               ) : (
                 <form onSubmit={handleSaveActivity} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">المرحلة الدراسية المصرحة</label>
-                      <select
-                        value={actStage}
-                        onChange={(e) => {
-                          const s = e.target.value as SchoolStage;
-                          setActStage(s);
-                          setActGrade(STAGES_CONFIG[s].grades[0].id);
-                        }}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-                      >
-                        {allowedStages.map((st) => (
-                          <option key={st} value={st}>{STAGES_CONFIG[st]?.nameAr}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">الصف المستهدف</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">الصف المستهدف (المصرح لك به فقط)</label>
                       <select
                         value={actGrade}
                         onChange={(e) => setActGrade(e.target.value as GradeLevel)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
                       >
-                        {STAGES_CONFIG[actStage]?.grades.map((g) => (
-                          <option key={g.id} value={g.id}>{g.labelAr}</option>
+                        {teacherAllowedGrades.map((gId) => (
+                          <option key={gId} value={gId}>
+                            {getGradeLabel(gId)}
+                          </option>
                         ))}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">المسار اللغوي</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">المسار اللغوي المصرح لك به</label>
                       <select
                         value={actTrack}
                         onChange={(e) => setActTrack(e.target.value as ArabicTrack)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
                       >
-                        <option value="arabic-a">الناطقين (Arabic A)</option>
-                        <option value="arabic-b">غير الناطقين (Arabic B)</option>
+                        {teacherAllowedTracks.map((tr) => (
+                          <option key={tr} value={tr}>
+                            {tr === 'arabic-a' ? 'ناطقين باللغة العربية (Arabic A)' : 'ناطقين بغيرها (Arabic B)'}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -717,7 +817,7 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="مثال: نشاط تدريبي على علامات الإعراب الأصلية والفرعية"
+                      placeholder="مثال: نشاط تدريبي على كان وأخواتها"
                       value={actTitle}
                       onChange={(e) => setActTitle(e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -728,7 +828,7 @@ export default function App() {
                     <label className="block text-xs font-bold text-slate-700 mb-1">نص قرائي أو قصة (اختياري)</label>
                     <textarea
                       rows={3}
-                      placeholder="يمكنك كتابة نص قصير للقراءة والفهم ليجيب الطالب عن الأسئلة بناءً عليه..."
+                      placeholder="نص أو قصة ليقرأها الطالب قبل الأسئلة..."
                       value={actPassage}
                       onChange={(e) => setActPassage(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -738,7 +838,7 @@ export default function App() {
                   {/* بناء الأسئلة */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-slate-800">قائمة الأسئلة التفاعلية</h3>
+                      <h3 className="font-bold text-sm text-slate-800">الأسئلة التفاعلية</h3>
                       <button
                         type="button"
                         onClick={addQuestion}
@@ -776,7 +876,7 @@ export default function App() {
 
                         <div className="space-y-2 pt-2">
                           <label className="block text-[11px] font-bold text-slate-600">
-                            خيارات الإجابة (اضغط على الدائرة لاختيار الإجابة الصحيحة):
+                            الخيارات (اختر الدائرة للإجابة الصحيحة):
                           </label>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {q.options?.map((opt, optIndex) => (
@@ -807,7 +907,7 @@ export default function App() {
                     type="submit"
                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm transition shadow-md shadow-emerald-600/20"
                   >
-                    اعتماد ونشر النشاط للطلاب
+                    اعتماد ونشر النشاط
                   </button>
                 </form>
               )}
@@ -821,7 +921,7 @@ export default function App() {
                 <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80">
                   <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <h3 className="font-bold text-slate-700 text-sm">لا توجد أنشطة منشورة بعد</h3>
-                  <p className="text-xs text-slate-400 mt-1 mb-4">ابدأ الآن ببناء أول نشاط تفاعلي لطلابك.</p>
+                  <p className="text-xs text-slate-400 mt-1 mb-4">أنشئ نشاطك الأول لطلاب صفوفك الآن.</p>
                   <button
                     onClick={() => setTeacherTab('create')}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
@@ -835,23 +935,20 @@ export default function App() {
                     <div key={act.id} className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
                       <div>
                         <div className="flex items-center gap-2 mb-2">
-                          <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200">
-                            {STAGES_CONFIG[act.stage]?.nameAr}
-                          </span>
-                          <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold">
-                            {act.grade}
+                          <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-200">
+                            {getGradeLabel(act.grade)}
                           </span>
                           <span className="px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-lg text-[10px] font-bold">
                             {act.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
                           </span>
                         </div>
                         <h3 className="font-bold text-slate-800 text-sm mb-1">{act.title}</h3>
-                        <p className="text-xs text-slate-400 mb-4">عدد الأسئلة: {act.questions.length} سؤال • تاريخ النشر: {act.createdAt}</p>
+                        <p className="text-xs text-slate-400 mb-4">عدد الأسئلة: {act.questions.length} سؤال • {act.createdAt}</p>
                       </div>
 
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                         <span className="text-[11px] text-slate-500 font-medium">
-                          إجابات الطلاب المسجلة: <b>{submissions.filter(s => s.activityId === act.id).length}</b>
+                          إجابات الطلاب: <b>{submissions.filter(s => s.activityId === act.id).length}</b>
                         </span>
                         <button
                           onClick={() => {
@@ -875,7 +972,7 @@ export default function App() {
           {/* تبويب: رصد الدرجات */}
           {teacherTab === 'grades' && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-              <h2 className="font-extrabold text-base mb-4 text-slate-800">قائمة إجابات ودرجات الطلاب</h2>
+              <h2 className="font-extrabold text-base mb-4 text-slate-800">قائمة درجات وحلول الطلاب</h2>
               {submissions.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة حتى الآن.</p>
               ) : (
@@ -923,7 +1020,7 @@ export default function App() {
   // ================= 4. واجهة الطالب (Student Portal) =================
   if (currentUser.role === 'student') {
     const studentActivities = activities.filter(
-      (a) => a.stage === currentUser.stage && a.grade === currentUser.grade && a.track === currentUser.track
+      (a) => a.grade === currentUser.grade && a.track === currentUser.track
     );
 
     return (
@@ -936,7 +1033,7 @@ export default function App() {
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة الطالب</h1>
               <p className="text-xs text-slate-500 font-medium">
-                الطالب: <b className="text-slate-800">{currentUser.name}</b> • {STAGES_CONFIG[currentUser.stage!]?.nameAr} ({currentUser.grade})
+                الطالب: <b className="text-slate-800">{currentUser.name}</b> • {getGradeLabel(currentUser.grade!)} ({currentUser.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'})
               </p>
             </div>
           </div>
@@ -950,7 +1047,6 @@ export default function App() {
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-8">
-          {/* وضع حل النشاط */}
           {selectedActivityToSolve ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
               {!quizFinished ? (
