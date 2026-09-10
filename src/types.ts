@@ -1,5 +1,5 @@
-// أنواع المستخدمين
-export type UserRole = 'super_admin' | 'teacher' | 'student';
+// أدوار المستخدمين في المنظومة
+export type UserRole = 'super_admin' | 'hod' | 'teacher' | 'student';
 
 // مسارات اللغة العربية
 export type ArabicTrack = 'arabic-a' | 'arabic-b'; // A: ناطقين، B: غير ناطقين
@@ -7,24 +7,30 @@ export type ArabicTrack = 'arabic-a' | 'arabic-b'; // A: ناطقين، B: غي�
 // المراحل التعليمية
 export type SchoolStage = 'kg' | 'primary' | 'middle' | 'high';
 
-// قائمة الصفوف كاملة
+// قائمة الصفوف الدراسية كاملة
 export type GradeLevel =
   | 'kg'
   | 'grade-1' | 'grade-2' | 'grade-3' | 'grade-4' | 'grade-5'
   | 'grade-6' | 'grade-7' | 'grade-8'
   | 'grade-9' | 'grade-10' | 'grade-11' | 'grade-12';
 
-// بيانات المستخدم الأساسية
+// بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
   name: string;
   username: string;
   role: UserRole;
   password?: string;
-  // بيانات المعلم
+  
+  // تتبع النشاط والزيارات
+  loginCount?: number;
+  lastLogin?: string;
+
+  // صلاحيات رئيس القسم والمعلم
   allowedStages?: SchoolStage[];
   allowedGrades?: GradeLevel[];
   allowedTracks?: ArabicTrack[];
+
   // بيانات الطالب
   stage?: SchoolStage;
   grade?: GradeLevel;
@@ -32,14 +38,14 @@ export interface UserProfile {
   teacherId?: string;
 }
 
-// أنواع الأسئلة في الأنشطة التفاعلية
+// أنواع الأسئلة
 export type QuestionType = 'multiple_choice' | 'true_false' | 'fill_blank';
 
 export interface Question {
   id: string;
   text: string;
   type: QuestionType;
-  options?: string[]; // للخيارات المتعددة
+  options?: string[];
   correctAnswer: string;
   points: number;
 }
@@ -49,7 +55,7 @@ export interface Activity {
   id: string;
   title: string;
   description?: string;
-  passage?: string; // نص قرائي أو قصة إذا وُجدت
+  passage?: string;
   teacherId: string;
   teacherName: string;
   stage: SchoolStage;
@@ -59,20 +65,22 @@ export interface Activity {
   createdAt: string;
 }
 
-// رصد نتيجة الطالب
+// رصد درجات الطلاب
 export interface StudentSubmission {
   id: string;
   activityId: string;
   activityTitle: string;
   studentId: string;
   studentName: string;
+  grade?: GradeLevel;
+  track?: ArabicTrack;
   score: number;
   totalPoints: number;
   submittedAt: string;
   answers: Record<string, string>;
 }
 
-// ثوابت المسميات بالعربية
+// ثوابت المراحل والصفوف
 export const STAGES_CONFIG: Record<SchoolStage, { nameAr: string; grades: { id: GradeLevel; labelAr: string }[] }> = {
   kg: {
     nameAr: 'مرحلة رياض الأطفال',
