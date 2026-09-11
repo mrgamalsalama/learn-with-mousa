@@ -1777,7 +1777,11 @@ export default function App() {
     );
 
     const studentAssignedBooks = books.filter(
-      (b) => b.assignedGrades?.includes(currentUser.grade!) && b.assignedTracks?.includes(currentUser.track!)
+      (b) => 
+        b.assignedGrades?.includes(currentUser.grade!) && 
+        b.assignedTracks?.includes(currentUser.track!) &&
+        !b.coverUrl.includes('.svg') &&
+        !b.title.includes('حساب')
     );
 
     return (
