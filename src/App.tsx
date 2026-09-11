@@ -99,17 +99,16 @@ export default function App() {
 
   useEffect(() => {
     setUser(getCurrentUser());
-    const loadedUsers = getUsers();
-    setUsers(loadedUsers);
+    
+    // سحب المستخدمين والأنشطة والدرجات من سحابة Supabase
+    syncUsersFromCloud().then(cloudUsers => {
+      setUsers(cloudUsers);
+    });
+
     setActivities(getActivities());
     setSubmissions(getSubmissions());
     setStoryBank(getStoryBank());
     setBooks(getBooksRepository());
-
-    const firstStudent = loadedUsers.find(u => u.role === 'student');
-    if (firstStudent) {
-      setSelectedStudentId(firstStudent.id);
-    }
   }, []);
 
   const openReader = (book: BookItem) => {
