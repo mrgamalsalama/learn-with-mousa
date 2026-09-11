@@ -12,7 +12,8 @@ import {
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
-  getStoryBank, getBooksRepository, updateBookAssignment
+  getStoryBank, getBooksRepository, updateBookAssignment,
+  syncUsersFromCloud
 } from './storage';
 
 export default function App() {
