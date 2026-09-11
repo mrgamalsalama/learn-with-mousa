@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import {
-  ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2,
-  Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check,
-  Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock,
-  Library, Download, Eye, CheckSquare, ExternalLink, X, ChevronRight, ChevronLeft
+import { 
+  ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
+  Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
+  Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
+  Library, Download, Eye, CheckSquare, X
 } from 'lucide-react';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
@@ -26,11 +26,17 @@ export default function App() {
   // تبويبات لوحة المشرف العام
   const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
 
+  // تبويبات لوحة رئيس القسم
+  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library'>('overview');
+
   // تبويبات لوحة المعلم
   const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades' | 'library'>('activities');
 
   // تبويبات لوحة الطالب
   const [studentTab, setStudentTab] = useState<'activities' | 'library'>('activities');
+
+  // تبويبات لوحة ولي الأمر
+  const [parentTab, setParentTab] = useState<'progress' | 'library'>('progress');
 
   // مرشح تصفية الأقسام والمكتبات
   const [selectedSection, setSelectedSection] = useState<string>('all');
@@ -38,14 +44,13 @@ export default function App() {
   // نافذة بنك القصص داخل استمارة النشاط
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
 
-  // نافذة إسناد الكتاب لصفوف المعلم
+  // نافذة إسناد الكتاب لصفوف المعلم / رئيس القسم
   const [selectedBookForAssign, setSelectedBookForAssign] = useState<BookItem | null>(null);
   const [tempAssignedGrades, setTempAssignedGrades] = useState<GradeLevel[]>([]);
   const [tempAssignedTracks, setTempAssignedTracks] = useState<ArabicTrack[]>(['arabic-a']);
 
   // عارض الكتاب التفاعلي المباشر (Direct Reader State)
   const [activeReadingBook, setActiveReadingBook] = useState<BookItem | null>(null);
-  const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
   // بيانات تسجيل الدخول
   const [loginUsername, setLoginUsername] = useState('');
@@ -109,12 +114,10 @@ export default function App() {
 
   const openReader = (book: BookItem) => {
     setActiveReadingBook(book);
-    setCurrentPageIndex(0);
   };
 
   const closeReader = () => {
     setActiveReadingBook(null);
-    setCurrentPageIndex(0);
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -195,7 +198,7 @@ export default function App() {
     );
     setBooks(getBooksRepository());
     setSelectedBookForAssign(null);
-    alert('تم تحديث إسناد الكتاب لصفوفك بنجاح!');
+    alert('تم تحديث إسناد الكتاب للصفوف بنجاح!');
   };
 
   const handleImportStory = (story: StoryBankItem) => {
@@ -402,7 +405,96 @@ export default function App() {
     return gId;
   };
 
-  // المكون الموحد للقارئ التفاعلي المدمج الخالي من الحجب
+  // المكون الموحد لبطاقة الكتاب بأبعاد الغلاف الكاملة وغير المقصوصة
+  const renderBookCard = (
+    book: BookItem, 
+    role: 'teacher' | 'hod' | 'student' | 'parent',
+    allowedGrades?: GradeLevel[]
+  ) => {
+    const isGenericTitle = !book.title || book.title.startsWith('قصة مصورة');
+    const isAssigned = allowedGrades ? book.assignedGrades?.some(g => allowedGrades.includes(g)) : false;
+
+    return (
+      <div 
+        key={book.id} 
+        className="bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+      >
+        {/* إطار الغلاف بنسبة أبعاد الكتب الطبيعية الكاملة (aspect 3/4) */}
+        <div className="relative aspect-[3/4] w-full bg-slate-900/5 overflow-hidden group flex items-center justify-center p-2">
+          <img 
+            src={book.coverUrl} 
+            alt={book.title} 
+            loading="lazy"
+            className="w-full h-full object-contain drop-shadow-md rounded-xl group-hover:scale-105 transition duration-300"
+          />
+          <div className="absolute top-3 right-3 flex flex-col gap-1">
+            <span className="px-2.5 py-1 bg-emerald-700/90 backdrop-blur-xs text-white rounded-lg text-[10px] font-bold shadow-xs">
+              {book.section || 'مكتبة بوك تايم'}
+            </span>
+          </div>
+        </div>
+
+        {/* بيانات الكتاب وأزرار الإجراءات */}
+        <div className="p-4 flex-1 flex flex-col justify-between text-right" dir="rtl">
+          <div>
+            {!isGenericTitle && (
+              <h3 className="font-extrabold text-sm text-slate-800 mb-1 line-clamp-1">
+                {book.title}
+              </h3>
+            )}
+            <span className="text-[11px] text-slate-400 block mb-2 font-medium">
+              {book.author || 'مؤسسة هنداوي (بوك تايم)'}
+            </span>
+
+            {/* إظهار الصفوف المسندة لغير الطلاب */}
+            {role !== 'student' && (
+              <div className="mb-3">
+                <span className="text-[10px] text-slate-400 font-semibold block mb-1">الصفوف المسند إليها:</span>
+                {book.assignedGrades && book.assignedGrades.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {book.assignedGrades.map(gId => (
+                      <span key={gId} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-bold">
+                        {getGradeLabel(gId)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-rose-500 font-medium">غير مسند لأي صف بعد</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 pt-3 border-t border-slate-100">
+            {(role === 'teacher' || role === 'hod') && (
+              <button
+                type="button"
+                onClick={() => openAssignModal(book)}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  isAssigned 
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100' 
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                }`}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                {isAssigned ? 'تعديل إسناد الصفوف' : 'إسناد الكتاب لصفوفي'}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => openReader(book)}
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-slate-500" /> معاينة وقراءة القصة
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // المكون الموحد للقارئ التفاعلي المباشر
   const renderSharedReader = () => {
     if (!activeReadingBook) return null;
 
@@ -422,7 +514,6 @@ export default function App() {
     return (
       <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50">
         <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl relative overflow-hidden">
-          {/* زر الإغلاق */}
           <button
             onClick={closeReader}
             className="absolute top-4 left-4 p-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-xl transition"
@@ -431,16 +522,17 @@ export default function App() {
             <X className="w-5 h-5" />
           </button>
 
-          {/* صورة الغلاف */}
-          <div className="w-48 h-64 mx-auto rounded-2xl overflow-hidden shadow-2xl mb-5 border border-slate-700/80 bg-slate-800">
+          <div className="aspect-[3/4] w-44 mx-auto rounded-2xl overflow-hidden shadow-2xl mb-5 border border-slate-700/80 bg-slate-800 p-2 flex items-center justify-center">
             <img
               src={activeReadingBook.coverUrl}
               alt={activeReadingBook.title}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain rounded-xl"
             />
           </div>
 
-          <h3 className="text-lg font-black text-white mb-1">{activeReadingBook.title}</h3>
+          <h3 className="text-lg font-black text-white mb-1">
+            {!activeReadingBook.title.startsWith('قصة مصورة') ? activeReadingBook.title : 'معاينة القصة المصورة'}
+          </h3>
           <p className="text-xs text-emerald-400 font-medium mb-6">
             {activeReadingBook.author} • {activeReadingBook.category || 'قصص تفاعلية'}
           </p>
@@ -462,7 +554,7 @@ export default function App() {
               }}
               className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-bold transition"
             >
-              أنهيت القراءة (العودة للمنصة والأنشطة)
+              العودة للمنصة والأنشطة
             </button>
           </div>
         </div>
@@ -1020,80 +1112,149 @@ export default function App() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                <Users className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-500 font-medium">معلمو القسم</span>
-                <h3 className="text-xl font-bold text-slate-800">{departmentTeachers.length} معلم</h3>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                <ActivityIcon className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-500 font-medium">إجمالي الأنشطة المنشورة</span>
-                <h3 className="text-xl font-bold text-slate-800">
-                  {activities.filter(a => hodGrades.includes(a.grade)).length} نشاط
-                </h3>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
-                <BarChart3 className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-500 font-medium">حلول الطلاب</span>
-                <h3 className="text-xl font-bold text-slate-800">{departmentSubmissions.length} حل مكتمل</h3>
-              </div>
-            </div>
+          {/* تبويبات رئيس القسم */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setHodTab('overview')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'overview' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" /> النظرة العامة والتقارير
+            </button>
+            <button
+              onClick={() => setHodTab('library')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'library' ? 'bg-emerald-800 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <Library className="w-4 h-4 text-emerald-400" /> المستودع القرائي وإسناد الكتب ({filteredBooks.length})
+            </button>
           </div>
 
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-            <h2 className="font-bold text-base mb-2 text-slate-800 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-emerald-600" /> تقرير نشاط وزيارات المعلمين
-            </h2>
-            <div className="overflow-x-auto mt-4">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-400">
-                    <th className="pb-3 font-semibold">اسم المعلم</th>
-                    <th className="pb-3 font-semibold">الصفوف المسندة</th>
-                    <th className="pb-3 font-semibold">الأنشطة المنشورة</th>
-                    <th className="pb-3 font-semibold">عدد مرات الدخول</th>
-                    <th className="pb-3 font-semibold">آخر تسجيل دخول</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {departmentTeachers.map((t) => {
-                    const actCount = activities.filter((a) => a.teacherId === t.id).length;
-                    return (
-                      <tr key={t.id} className="hover:bg-slate-50">
-                        <td className="py-3 font-bold text-slate-800">{t.name}</td>
-                        <td className="py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {t.allowedGrades?.map((gId) => (
-                              <span key={gId} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px]">
-                                {getGradeLabel(gId)}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3 font-bold text-emerald-600">{actCount} نشاط</td>
-                        <td className="py-3 font-bold text-indigo-600">{t.loginCount || 0} زيارة</td>
-                        <td className="py-3 text-slate-500">{t.lastLogin || 'لم يسجل دخول بعد'}</td>
+          {hodTab === 'overview' && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">معلمو القسم</span>
+                    <h3 className="text-xl font-bold text-slate-800">{departmentTeachers.length} معلم</h3>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                    <ActivityIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">إجمالي الأنشطة المنشورة</span>
+                    <h3 className="text-xl font-bold text-slate-800">
+                      {activities.filter(a => hodGrades.includes(a.grade)).length} نشاط
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                    <BarChart3 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">حلول الطلاب</span>
+                    <h3 className="text-xl font-bold text-slate-800">{departmentSubmissions.length} حل مكتمل</h3>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+                <h2 className="font-bold text-base mb-2 text-slate-800 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-emerald-600" /> تقرير نشاط وزيارات المعلمين
+                </h2>
+                <div className="overflow-x-auto mt-4">
+                  <table className="w-full text-right text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400">
+                        <th className="pb-3 font-semibold">اسم المعلم</th>
+                        <th className="pb-3 font-semibold">الصفوف المسندة</th>
+                        <th className="pb-3 font-semibold">الأنشطة المنشورة</th>
+                        <th className="pb-3 font-semibold">عدد مرات الدخول</th>
+                        <th className="pb-3 font-semibold">آخر تسجيل دخول</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {departmentTeachers.map((t) => {
+                        const actCount = activities.filter((a) => a.teacherId === t.id).length;
+                        return (
+                          <tr key={t.id} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-800">{t.name}</td>
+                            <td className="py-3">
+                              <div className="flex flex-wrap gap-1">
+                                {t.allowedGrades?.map((gId) => (
+                                  <span key={gId} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px]">
+                                    {getGradeLabel(gId)}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-3 font-bold text-emerald-600">{actCount} نشاط</td>
+                            <td className="py-3 font-bold text-indigo-600">{t.loginCount || 0} زيارة</td>
+                            <td className="py-3 text-slate-500">{t.lastLogin || 'لم يسجل دخول بعد'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {hodTab === 'library' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Library className="w-5 h-5 text-emerald-600" /> المستودع القرائي المركزي (إشراف القسم)
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    يمكنك اعتماد القصص وإسنادها لصفوف قسمك لضمان توافقها مع الخطة التعليمية.
+                  </p>
+                </div>
+                <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                  إجمالي الكتب: {filteredBooks.length} كتاب
+                </div>
+              </div>
+
+              {/* أزرار تصفية الأقسام */}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedSection('all')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    selectedSection === 'all' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  جميع الأقسام ({books.length})
+                </button>
+                {availableSections.filter(s => s !== 'all').map(sec => (
+                  <button
+                    key={sec}
+                    onClick={() => setSelectedSection(sec)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                      selectedSection === sec ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    📚 {sec}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {filteredBooks.map((book) => renderBookCard(book, 'hod', hodGrades))}
+              </div>
             </div>
-          </div>
+          )}
         </main>
         {renderSharedReader()}
       </div>
@@ -1204,155 +1365,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredBooks.map((book) => {
-                  const isAssigned = book.assignedGrades?.some(g => teacherAllowedGrades.includes(g));
-                  return (
-                    <div key={book.id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
-                      <div className="relative h-48 bg-slate-100 overflow-hidden group">
-                        <img 
-                          src={book.coverUrl} 
-                          alt={book.title} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                        />
-                        <div className="absolute top-2 right-2 flex flex-col gap-1">
-                          <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-bold shadow-xs">
-                            {book.section || 'مكتبة بوك تايم'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h3 className="font-extrabold text-sm text-slate-800 mb-1 line-clamp-1">{book.title}</h3>
-                          <span className="text-[11px] text-slate-400 block mb-3">{book.author}</span>
-
-                          <div className="mb-3">
-                            <span className="text-[10px] text-slate-400 font-semibold block mb-1">الصفوف المسند إليها:</span>
-                            {book.assignedGrades && book.assignedGrades.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {book.assignedGrades.map(gId => (
-                                  <span key={gId} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-bold">
-                                    {getGradeLabel(gId)}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-rose-500 font-medium">غير مسند لأي صف بعد</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 pt-3 border-t border-slate-100">
-                          <button
-                            type="button"
-                            onClick={() => openAssignModal(book)}
-                            className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                              isAssigned 
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
-                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                            }`}
-                          >
-                            <CheckSquare className="w-3.5 h-3.5" />
-                            {isAssigned ? 'تعديل إسناد الصفوف' : 'إسناد الكتاب لصفوفي'}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => openReader(book)}
-                            className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-500" /> معاينة وقراءة الكتاب
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
-          {selectedBookForAssign && (
-            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-800">إسناد الكتاب لطلابك</h3>
-                    <span className="text-xs text-emerald-700 font-semibold">{selectedBookForAssign.title}</span>
-                  </div>
-                  <button onClick={() => setSelectedBookForAssign(null)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-2">
-                      اختر الصفوف المصرح لك بها لتظهر القصة في مكتبتهم:
-                    </label>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {teacherAllowedGrades.map((gId) => (
-                        <button
-                          key={gId}
-                          type="button"
-                          onClick={() => toggleAssignGrade(gId)}
-                          className={`w-full p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                            tempAssignedGrades.includes(gId)
-                              ? 'bg-emerald-600 text-white border-emerald-600'
-                              : 'bg-slate-50 text-slate-700 border-slate-200'
-                          }`}
-                        >
-                          <span>{getGradeLabel(gId)}</span>
-                          {tempAssignedGrades.includes(gId) && <Check className="w-3.5 h-3.5 text-white" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-2">المسار المتاح له القراءة:</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleAssignTrack('arabic-a')}
-                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                          tempAssignedTracks.includes('arabic-a') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <span>ناطقين</span>
-                        {tempAssignedTracks.includes('arabic-a') && <Check className="w-3 h-3 text-emerald-600" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleAssignTrack('arabic-b')}
-                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                          tempAssignedTracks.includes('arabic-b') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <span>غير ناطقين</span>
-                        {tempAssignedTracks.includes('arabic-b') && <Check className="w-3 h-3 text-emerald-600" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={saveBookAssignment}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
-                  >
-                    حفظ التعيين
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedBookForAssign(null)}
-                    className="px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
-                  >
-                    إلغاء
-                  </button>
-                </div>
+                {filteredBooks.map((book) => renderBookCard(book, 'teacher', teacherAllowedGrades))}
               </div>
             </div>
           )}
@@ -1652,6 +1665,92 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
+        {selectedBookForAssign && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-800">إسناد الكتاب للطلاب</h3>
+                  <span className="text-xs text-emerald-700 font-semibold">{selectedBookForAssign.title}</span>
+                </div>
+                <button onClick={() => setSelectedBookForAssign(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">
+                    اختر الصفوف المصرح لك بها لتظهر القصة في مكتبتهم:
+                  </label>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {teacherAllowedGrades.map((gId) => (
+                      <button
+                        key={gId}
+                        type="button"
+                        onClick={() => toggleAssignGrade(gId)}
+                        className={`w-full p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                          tempAssignedGrades.includes(gId)
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        <span>{getGradeLabel(gId)}</span>
+                        {tempAssignedGrades.includes(gId) && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">المسار المتاح له القراءة:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleAssignTrack('arabic-a')}
+                      className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                        tempAssignedTracks.includes('arabic-a') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <span>ناطقين</span>
+                      {tempAssignedTracks.includes('arabic-a') && <Check className="w-3 h-3 text-emerald-600" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleAssignTrack('arabic-b')}
+                      className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                        tempAssignedTracks.includes('arabic-b') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <span>غير ناطقين</span>
+                      {tempAssignedTracks.includes('arabic-b') && <Check className="w-3 h-3 text-emerald-600" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={saveBookAssignment}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                >
+                  حفظ التعيين
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookForAssign(null)}
+                  className="px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {renderSharedReader()}
       </div>
     );
@@ -1727,35 +1826,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {studentAssignedBooks.map((book) => (
-                    <div key={book.id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between">
-                      <div className="relative h-44 bg-slate-100 overflow-hidden">
-                        <img 
-                          src={book.coverUrl} 
-                          alt={book.title} 
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute top-2 right-2 px-2 py-0.5 bg-emerald-700/90 backdrop-blur-xs text-white rounded-md text-[9px] font-bold">
-                          {book.category || 'قصص تفاعلية'}
-                        </span>
-                      </div>
-
-                      <div className="p-3 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h3 className="font-extrabold text-xs text-slate-800 mb-0.5 line-clamp-1">{book.title}</h3>
-                          <span className="text-[10px] text-slate-400 block mb-3">{book.author}</span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => openReader(book)}
-                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
-                        >
-                          <BookOpen className="w-3.5 h-3.5" /> اقرأ القصة الآن
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                  {studentAssignedBooks.map((book) => renderBookCard(book, 'student'))}
                 </div>
               )}
             </div>
@@ -1898,6 +1969,12 @@ export default function App() {
     const totalPossible = studentSubs.reduce((acc, curr) => acc + curr.totalPoints, 0);
     const avgPercentage = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
 
+    const childAssignedBooks = student
+      ? books.filter(
+          (b) => b.assignedGrades?.includes(student.grade!) && b.assignedTracks?.includes(student.track!)
+        )
+      : [];
+
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
@@ -1926,73 +2003,120 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
-                  <div>
-                    <span className="text-xs text-emerald-600 font-bold block mb-1">بطاقة متابعة الطالب</span>
-                    <h2 className="text-xl font-black text-slate-800">{student.name}</h2>
-                    <span className="text-xs text-slate-500">
-                      {getGradeLabel(student.grade!)} • {student.track === 'arabic-a' ? 'مسار الناطقين بها' : 'مسار الناطقين بغيرها'}
-                    </span>
-                  </div>
+              {/* تبويبات ولي الأمر */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setParentTab('progress')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                    parentTab === 'progress' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <Award className="w-4 h-4" /> بطاقة متابعة الطالب
+                </button>
+                <button
+                  onClick={() => setParentTab('library')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                    parentTab === 'library' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <Library className="w-4 h-4 text-emerald-400" /> مكتبة وكتب الطالب ({childAssignedBooks.length})
+                </button>
+              </div>
 
-                  <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2.5 rounded-2xl border border-emerald-100">
-                    <Award className="w-8 h-8 text-emerald-600" />
-                    <div>
-                      <span className="text-[10px] text-emerald-800 font-bold block">معدل التحصيل العام</span>
-                      <span className="text-lg font-black text-emerald-700">{avgPercentage}%</span>
+              {parentTab === 'progress' && (
+                <>
+                  <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
+                      <div>
+                        <span className="text-xs text-emerald-600 font-bold block mb-1">بطاقة متابعة الطالب</span>
+                        <h2 className="text-xl font-black text-slate-800">{student.name}</h2>
+                        <span className="text-xs text-slate-500">
+                          {getGradeLabel(student.grade!)} • {student.track === 'arabic-a' ? 'مسار الناطقين بها' : 'مسار الناطقين بغيرها'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2.5 rounded-2xl border border-emerald-100">
+                        <Award className="w-8 h-8 text-emerald-600" />
+                        <div>
+                          <span className="text-[10px] text-emerald-800 font-bold block">معدل التحصيل العام</span>
+                          <span className="text-lg font-black text-emerald-700">{avgPercentage}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[11px] text-slate-400 block mb-1">الأنشطة المكتملة</span>
+                        <span className="text-base font-extrabold text-slate-800">{studentSubs.length}</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[11px] text-slate-400 block mb-1">مجموع الدرجات</span>
+                        <span className="text-base font-extrabold text-emerald-600">{totalEarned} نقطة</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 col-span-2 sm:col-span-1">
+                        <span className="text-[11px] text-slate-400 block mb-1">تقييم الأداء</span>
+                        <span className="text-xs font-bold text-slate-700">
+                          {avgPercentage >= 85 ? 'ممتاز ومتميز 🌟' : avgPercentage >= 70 ? 'جيد جداً 👍' : 'يحتاج متابعة وتدريب 🎯'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-[11px] text-slate-400 block mb-1">الأنشطة المكتملة</span>
-                    <span className="text-base font-extrabold text-slate-800">{studentSubs.length}</span>
+                  <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+                    <h3 className="font-extrabold text-sm mb-4 text-slate-800">سجل إجابات ودرجات الأنشطة المكتملة</h3>
+                    {studentSubs.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-8">لم يكمل الطالب أي نشاط حتى الآن.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {studentSubs.map((sub) => {
+                          const perc = Math.round((sub.score / sub.totalPoints) * 100) || 0;
+                          return (
+                            <div key={sub.id} className="py-3.5 flex items-center justify-between">
+                              <div>
+                                <h4 className="font-bold text-xs text-slate-800 mb-0.5">{sub.activityTitle}</h4>
+                                <span className="text-[10px] text-slate-400">تاريخ الإنجاز: {sub.submittedAt}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-xs text-slate-700">
+                                  {sub.score} / {sub.totalPoints}
+                                </span>
+                                <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold ${
+                                  perc >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {perc}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-[11px] text-slate-400 block mb-1">مجموع الدرجات</span>
-                    <span className="text-base font-extrabold text-emerald-600">{totalEarned} نقطة</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 col-span-2 sm:col-span-1">
-                    <span className="text-[11px] text-slate-400 block mb-1">تقييم الأداء</span>
-                    <span className="text-xs font-bold text-slate-700">
-                      {avgPercentage >= 85 ? 'ممتاز ومتميز 🌟' : avgPercentage >= 70 ? 'جيد جداً 👍' : 'يحتاج متابعة وتدريب 🎯'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                </>
+              )}
 
-              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-                <h3 className="font-extrabold text-sm mb-4 text-slate-800">سجل إجابات ودرجات الأنشطة المكتملة</h3>
-                {studentSubs.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-8">لم يكمل الطالب أي نشاط حتى الآن.</p>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {studentSubs.map((sub) => {
-                      const perc = Math.round((sub.score / sub.totalPoints) * 100) || 0;
-                      return (
-                        <div key={sub.id} className="py-3.5 flex items-center justify-between">
-                          <div>
-                            <h4 className="font-bold text-xs text-slate-800 mb-0.5">{sub.activityTitle}</h4>
-                            <span className="text-[10px] text-slate-400">تاريخ الإنجاز: {sub.submittedAt}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-bold text-xs text-slate-700">
-                              {sub.score} / {sub.totalPoints}
-                            </span>
-                            <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold ${
-                              perc >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {perc}%
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+              {parentTab === 'library' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="font-extrabold text-base text-slate-800">مكتبة ابنك ({student.name})</h2>
+                      <p className="text-xs text-slate-400">يمكنك مطالعة القصص المقررة على ابنك ومشاركته القراءة الممتعة.</p>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {childAssignedBooks.length === 0 ? (
+                    <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+                      <Library className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <h4 className="font-bold text-slate-700 text-sm">لا توجد كتب مسندة حالياً</h4>
+                      <p className="text-xs text-slate-400 mt-1">سيقوم معلم الصف بإسناد كتب جديدة قريباً.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {childAssignedBooks.map((book) => renderBookCard(book, 'parent'))}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </main>
