@@ -3,7 +3,7 @@ import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
-  Library, Download, Eye, CheckSquare, X
+  Library, Download, Eye, CheckSquare, X, Search
 } from 'lucide-react';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
@@ -42,8 +42,12 @@ export default function App() {
   // مرشح تصفية الأقسام والمكتبات
   const [selectedSection, setSelectedSection] = useState<string>('all');
 
-  // نافذة بنك القصص داخل استمارة النشاط
+  // نافذة بنك القصص الإسلامية داخل استمارة النشاط
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+
+  // نافذة اختيار قصة من مستودع الكتب التفاعلية لبناء نشاط
+  const [isBooksModalOpen, setIsBooksModalOpen] = useState(false);
+  const [bookSearchKeyword, setBookSearchKeyword] = useState('');
 
   // نافذة إسناد الكتاب لصفوف المعلم / رئيس القسم
   const [selectedBookForAssign, setSelectedBookForAssign] = useState<BookItem | null>(null);
@@ -101,7 +105,7 @@ export default function App() {
   useEffect(() => {
     setUser(getCurrentUser());
     
-    // سحب المستخدمين والأنشطة والدرجات من سحابة Supabase
+    // سحب المستخدمين سحابياً لضمان الوصول الفوري من أي متصفح
     syncUsersFromCloud().then(cloudUsers => {
       setUsers(cloudUsers);
     });
@@ -124,7 +128,6 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
 
-    // التأكد من جلب أحدث الحسابات من قاعدة البيانات السحابية أولاً
     let all = await syncUsersFromCloud();
     if (!all || all.length === 0) {
       all = getUsers();
@@ -217,6 +220,12 @@ export default function App() {
     alert(`تم سحب قصة «${story.title}» وأسئلتها بنجاح!`);
   };
 
+  const handleSelectBookForActivity = (book: BookItem) => {
+    setActTitle(`نشاط قراءة وفهم: ${book.title}`);
+    setActPassage(`📖 القصة المقررة: ${book.title}\nمؤلف القصة: ${book.author || 'مؤسسة هنداوي (بوك تايم)'}\nرابط قراءة القصة المباشر:\n${book.readUrl}\n\nيرجى فتح رابط القصة وقراءتها بعناية ثم الإجابة عن الأسئلة التالية:`);
+    setIsBooksModalOpen(false);
+  };
+
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formUsername || !formPassword) return;
@@ -265,7 +274,6 @@ export default function App() {
         : {}),
     };
 
-    // حفظ سحابي وانتظار اكتمال العملية
     await saveUser(newUser);
     const updatedUsers = await syncUsersFromCloud();
     setUsers(updatedUsers);
@@ -414,7 +422,6 @@ export default function App() {
     return gId;
   };
 
-  // المكون الموحد لبطاقة الكتاب بأبعاد الغلاف الكاملة وغير المقصوصة
   const renderBookCard = (
     book: BookItem, 
     role: 'teacher' | 'hod' | 'student' | 'parent',
@@ -428,7 +435,6 @@ export default function App() {
         key={book.id} 
         className="bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
       >
-        {/* إطار الغلاف بنسبة أبعاد الكتب الطبيعية الكاملة (aspect 3/4) */}
         <div className="relative aspect-[3/4] w-full bg-slate-900/5 overflow-hidden group flex items-center justify-center p-2">
           <img 
             src={book.coverUrl} 
@@ -443,7 +449,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* بيانات الكتاب وأزرار الإجراءات */}
         <div className="p-4 flex-1 flex flex-col justify-between text-right" dir="rtl">
           <div>
             {!isGenericTitle && (
@@ -455,7 +460,6 @@ export default function App() {
               {book.author || 'مؤسسة هنداوي (بوك تايم)'}
             </span>
 
-            {/* إظهار الصفوف المسندة لغير الطلاب */}
             {role !== 'student' && (
               <div className="mb-3">
                 <span className="text-[10px] text-slate-400 font-semibold block mb-1">الصفوف المسند إليها:</span>
@@ -503,7 +507,6 @@ export default function App() {
     );
   };
 
-  // المكون الموحد للقارئ التفاعلي المباشر
   const renderSharedReader = () => {
     if (!activeReadingBook) return null;
 
@@ -571,21 +574,17 @@ export default function App() {
     );
   };
 
-  // استخراج الأقسام المتاحة ديناميكياً لتصنيف المكتبات
   const availableSections = ['all', ...new Set(books.map(b => b.section || 'مكتبة بوك تايم'))];
 
-  // تصفية الكتب وعرض القصص الحقيقية فقط التي تمتلك أغلفة كتب رسمية
   const filteredBooks = books.filter(b => {
     const sec = b.section || 'مكتبة بوك تايم';
     const matchesSection = selectedSection === 'all' || sec === selectedSection;
 
-    // التحقق من أن الغلاف يتبع مجلد الأغلفة الرسمي لبوك تايم
     const isRealBookCover = 
       b.coverUrl && 
       b.coverUrl.includes('/covers/ar/') && 
       !b.coverUrl.includes('.svg');
 
-    // التأكد من وجود معرف رقمي حقيقي للقصة
     const hasValidReadUrl = 
       b.readUrl && 
       (b.readUrl.includes('/books/') || b.readUrl.includes('read.booktime.org')) &&
@@ -594,7 +593,7 @@ export default function App() {
     return matchesSection && isRealBookCover && hasValidReadUrl;
   });
 
-  // ================= 1. شاشة تسجيل الدخول الموحدة =================
+  // ================= 1. شاشة تسجيل الدخول =================
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
@@ -652,7 +651,7 @@ export default function App() {
 
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
             <span className="text-[11px] text-slate-400">
-              دخول المؤسس الافتراضي: <b>admin</b> / كلمة المرور: <b>123</b>
+              دخول المشرف العام: <b>admin</b> / كلمة المرور: <b>123</b>
             </span>
           </div>
         </div>
@@ -660,7 +659,7 @@ export default function App() {
     );
   }
 
-  // ================= 2. واجهة المؤسس والمشرف العام (Super Admin) =================
+  // ================= 2. واجهة المشرف العام =================
   if (currentUser.role === 'super_admin') {
     const hodsList = users.filter((u) => u.role === 'hod');
     const teachersList = users.filter((u) => u.role === 'teacher');
@@ -1105,7 +1104,7 @@ export default function App() {
     );
   }
 
-  // ================= 3. واجهة رئيس القسم (HOD Portal) =================
+  // ================= 3. واجهة رئيس القسم =================
   if (currentUser.role === 'hod') {
     const hodGrades = currentUser.allowedGrades || [];
     const departmentTeachers = users.filter((u) => 
@@ -1135,7 +1134,6 @@ export default function App() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-          {/* تبويبات رئيس القسم */}
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setHodTab('overview')}
@@ -1250,7 +1248,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* أزرار تصفية الأقسام */}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setSelectedSection('all')}
@@ -1284,7 +1281,7 @@ export default function App() {
     );
   }
 
-  // ================= 4. واجهة المعلم (Teacher Portal) =================
+  // ================= 4. واجهة المعلم =================
   if (currentUser.role === 'teacher') {
     const teacherAllowedGrades = currentUser.allowedGrades || [];
     const teacherAllowedTracks = currentUser.allowedTracks || ['arabic-a'];
@@ -1347,7 +1344,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* تبويب: المستودع القرائي الشامل وإسناد الكتب */}
           {teacherTab === 'library' && (
             <div className="space-y-6">
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1364,7 +1360,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* أزرار تصفية الأقسام والمكتبات */}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setSelectedSection('all')}
@@ -1393,7 +1388,6 @@ export default function App() {
             </div>
           )}
 
-          {/* تبويب: إنشاء نشاط جديد */}
           {teacherTab === 'create' && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs max-w-3xl mx-auto relative">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
@@ -1401,24 +1395,86 @@ export default function App() {
                   <h2 className="font-extrabold text-lg flex items-center gap-2 text-slate-800">
                     <Sparkles className="w-5 h-5 text-emerald-600" /> بناء نشاط تفاعلي جديد
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">صمم نشاطك أو اسحب قصة وأسئلة إسلامية جاهزة بنقرة زر.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">صمم نشاطك أو اختر قصة مصورة وأسئلة بنقرة زر.</p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsBankModalOpen(true)}
-                  className="px-4 py-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-2 shadow-xs"
-                >
-                  <Library className="w-4 h-4 text-emerald-600" /> اختيار من بنك القصص الإسلامية
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBankModalOpen(true)}
+                    className="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-1.5 shadow-xs"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-600" /> بنك القصص الإسلامية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBooksModalOpen(true)}
+                    className="px-3 py-2 bg-teal-50 text-teal-800 border border-teal-300 rounded-xl text-xs font-bold hover:bg-teal-100 transition flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Library className="w-3.5 h-3.5 text-teal-600" /> مستودع الكتب (بوك تايم)
+                  </button>
+                </div>
               </div>
 
+              {/* مودال اختيار قصة من مستودع الكتب */}
+              {isBooksModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-3xl p-6 max-w-3xl w-full max-h-[85vh] flex flex-col border border-slate-200 shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Library className="w-5 h-5 text-teal-600" />
+                        <h3 className="font-extrabold text-sm text-slate-800">اختر قصة من مستودع الكتب لبناء النشاط عليها</h3>
+                      </div>
+                      <button
+                        onClick={() => setIsBooksModalOpen(false)}
+                        className="text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 rounded-lg"
+                      >
+                        إغلاق ✕
+                      </button>
+                    </div>
+
+                    <div className="relative mb-4">
+                      <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                      <input
+                        type="text"
+                        placeholder="ابحث باسم القصة أو الكتاب..."
+                        value={bookSearchKeyword}
+                        onChange={(e) => setBookSearchKeyword(e.target.value)}
+                        className="w-full pr-10 pl-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="overflow-y-auto flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-1">
+                      {filteredBooks
+                        .filter(b => b.title.toLowerCase().includes(bookSearchKeyword.trim().toLowerCase()))
+                        .slice(0, 36)
+                        .map((b) => (
+                          <div key={b.id} className="border border-slate-200 rounded-2xl p-2.5 flex flex-col justify-between bg-slate-50/50 hover:bg-white hover:border-teal-500 hover:shadow-sm transition text-center">
+                            <div className="aspect-[3/4] w-full bg-slate-100 rounded-xl overflow-hidden mb-2 p-1">
+                              <img src={b.coverUrl} alt={b.title} className="w-full h-full object-contain" />
+                            </div>
+                            <h4 className="font-bold text-xs text-slate-800 line-clamp-1 mb-2">{b.title}</h4>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectBookForActivity(b)}
+                              className="w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[11px] font-bold transition shadow-xs"
+                            >
+                              اختيار القصة للنشاط
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* مودال بنك القصص الإسلامية */}
               {isBankModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-3xl p-6 max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-slate-200 shadow-2xl">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                       <div className="flex items-center gap-2">
-                        <Library className="w-5 h-5 text-emerald-600" />
+                        <BookOpen className="w-5 h-5 text-emerald-600" />
                         <h3 className="font-extrabold text-sm text-slate-800">بنك القصص والأسئلة الإسلامية والتربوية</h3>
                       </div>
                       <button
@@ -1597,7 +1653,7 @@ export default function App() {
                 <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80">
                   <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <h3 className="font-bold text-slate-700 text-sm">لا توجد أنشطة منشورة بعد</h3>
-                  <p className="text-xs text-slate-400 mt-1 mb-4">أنشئ نشاطك الأول أو اسحب من بنك القصص الإسلامية.</p>
+                  <p className="text-xs text-slate-400 mt-1 mb-4">أنشئ نشاطك الأول أو اسحب من مستودع الكتب وبنك القصص.</p>
                   <button
                     onClick={() => setTeacherTab('create')}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
@@ -1779,7 +1835,7 @@ export default function App() {
     );
   }
 
-  // ================= 5. واجهة الطالب (Student Portal) =================
+  // ================= 5. واجهة الطالب =================
   if (currentUser.role === 'student') {
     const studentActivities = activities.filter(
       (a) => a.grade === currentUser.grade && a.track === currentUser.track
@@ -1789,7 +1845,7 @@ export default function App() {
       (b) => 
         b.assignedGrades?.includes(currentUser.grade!) && 
         b.assignedTracks?.includes(currentUser.track!) &&
-        b.coverUrl?.includes('/covers/ar/') &&
+        b.coverUrl?.includes('/covers/ar/') && 
         !b.coverUrl?.includes('.svg') &&
         !b.title.includes('حساب')
     );
@@ -1880,7 +1936,7 @@ export default function App() {
                       </div>
 
                       {selectedActivityToSolve.passage && (
-                        <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 mb-6 text-sm text-slate-700 leading-relaxed">
+                        <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 mb-6 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
                           <b className="block text-emerald-800 text-xs mb-1">اقرأ الفقرة التالية بعناية:</b>
                           {selectedActivityToSolve.passage}
                         </div>
@@ -1988,7 +2044,7 @@ export default function App() {
     );
   }
 
-  // ================= 6. واجهة ولي الأمر (Parent Portal) =================
+  // ================= 6. واجهة ولي الأمر =================
   if (currentUser.role === 'parent') {
     const student = users.find((u) => u.id === currentUser.studentId);
     const studentSubs = submissions.filter((s) => s.studentId === currentUser.studentId);
@@ -2031,7 +2087,6 @@ export default function App() {
             </div>
           ) : (
             <>
-              {/* تبويبات ولي الأمر */}
               <div className="flex gap-2">
                 <button
                   onClick={() => setParentTab('progress')}
