@@ -120,10 +120,16 @@ export default function App() {
     setActiveReadingBook(null);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const all = getUsers();
+
+    // التأكد من جلب أحدث الحسابات من قاعدة البيانات السحابية أولاً
+    let all = await syncUsersFromCloud();
+    if (!all || all.length === 0) {
+      all = getUsers();
+    }
+
     const found = all.find(
       (u) => u.username.toLowerCase() === loginUsername.trim().toLowerCase() && u.password === loginPassword
     );
@@ -131,7 +137,7 @@ export default function App() {
     if (found) {
       const updatedUser = recordUserLogin(found);
       setUser(updatedUser);
-      setUsers(getUsers());
+      setUsers(all);
 
       if (updatedUser.role === 'teacher') {
         if (updatedUser.allowedGrades && updatedUser.allowedGrades.length > 0) {
@@ -211,7 +217,7 @@ export default function App() {
     alert(`تم سحب قصة «${story.title}» وأسئلتها بنجاح!`);
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formUsername || !formPassword) return;
 
@@ -259,14 +265,17 @@ export default function App() {
         : {}),
     };
 
-    saveUser(newUser);
-    setUsers(getUsers());
+    // حفظ سحابي وانتظار اكتمال العملية
+    await saveUser(newUser);
+    const updatedUsers = await syncUsersFromCloud();
+    setUsers(updatedUsers);
+
     setFormName('');
     setFormUsername('');
     setFormPassword('');
     setSelectedGrades([]);
     setSelectedTracks(['arabic-a']);
-    alert('تم إضافة الحساب بنجاح!');
+    alert('تم حفظ الحساب سحابياً بنجاح، ويمكن الدخول به من أي جهاز الآن!');
   };
 
   const handleDeleteUser = (id: string) => {
