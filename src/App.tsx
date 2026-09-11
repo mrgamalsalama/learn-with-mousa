@@ -565,24 +565,24 @@ export default function App() {
   // استخراج الأقسام المتاحة ديناميكياً لتصنيف المكتبات
   const availableSections = ['all', ...new Set(books.map(b => b.section || 'مكتبة بوك تايم'))];
 
-  // تصفية الكتب واستبعاد عناصر النظام والأيقونات الزائدة
+  // تصفية الكتب وعرض القصص الحقيقية فقط التي تمتلك أغلفة كتب رسمية
   const filteredBooks = books.filter(b => {
     const sec = b.section || 'مكتبة بوك تايم';
     const matchesSection = selectedSection === 'all' || sec === selectedSection;
 
-    // استبعاد عناصر إدارة الحساب أو الأيقونات أو الصور غير الصالحة
-    const isSystemGarbage = 
-      !b.coverUrl ||
-      b.coverUrl.includes('.svg') ||
-      b.coverUrl.includes('Logo') ||
-      b.coverUrl.includes('profile') ||
-      b.coverUrl.includes('streaks') ||
-      b.coverUrl.includes('close') ||
-      b.title.includes('حساب') ||
-      b.title.includes('إدارة') ||
-      b.title.includes('fire');
+    // التحقق من أن الغلاف يتبع مجلد الأغلفة الرسمي لبوك تايم
+    const isRealBookCover = 
+      b.coverUrl && 
+      b.coverUrl.includes('/covers/ar/') && 
+      !b.coverUrl.includes('.svg');
 
-    return matchesSection && !isSystemGarbage;
+    // التأكد من وجود معرف رقمي حقيقي للقصة
+    const hasValidReadUrl = 
+      b.readUrl && 
+      (b.readUrl.includes('/books/') || b.readUrl.includes('read.booktime.org')) &&
+      !b.title.includes('حساب');
+
+    return matchesSection && isRealBookCover && hasValidReadUrl;
   });
 
   // ================= 1. شاشة تسجيل الدخول الموحدة =================
@@ -1780,7 +1780,8 @@ export default function App() {
       (b) => 
         b.assignedGrades?.includes(currentUser.grade!) && 
         b.assignedTracks?.includes(currentUser.track!) &&
-        !b.coverUrl.includes('.svg') &&
+        b.coverUrl?.includes('/covers/ar/') &&
+        !b.coverUrl?.includes('.svg') &&
         !b.title.includes('حساب')
     );
 
