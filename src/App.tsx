@@ -565,10 +565,24 @@ export default function App() {
   // استخراج الأقسام المتاحة ديناميكياً لتصنيف المكتبات
   const availableSections = ['all', ...new Set(books.map(b => b.section || 'مكتبة بوك تايم'))];
 
-  // تصفية الكتب بناءً على القسم المختار
+  // تصفية الكتب واستبعاد عناصر النظام والأيقونات الزائدة
   const filteredBooks = books.filter(b => {
     const sec = b.section || 'مكتبة بوك تايم';
-    return selectedSection === 'all' || sec === selectedSection;
+    const matchesSection = selectedSection === 'all' || sec === selectedSection;
+
+    // استبعاد عناصر إدارة الحساب أو الأيقونات أو الصور غير الصالحة
+    const isSystemGarbage = 
+      !b.coverUrl ||
+      b.coverUrl.includes('.svg') ||
+      b.coverUrl.includes('Logo') ||
+      b.coverUrl.includes('profile') ||
+      b.coverUrl.includes('streaks') ||
+      b.coverUrl.includes('close') ||
+      b.title.includes('حساب') ||
+      b.title.includes('إدارة') ||
+      b.title.includes('fire');
+
+    return matchesSection && !isSystemGarbage;
   });
 
   // ================= 1. شاشة تسجيل الدخول الموحدة =================
