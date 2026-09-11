@@ -218,13 +218,27 @@ export const getStoryBank = (): StoryBankItem[] => {
 };
 
 // مستودع الكتب
+// رقم إصدار بيانات الكتب لتحديث الكاش تلقائياً
+const BOOKS_VERSION_KEY = 'lwm_books_version';
+const CURRENT_BOOKS_VERSION = 'v2.1';
+
 export const getBooksRepository = (): BookItem[] => {
-  const data = localStorage.getItem(BOOKS_KEY);
-  if (!data) {
+  const savedVersion = localStorage.getItem(BOOKS_VERSION_KEY);
+  const localData = localStorage.getItem(BOOKS_KEY);
+
+  if (savedVersion !== CURRENT_BOOKS_VERSION || !localData) {
     localStorage.setItem(BOOKS_KEY, JSON.stringify(INITIAL_BOOKS));
+    localStorage.setItem(BOOKS_VERSION_KEY, CURRENT_BOOKS_VERSION);
     return INITIAL_BOOKS;
   }
-  return JSON.parse(data);
+
+  try {
+    return JSON.parse(localData);
+  } catch (e) {
+    localStorage.setItem(BOOKS_KEY, JSON.stringify(INITIAL_BOOKS));
+    localStorage.setItem(BOOKS_VERSION_KEY, CURRENT_BOOKS_VERSION);
+    return INITIAL_BOOKS;
+  }
 };
 
 export const updateBookAssignment = (
