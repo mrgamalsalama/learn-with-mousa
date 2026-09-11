@@ -3,8 +3,9 @@ import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
-  Library, Download, Eye, CheckSquare, X, Search
+  Library, Download, Eye, CheckSquare, X, Search, FileUp
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem 
@@ -224,6 +225,97 @@ export default function App() {
     setActTitle(`نشاط قراءة وفهم: ${book.title}`);
     setActPassage(`📖 القصة المقررة: ${book.title}\nمؤلف القصة: ${book.author || 'مؤسسة هنداوي (بوك تايم)'}\nرابط قراءة القصة المباشر:\n${book.readUrl}\n\nيرجى فتح رابط القصة وقراءتها بعناية ثم الإجابة عن الأسئلة التالية:`);
     setIsBooksModalOpen(false);
+  };
+
+  // دالة قراءة وفك ضغط حزم وبنوك الأسئلة QTI (ZIP أو XML)
+  const handleQtiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      let xmlContent = '';
+
+      if (file.name.endsWith('.zip') || file.type.includes('zip')) {
+        const zip = new JSZip();
+        const unzipped = await zip.loadAsync(file);
+
+        let targetFileName = '';
+        for (const filename of Object.keys(unzipped.files)) {
+          if (filename.endsWith('.xml') && !filename.includes('manifest')) {
+            targetFileName = filename;
+            break;
+          }
+        }
+
+        if (!targetFileName) {
+          targetFileName = Object.keys(unzipped.files).find(f => f.endsWith('.xml')) || '';
+        }
+
+        if (!targetFileName) {
+          alert('الملف المضغوط لا يحتوي على ملفات أسئلة XML صالحة.');
+          return;
+        }
+
+        xmlContent = await unzipped.files[targetFileName].async('text');
+      } else {
+        xmlContent = await file.text();
+      }
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+      const items = Array.from(xmlDoc.querySelectorAll('item, assessmentItem'));
+
+      if (items.length === 0) {
+        alert('لم يتم العثور على عناصر أسئلة متوافقة داخل ملف QTI المرفوع.');
+        return;
+      }
+
+      const parsedQuestions: Question[] = items.map((item, idx) => {
+        const promptEl = item.querySelector('prompt, material mattext');
+        const questionText = promptEl?.textContent?.trim() || `سؤال مستورد (${idx + 1})`;
+
+        const responseChoices = Array.from(item.querySelectorAll('simpleChoice, response_lid render_choice response_label'));
+        const options: string[] = [];
+        const choiceMap: Record<string, string> = {};
+
+        responseChoices.forEach((choice) => {
+          const identifier = choice.getAttribute('identifier') || choice.getAttribute('ident') || '';
+          const text = choice.textContent?.trim() || '';
+          if (text) {
+            options.push(text);
+            if (identifier) choiceMap[identifier] = text;
+          }
+        });
+
+        let correctAnswer = '';
+        const correctValueEl = item.querySelector('correctResponse value, respcondition conditionvar varequal');
+        if (correctValueEl) {
+          const correctId = correctValueEl.textContent?.trim() || '';
+          correctAnswer = choiceMap[correctId] || correctId;
+        }
+
+        if (!options.includes(correctAnswer) && options.length > 0) {
+          correctAnswer = options[0];
+        }
+
+        return {
+          id: 'q_' + Date.now() + '_' + idx,
+          text: questionText,
+          type: 'multiple_choice',
+          options: options.length > 0 ? options : ['', '', '', ''],
+          correctAnswer: correctAnswer,
+          points: 5,
+        };
+      });
+
+      setQuestions(parsedQuestions);
+      alert(`تم استيراد ${parsedQuestions.length} سؤالاً بنجاح من حزمة QTI! 🎯`);
+    } catch (err) {
+      console.error(err);
+      alert('حدث خطأ أثناء فك ضغط أو قراءة ملف QTI.');
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -1574,15 +1666,28 @@ export default function App() {
                   </div>
 
                   <div className="space-y-4 pt-4 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <h3 className="font-bold text-sm text-slate-800">الأسئلة التفاعلية</h3>
-                      <button
-                        type="button"
-                        onClick={addQuestion}
-                        className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> إضافة سؤال جديد
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {/* زر استيراد ملف QTI أو ZIP */}
+                        <label className="cursor-pointer px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-xs">
+                          <FileUp className="w-3.5 h-3.5" /> استيراد بنك أسئلة (QTI / ZIP)
+                          <input
+                            type="file"
+                            accept=".zip,.xml,.qti"
+                            onChange={handleQtiUpload}
+                            className="hidden"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={addQuestion}
+                          className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1 shadow-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> إضافة سؤال يدوي
+                        </button>
+                      </div>
                     </div>
 
                     {questions.map((q, qIndex) => (
