@@ -6,28 +6,27 @@ import {
   DiagnosticReport 
 } from './types';
 
-// قراءة المفتاح حصرياً من المتغيرات البيئية
-const getApiKey = (): string => {
-  return (
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    (typeof window !== 'undefined' && (window as any).__GEMINI_API_KEY__) ||
-    ''
-  );
-};
+// قراءة المفتاح بالشكل المطلوب
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
 
-// النماذج المعتمدة لسرعة الاستجابة والدقة العالية
-const PRIMARY_MODEL = 'gemini-1.5-flash';
-const FALLBACK_MODEL = 'gemini-2.5-flash';
+// النماذج المعتمدة لسرعة الاستجابة والدقة العالية وتوافقها مع المفتاح
+const PRIMARY_MODEL = 'gemini-flash-lite-latest';
+const CANDIDATE_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+];
 
 // إنشاء عميل الذكاء الاصطناعي بنمط التهيئة الكسولة (Lazy Initialization)
 let genAIClient: GoogleGenAI | null = null;
 
-const getAIClient = (): GoogleGenAI | null => {
-  const key = getApiKey();
-  if (!key) return null;
+const getAIClient = (): GoogleGenAI => {
   if (!genAIClient) {
     genAIClient = new GoogleGenAI({ 
-      apiKey: key,
+      apiKey: apiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build'
@@ -57,20 +56,23 @@ async function generateContentWithFallback(
     config?: any;
   }
 ) {
-  try {
-    return await ai.models.generateContent({
-      model: PRIMARY_MODEL,
-      contents: params.contents,
-      config: params.config,
-    });
-  } catch (primaryErr) {
-    console.warn(`تعذر استدعاء ${PRIMARY_MODEL}، جاري المحاولة باستخدام ${FALLBACK_MODEL}:`, primaryErr);
-    return await ai.models.generateContent({
-      model: FALLBACK_MODEL,
-      contents: params.contents,
-      config: params.config,
-    });
+  let lastError: any = null;
+
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: params.contents,
+        config: params.config,
+      });
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`تعذر استدعاء النموذج ${modelName}، جاري المحاولة بنموذج بديل:`, err?.status || err?.message || err);
+    }
   }
+
+  console.error('فشل الاستدعاء بكافة النماذج المتاحة:', lastError);
+  throw lastError;
 }
 
 // ================= 1. الرفيق الصوتي/المحادثة مع موسى =================
@@ -88,18 +90,6 @@ export async function chatWithMusa(
 - شجع الطفل دائماً على القراءة، الاستكشاف، وتعلّم الحروف والكلمات الجديدة!
 `;
 
-  if (!ai) {
-    // محاكاة ذكية فائقة الجودة في حال عدم إدخال المفتاح بعد
-    const fallbackResponses = [
-      `أَهْلًا وَسَهْلًا بِكَ يَا بَطَلِي الصَّغِير! 🌟 أَنَا صَدِيقُكَ مُوسَى، وَأَنَا سَعِيدٌ جِدًّا بِالحَدِيثِ مَعَكَ! مَا هُوَ حَرْفُكَ المُفَضَّلُ اليَوْم؟ 🎈`,
-      `مَا أَجْمَلَ كَلِمَاتِكَ يَا صَدِيقِي الرَّائِع! 📚 هَلْ تَعْلَمُ أَنَّ لُغَتَنَا العَرَبِيَّةَ مَلِيئَةٌ بِالأَسْرَارِ وَالمُغَامَرَاتِ الجَمِيلَة؟ تَعَالَ نَسْتَكْشِفْ مَعًا! 🚀`,
-      `أَحْسَنْتَ يَا بَطَل! أَسْلُوبُكَ فِي التَّحَدُّثِ مُبْهِرٌ جِدًّا! هَيَّا بِنَا نَتَعَلَّمُ كَلِمَةً جَدِيدَةً تَبْدَأُ بِحَرْفِ المِيمِ مِثْلَ: مَسْجِد، أَوْ مَطَر! 🌧️🕌`,
-      `يَا لَهَا مِنْ فِكْرَةٍ رَائِعَة! أَنَا دَوْمًا هُنَا لِأُسَاعِدَكَ وَنَلْعَبَ مَعًا فِي عَالَمِ الحُرُوفِ السَّاحِر! 🎨✨`
-    ];
-    const randomIndex = Math.floor(Math.random() * fallbackResponses.length);
-    return fallbackResponses[randomIndex];
-  }
-
   try {
     const contents: any[] = [];
     // تحويل السجل السابق
@@ -109,6 +99,7 @@ export async function chatWithMusa(
         parts: [{ text: h.text }]
       });
     });
+    // تمرير رسالة المستخدم الفعلية (user prompt)
     contents.push({
       role: 'user',
       parts: [{ text: userMessage }]
@@ -121,10 +112,16 @@ export async function chatWithMusa(
         temperature: 0.7,
       }
     });
-    return response.text?.trim() || 'مَرْحَبًا بِكَ يَا بَطَل! أَنَا مُوسَى دَوْمًا مَعَكَ!';
-  } catch (error) {
-    console.error('خطأ في محادثة موسى:', error);
-    return 'أَهْلًا يَا صَدِيقِي الصَّغِير! أَنَا مَعَكَ دَائِمًا لِنَتَعَلَّمَ وَنَمْرَحَ مَعًا فِي عَالَمِ الحُرُوفِ! 🌟';
+
+    const responseText = response.text?.trim();
+    if (!responseText) {
+      throw new Error('استجاب النموذج بنص فارغ');
+    }
+    return responseText;
+  } catch (error: any) {
+    console.error('خطأ حقيقي في دالة generateContent (chatWithMusa):', error);
+    console.error('User Prompt الفعلي المرسل إلى النموذج:', userMessage);
+    throw error;
   }
 }
 
