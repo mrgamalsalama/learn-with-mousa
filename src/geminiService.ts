@@ -6,35 +6,32 @@ import {
   DiagnosticReport 
 } from './types';
 
-// قراءة المفتاح بالشكل المطلوب
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
+// قراءة المفتاح البيئي بأمان
+const apiKey = (import.meta.env.VITE_GEMINI_API_KEY as string)?.trim() || "";
 
-// النماذج المعتمدة لسرعة الاستجابة والدقة العالية وتوافقها مع المفتاح
-const PRIMARY_MODEL = 'gemini-flash-lite-latest';
+// النماذج الرسمية المعتمدة لسرعة الاستجابة والدقة العالية
+const PRIMARY_MODEL = 'gemini-2.5-flash';
 const CANDIDATE_MODELS = [
-  'gemini-flash-lite-latest',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-flash-latest',
-  'gemini-3.8-flash',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
 ];
 
 // إنشاء عميل الذكاء الاصطناعي بنمط التهيئة الكسولة (Lazy Initialization)
 let genAIClient: GoogleGenAI | null = null;
 
 const getAIClient = (): GoogleGenAI => {
-  if (!genAIClient) {
+  const currentKey = (import.meta.env.VITE_GEMINI_API_KEY as string)?.trim() || apiKey;
+
+  if (!currentKey) {
+    console.error('تحذير: لم يتم العثور على VITE_GEMINI_API_KEY!');
+  }
+
+  if (!genAIClient && currentKey) {
     genAIClient = new GoogleGenAI({ 
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
+      apiKey: currentKey
     });
   }
-  return genAIClient;
+  return genAIClient!;
 };
 
 // دالة مساعدة لتنظيف كتل JSON المستلمة
@@ -48,7 +45,7 @@ function cleanJsonText(raw: string): string {
   return cleaned.trim();
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد مع دعم التبديل التلقائي بين النماذج لضمان أقصى اعتمادية
+// دالة مساعدة لتنفيذ طلبات التوليد مع دعم التبديل التلقائي بين النماذج
 async function generateContentWithFallback(
   ai: GoogleGenAI,
   params: {
@@ -92,14 +89,12 @@ export async function chatWithMusa(
 
   try {
     const contents: any[] = [];
-    // تحويل السجل السابق
     history.forEach(h => {
       contents.push({
         role: h.role,
         parts: [{ text: h.text }]
       });
     });
-    // تمرير رسالة المستخدم الفعلية (user prompt)
     contents.push({
       role: 'user',
       parts: [{ text: userMessage }]
@@ -139,17 +134,16 @@ export async function generateAdaptiveStoryScene(params: {
   const ai = getAIClient();
 
   if (!ai) {
-    // سيناريو ذكي مبني بالحركات
     return {
       step: stepNumber,
       sceneTitle: `مُغَامَرَةُ حَرْفِ (${letter}) - المَشْهَدُ ${stepNumber}`,
       passage: stepNumber === 1 
-        ? `فِي صَبَاحٍ مُشْرِقٍ، خَرَجَ الأَرْنَبُ (بَاسِمٌ) يَبْحَثُ عَنْ أَصْدِقَائِهِ فِي البُسْتَانِ البَدِيعِ. رَأَى بَرَاعِمَ الأَزْهَارِ تَتَفَتَّحُ، وَسَمِعَ صَوْتَ بُلْبُلٍ يُغَرِّدُ بِأَلْحَانٍ عَذْبَةٍ فَوْقَ غُصْنِ شَجَرَةِ البُرْتُقَالِ!`
-        : `وَاصَلَ الأَرْنَبُ الصَّغِيرُ طَرِيقَهُ فَرَأَى بُحَيْرَةً صَافِيَةً تَسْبَحُ فِيهَا بَطَّةٌ جَمِيلَةٌ بَيْضَاءُ. نَادَتْهُ البَطَّةُ قَائِلَةً: «مَرْحَبًا بِكَ يَا بَاسِمُ، هَلْ تُشَارِكُنِي تَنَاوُلَ بَعْضِ البُذُورِ اللَّذِيذَة؟»`,
+        ? `فِي صَبَاحٍ مُشْرِقٍ، خَرَجَ الأَرْنَبُ (بَاسِمٌ) يَبْحَثُ عَنْ أَصْدِقَائِهِ فِي البُسْتَانِ البَدِيعِ. رَأَى بَرَاعِمَ الأَزْهَارِ تَتَفَتَّحُ، وَسَمِعَ صَوْتَ بُلْبُلٍ يُغَرِّدُ بِأَلْحَانٍ عَذْبَةٍ فَوْقَ غُصْنِ شَجَرَةِ البُرْتُقَالِ!`
+        : `وَاصَلَ الأَرْنَبُ الصَّغِيرُ طَرِيقَهُ فَرَأَى بُحَيْرَةً صَافِيَةً تَسْبَحُ فِيهَا بَطَّةٌ جَمِيلَةٌ بَيْضَاءُ. نَادَتْهُ البَطَّةُ قَائِلَةً: «مَرْحَبًا بِكَ يَا بَاسِمُ، هَلْ تُشَارِكُنِي تَنَاوُلَ بَعْضِ البُذُورِ اللَّذِيذَة؟»`,
       targetLetter: letter,
-      question: isFinalStep ? 'مَاذَا تَعَلَّمْتَ مِنْ هَذِهِ القِصَّةِ الجَمِيلَة؟' : 'مَاذَا يَخْتَارُ بَاسِمٌ أَنْ يَفْعَلَ الآن؟',
-      optionA: isFinalStep ? 'الابْتِسَامَةُ وَحُبُّ الأَصْدِقَاءِ 🌸' : 'يَسْبَحُ مَعَ البَطَّةِ فِي البُحَيْرَةِ 🦆',
-      optionB: isFinalStep ? 'شُكْرُ اللهِ عَلَى النِّعَمِ 🌟' : 'يَجْلِسُ تَحْتَ شَجَرَةِ البُرْتُقَالِ لِيَسْتَرِيحَ 🍊',
+      question: isFinalStep ? 'مَاذَا تَعَلَّمْتَ مِنْ هَذِهِ القِصَّةِ الجَمِيلَة؟' : 'مَاذَا يَخْتَارُ بَاسِمٌ أَنْ يَفْعَلَ الآن؟',
+      optionA: isFinalStep ? 'الابْتِسَامَةُ وَحُبُّ الأَصْدِقَاءِ 🌸' : 'يَسْبَحُ مَعَ البَطَّةِ فِي البُحَيْرَةِ 🦆',
+      optionB: isFinalStep ? 'شُكْرُ اللهِ عَلَى النِّعَمِ 🌟' : 'يَجْلِسُ تَحْتَ شَجَرَةِ البُرْتُقَالِ لِيَسْتَرِيحَ 🍊',
       badgeEarned: isFinalStep ? `وسام حكواتي حرف (${letter}) المبدع 🏆` : undefined,
       isEnding: isFinalStep,
     };
@@ -194,11 +188,11 @@ ${chosenOption ? `الخيار الذي نقر عليه الطفل في المش
     return {
       step: stepNumber,
       sceneTitle: parsed.sceneTitle || `مُغَامَرَةُ حَرْفِ (${letter})`,
-      passage: parsed.passage || `قِصَّةٌ مُمْتِعَةٌ مَعَ حَرْفِ (${letter})!`,
+      passage: parsed.passage || `قِصَّةٌ مُمْتِعَةٌ مَعَ حَرْفِ (${letter})!`,
       targetLetter: letter,
       question: parsed.question || 'مَاذَا تَخْتَارُ الآن؟',
-      optionA: parsed.optionA || 'الخِيَارُ الأَوَّلُ ✨',
-      optionB: parsed.optionB || 'الخِيَارُ الثَّانِي 🌟',
+      optionA: parsed.optionA || 'الخِيَارُ الأَوَّلُ ✨',
+      optionB: parsed.optionB || 'الخِيَارُ الثَّانِي 🌟',
       badgeEarned: isFinalStep ? (parsed.badgeEarned || `وسام قصة حرف (${letter}) 🏅`) : undefined,
       isEnding: isFinalStep,
     };
@@ -207,9 +201,9 @@ ${chosenOption ? `الخيار الذي نقر عليه الطفل في المش
     return {
       step: stepNumber,
       sceneTitle: `مُغَامَرَةُ حَرْفِ (${letter})`,
-      passage: `فِي مَمْلَكَةِ الحُرُوفِ السَّعِيدَةِ، يَنْتَشِرُ ضَوْءٌ بَرَّاقٌ يُنِيرُ دَرْبَ حَرْفِ (${letter}) الجَمِيلِ، حَيْثُ يَلْعَبُ الأَصْدِقَاءُ فِي سُرُورٍ وَأَمَانٍ!`,
+      passage: `فِي مَمْلَكَةِ الحُرُوفِ السَّعِيدَةِ، يَنْتَشِرُ ضَوْءٌ بَرَّاقٌ يُنِيرُ دَرْبَ حَرْفِ (${letter}) الجَمِيلِ، حَيْثُ يَلْعَبُ الأَصْدِقَاءُ فِي سُرُورٍ وَأَمَانٍ!`,
       targetLetter: letter,
-      question: 'كَيْفَ تُحِبُّ أَنْ تَكْتَمِلَ رِحْلَتُنَا؟',
+      question: 'كَيْفَ تُحِبُّ أَنْ تَكْتَمِلَ رِحْلَتُنَا؟',
       optionA: 'نَقْطِفُ ثِمَارَ البُسْتَانِ 🍎',
       optionB: 'نَسْمَعُ أُنْشُودَةَ الحُرُوفِ 🎶',
       isEnding: isFinalStep,
@@ -236,7 +230,6 @@ export async function verifyPhonicsWord(
     };
   }
 
-  // تحقق مبدئي محلي
   const firstChar = cleanWord.replace(/[\u064B-\u065F\u0670]/g, '').charAt(0);
   const isFirstLetterMatch = firstChar === letter || (letter === 'ا' && ['أ', 'إ', 'آ', 'ا'].includes(firstChar));
 
@@ -246,8 +239,8 @@ export async function verifyPhonicsWord(
         isValid: true,
         startsCorrectly: true,
         formedWord: cleanWord,
-        meaningSimple: `كَلِمَةٌ عَرَبِيَّةٌ جَمِيلَةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
-        encouragement: `مَا شَاءَ اللهُ يَا بَطَل! نُطْقٌ صَحِيحٌ وَإِجَابَةٌ رَائِعَةٌ تَفْتَحُ لَكَ البَوَّابَةَ السِّحْرِيَّةَ! 🌟🎉`,
+        meaningSimple: `كَلِمَةٌ عَرَبِيَّةٌ جَمِيلَةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
+        encouragement: `مَا شَاءَ اللهُ يَا بَطَل! نُطْقٌ صَحِيحٌ وَإِجَابَةٌ رَائِعَةٌ تَفْتَحُ لَكَ البَوَّابَةَ السِّحْرِيَّةَ! 🌟🎉`,
         badgeName: `وسام نطق حرف (${letter}) الذهبي 🏅`,
         scoreAwarded: 10,
       };
@@ -256,8 +249,8 @@ export async function verifyPhonicsWord(
         isValid: true,
         startsCorrectly: false,
         formedWord: cleanWord,
-        meaningSimple: 'كَلِمَةٌ لَطِيفَةٌ وَلَكِنَّهَا لَا تَبْدَأُ بِالحَرْفِ المَطْلُوب',
-        encouragement: `حَاوِلْ مَرَّةً أُخْرَى يَا بَطَل! نَحْنُ نَبْحَثُ عَنْ كَلِمَةٍ تَبْدَأُ بِحَرْفِ (${letter})، مِثْلَ كَلِمَةِ هَدَفٍ صَحِيحَةٍ! 💪`,
+        meaningSimple: 'كَلِمَةٌ لَطِيفَةٌ وَلَكِنَّهَا لَا تَبْدَأُ بِالحَرْفِ المَطْلُوب',
+        encouragement: `حَاوِلْ مَرَّةً أُخْرَى يَا بَطَل! نَحْنُ نَبْحَثُ عَنْ كَلِمَةٍ تَبْدَأُ بِحَرْفِ (${letter})، مِثْلَ كَلِمَةِ هَدَفٍ صَحِيحَةٍ! 💪`,
         scoreAwarded: 0,
       };
     }
@@ -300,8 +293,8 @@ export async function verifyPhonicsWord(
       isValid: result.isValid ?? true,
       startsCorrectly: result.startsCorrectly ?? isFirstLetterMatch,
       formedWord: result.formedWord || cleanWord,
-      meaningSimple: result.meaningSimple || 'كَلِمَةٌ عَرَبِيَّةٌ جَمِيلَة',
-      encouragement: result.encouragement || 'أَحْسَنْتَ يَا بَطَل! نُطْقٌ مُمَيَّزٌ جِدًّا! 🌟',
+      meaningSimple: result.meaningSimple || 'كَلِمَةٌ عَرَبِيَّةٌ جَمِيلَة',
+      encouragement: result.encouragement || 'أَحْسَنْتَ يَا بَطَل! نُطْقٌ مُمَيَّزٌ جِدًّا! 🌟',
       badgeName: result.startsCorrectly ? (result.badgeName || `فارس حرف (${letter}) 🎖️`) : undefined,
       scoreAwarded: result.startsCorrectly ? (result.scoreAwarded || 10) : 0,
     };
@@ -312,7 +305,7 @@ export async function verifyPhonicsWord(
       startsCorrectly: isFirstLetterMatch,
       formedWord: cleanWord,
       meaningSimple: 'كَلِمَةٌ لَطِيفَة',
-      encouragement: isFirstLetterMatch ? 'بَارَكَ اللهُ فِيكَ يَا بَطَل! إِجَابَةٌ صَحِيحَة! 🌟' : `جَرِّبْ كَلِمَةً أُخْرَى تَبْدَأُ بِحَرْفِ (${letter}) يا بَطَل!`,
+      encouragement: isFirstLetterMatch ? 'بَارَكَ اللهُ فِيكَ يَا بَطَل! إِجَابَةٌ صَحِيحَة! 🌟' : `جَرِّبْ كَلِمَةً أُخْرَى تَبْدَأُ بِحَرْفِ (${letter}) يا بَطَل!`,
       scoreAwarded: isFirstLetterMatch ? 10 : 0,
       badgeName: isFirstLetterMatch ? `شجاع حرف (${letter}) 🌟` : undefined,
     };
@@ -325,17 +318,15 @@ export async function analyzeChildDrawing(
   base64Image: string
 ): Promise<DrawingAnalysisResult> {
   const ai = getAIClient();
-
-  // تنظيف صيغة data:image/png;base64,
   const base64Data = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
 
   if (!ai) {
     return {
-      recognizedObject: `رَسْمَةٌ إِبْدَاعِيَّةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
+      recognizedObject: `رَسْمَةٌ إِبْدَاعِيَّةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
       startsWithTargetLetter: true,
       targetLetter: letter,
       confidenceScore: 95,
-      feedback: `مَا شَاءَ اللهُ! لَوْحَةٌ فَنِّيَّةٌ مُبْهِرَةٌ يَا صَدِيقِي الفَنَّان! رَسَمْتَ شَيْئًا جَمِيلًا يَبْدَأُ بِحَرْفِ (${letter})! لَقَدْ حَصَلْتَ عَلَى ٥ نُجُوم! 🎨⭐`,
+      feedback: `مَا شَاءَ اللهُ! لَوْحَةٌ فَنِّيَّةٌ مُبْهِرَةٌ يَا صَدِيقِي الفَنَّان! رَسَمْتَ شَيْئًا جَمِيلًا يَبْدَأُ بِحَرْفِ (${letter})! لَقَدْ حَصَلْتَ عَلَى ٥ نُجُوم! 🎨⭐`,
       badgeEarned: `وسام فنان الحروف العبقري 🎨🖌️`,
       starsCount: 5,
     };
@@ -352,7 +343,7 @@ export async function analyzeChildDrawing(
 4. اذكر عدد النجوم المستحقة (من 3 إلى 5 نجوم).
 5. أرجع النتيجة فقط بصيغة JSON:
 {
-  "recognizedObject": "اسم الشيء المكتشف (مثال: بَطَّة)",
+  "recognizedObject": "اسم الشيء المكتشف (مثال: بَطَّة)",
   "startsWithTargetLetter": true,
   "targetLetter": "${letter}",
   "confidenceScore": 90,
@@ -390,7 +381,7 @@ export async function analyzeChildDrawing(
       startsWithTargetLetter: result.startsWithTargetLetter ?? true,
       targetLetter: letter,
       confidenceScore: result.confidenceScore || 90,
-      feedback: result.feedback || `رَسْمَةٌ رَائِعَةٌ يَا بَطَل! أَنْتَ فَنَّانٌ بَارِعٌ! 🌟`,
+      feedback: result.feedback || `رَسْمَةٌ رَائِعَةٌ يَا بَطَل! أَنْتَ فَنَّانٌ بَارِعٌ! 🌟`,
       badgeEarned: result.badgeEarned || `وسام الرسام المبدع لحرف (${letter}) 🎨`,
       starsCount: result.starsCount || 5,
     };
@@ -401,7 +392,7 @@ export async function analyzeChildDrawing(
       startsWithTargetLetter: true,
       targetLetter: letter,
       confidenceScore: 88,
-      feedback: `لَوْحَةٌ مُبْهِجَةٌ وَأَلْوَانٌ مُتَأَلِّقَةٌ يَا بَطَل! اسْتَمِرَّ فِي الإِبْدَاعِ! 🌈🖌️`,
+      feedback: `لَوْحَةٌ مُبْهِجَةٌ وَأَلْوَانٌ مُتَأَلِّقَةٌ يَا بَطَل! اسْتَمِرَّ فِي الإِبْدَاعِ! 🌈🖌️`,
       starsCount: 5,
       badgeEarned: `رسام المستقبل 🌟`,
     };
@@ -498,30 +489,30 @@ export async function generatePrintableWorksheet(
   const lettersList = weakLetters.length > 0 ? weakLetters.join('، ') : 'الصاد، الضاد، الطاء';
 
   const defaultWorksheet = `
-# 📝 وَرَقَةُ عَمَلٍ مَنْزِلِيَّةٍ عِلَاجِيَّة: الحُرُوفُ المُسْتَهْدَفَة (${lettersList})
-**اسْمُ الطَّالِب:** ${studentName}  
-**الصَّفُّ الدِّرَاسِي:** ${grade}  
-**المَادَّة:** اللُّغَةُ العَرَبِيَّةُ (مَنَصَّةُ تَعَلَّمْ مَعَ مُوسَى)  
-**التَّارِيخ:** ${new Date().toLocaleDateString('ar-EG')}
+# 📝 وَرَقَةُ عَمَلٍ مَنْزِلِيَّةٍ عِلَاجِيَّة: الحُرُوفُ المُسْتَهْدَفَة (${lettersList})
+**اسْمُ الطَّالِب:** ${studentName}  
+**الصَّفُّ الدِّرَاسِي:** ${grade}  
+**المَادَّة:** اللُّغَةُ العَرَبِيَّةُ (مَنَصَّةُ تَعَلَّمْ مَعَ مُوسَى)  
+**التَّارِيخ:** ${new Date().toLocaleDateString('ar-EG')}
 
 ---
 
-### 🌟 التَّمْرِينُ الأَوَّل: كِتَابَةُ الحَرْفِ بِحَرَكَاتِهِ الثَّلَاث (الفَتْحَة، الضَّمَّة، الكَسْرَة)
-اُكْتُبْ كُلَّ حَرْفٍ مَعَ الحَرَكَةِ ثَلَاثَ مَرَّاتٍ بِخَطٍّ جَمِيلٍ وَمُنَسَّق:
-- الحَرْفُ الأَوَّل: [ ${weakLetters[0] || 'ص'} ] :  
+### 🌟 التَّمْرِينُ الأَوَّل: كِتَابَةُ الحَرْفِ بِحَرَكَاتِهِ الثَّلَاث (الفَتْحَة، الضَّمَّة، الكَسْرَة)
+اُكْتُبْ كُلَّ حَرْفٍ مَعَ الحَرَكَةِ ثَلَاثَ مَرَّاتٍ بِخَطٍّ جَمِيلٍ وَمُنَسَّق:
+- الحَرْفُ الأَوَّل: [ ${weakLetters[0] || 'ص'} ] :  
   - بِالفَتْحَةِ: ( ____________ )  
-  - بِالضَّمَّةِ: ( ____________ )  
+  - بِالضَّمَّةِ: ( ____________ )  
   - بِالكَسْرَةِ: ( ____________ )  
 
-- الحَرْفُ الثَّانِي: [ ${weakLetters[1] || 'ض'} ] :  
+- الحَرْفُ الثَّانِي: [ ${weakLetters[1] || 'ض'} ] :  
   - بِالفَتْحَةِ: ( ____________ )  
-  - بِالضَّمَّةِ: ( ____________ )  
+  - بِالضَّمَّةِ: ( ____________ )  
   - بِالكَسْرَةِ: ( ____________ )  
 
 ---
 
-### 🎯 التَّمْرِينُ الثَّانِي: تَمْيِيزُ الصَّوْتِ فِي الكَلِمَات
-ضَعْ دَائِرَةً حَوْلَ الكَلِمَةِ الَّتِي تَبْدَأُ بِالحَرْفِ المَطْلُوب:
+### 🎯 التَّمْرِينُ الثَّانِي: تَمْيِيزُ الصَّوْتِ فِي الكَلِمَات
+ضَعْ دَائِرَةً حَوْلَ الكَلِمَةِ الَّتِي تَبْدَأُ بِالحَرْفِ المَطْلُوب:
 1. حَرْفُ (${weakLetters[0] || 'ص'}):  
    [ سَمَكَةٌ ]  -  [ صَقْرٌ ]  -  [ عُصْفُورٌ ]  
 2. حَرْفُ (${weakLetters[1] || 'ض'}):  
@@ -529,23 +520,23 @@ export async function generatePrintableWorksheet(
 
 ---
 
-### 🎨 التَّمْرِينُ الثَّالِث: الرَّسْمُ وَالتَّعْبِيرُ اللَّطِيف
-اِرْسُمْ شَيْئًا يُحِبُّهُ قَلْبُكَ يَبْدَأُ بِحَرْفِ [ ${weakLetters[0] || 'ص'} ]، ثُمَّ اكْتُبْ اسْمَهُ تَحْتَ الصُّورَة:
+### 🎨 التَّمْرِينُ الثَّالِث: الرَّسْمُ وَالتَّعْبِيرُ اللَّطِيف
+اِرْسُمْ شَيْئًا يُحِبُّهُ قَلْبُكَ يَبْدَأُ بِحَرْفِ [ ${weakLetters[0] || 'ص'} ]، ثُمَّ اكْتُبْ اسْمَهُ تَحْتَ الصُّورَة:
 \`\`\`
 ┌────────────────────────────────────────────────────────┐
 │                                                        │
-│                 [ مِسَاحَةُ الرَّسْمِ المُمْتِع ]               │
+│                  [ مِسَاحَةُ الرَّسْمِ المُمْتِع ]               │
 │                                                        │
 │                                                        │
 └────────────────────────────────────────────────────────┘
 \`\`\`
-اِسْمُ الشَّيْءِ الَّذِي رَسَمْتُهُ: ____________________
+اِسْمُ الشَّيْءِ الَّذِي رَسَمْتُهُ: ____________________
 
 ---
 
-### 👨‍👩‍👧 تَشْجِيعُ وَلِيِّ الأَمْرِ وَالمُعَلِّم:
-- **تَوْقِيعُ وَلِيِّ الأَمْر:** ______________  
-- **تَقْيِيمُ مُوسَى الصَّدِيق:** [  ⭐⭐⭐⭐⭐  ] مُتَمَيِّزٌ وَمُبْدِعٌ يَا بَطَل!  
+### 👨‍👩‍👧 تَشْجِيعُ وَلِيِّ الأَمْرِ وَالمُعَلِّم:
+- **تَوْقِيعُ وَلِيِّ الأَمْر:** ______________  
+- **تَقْيِيمُ مُوسَى الصَّدِيق:** [  ⭐⭐⭐⭐⭐  ] مُتَمَيِّزٌ وَمُبْدِعٌ يَا بَطَل!  
 `;
 
   if (!ai) {
@@ -583,14 +574,16 @@ export async function generatePrintableWorksheet(
   }
 }
 
-// ================= 7. قارئ النصوص الصوتي المدمج (Web Speech TTS) =================
+// ================= 7. قارئ النصوص الصوتي المدمج المتوافق مع الهواتف الذكية (Web Speech TTS) =================
 export function speakArabicText(text: string, onEnd?: () => void) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    if (onEnd) onEnd();
     return;
   }
 
   try {
-    window.speechSynthesis.cancel(); // إيقاف أي قراءة سابقة
+    // إيقاف أي قراءة معلقة
+    window.speechSynthesis.cancel();
 
     // تنظيف الرموز البرمجية والأيقونات من النص قبل النطق
     const cleanText = text
@@ -598,26 +591,75 @@ export function speakArabicText(text: string, onEnd?: () => void) {
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .trim();
 
+    if (!cleanText) {
+      if (onEnd) onEnd();
+      return;
+    }
+
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ar-SA';
-    utterance.rate = 0.9; // سرعة هادئة للأطفال
-    utterance.pitch = 1.05; // نبرة مرحة ولطيفة
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
 
-    // محاولة اختيار أفضل صوت عربي متاح في المتصفح
-    const voices = window.speechSynthesis.getVoices();
-    const arabicVoice = voices.find(v => v.lang.startsWith('ar') || v.name.includes('Arabic') || v.name.includes('Maged') || v.name.includes('Tarik'));
-    if (arabicVoice) {
-      utterance.voice = arabicVoice;
+    const executeSpeak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      
+      // مطابقة أفضل صوت عربي متاح في المتصفح أو الهاتف
+      const arabicVoice = voices.find(v => 
+        v.lang.toLowerCase().startsWith('ar') ||
+        v.lang.toLowerCase().includes('ar-') ||
+        v.name.toLowerCase().includes('arabic') ||
+        v.name.toLowerCase().includes('maged') ||
+        v.name.toLowerCase().includes('tarik') ||
+        v.name.toLowerCase().includes('laila') ||
+        v.name.toLowerCase().includes('mariam')
+      );
+
+      if (arabicVoice) {
+        utterance.voice = arabicVoice;
+      }
+
+      let finished = false;
+      const handleEnd = () => {
+        if (!finished) {
+          finished = true;
+          if (onEnd) onEnd();
+        }
+      };
+
+      utterance.onend = handleEnd;
+      utterance.onerror = (e) => {
+        console.warn('حدث خطأ في تشغيل النطق الصوتي:', e);
+        handleEnd();
+      };
+
+      // استئناف محرك الصوت (حل أساسي لمتصفحات أندرويد وiOS Safari)
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // على الهواتف: إذا لم تكن قائمة الأصوات جاهزة فوراً، ننتظر حدث جاهزيتها
+    const currentVoices = window.speechSynthesis.getVoices();
+    if (!currentVoices || currentVoices.length === 0) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.onvoiceschanged = null;
+        executeSpeak();
+      };
+      // مهلة احتياطية لتشغيل النطق إن لم يتم إطلاق الحدث
+      setTimeout(() => {
+        if (!window.speechSynthesis.speaking) {
+          executeSpeak();
+        }
+      }, 250);
+    } else {
+      executeSpeak();
     }
 
-    if (onEnd) {
-      utterance.onend = onEnd;
-      utterance.onerror = onEnd;
-    }
-
-    window.speechSynthesis.speak(utterance);
   } catch (err) {
-    console.warn('تعذر تشغيل الصوت:', err);
+    console.warn('تعذر تشغيل محرك الصوت:', err);
     if (onEnd) onEnd();
   }
 }
