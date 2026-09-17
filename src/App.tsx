@@ -25,6 +25,9 @@ import { DrawingCanvasModal } from './components/DrawingCanvasModal';
 import { DiagnosticReportModal } from './components/DiagnosticReportModal';
 import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
 
+// مسار الصورة المرفوعة داخل مجلد public
+const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
+
 export default function App() {
   const [currentUser, setUser] = useState<UserProfile | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -125,7 +128,6 @@ export default function App() {
   useEffect(() => {
     setUser(getCurrentUser());
     
-    // سحب المستخدمين سحابياً لضمان الوصول الفوري من أي متصفح
     syncUsersFromCloud().then(cloudUsers => {
       setUsers(cloudUsers);
     });
@@ -246,7 +248,6 @@ export default function App() {
     setIsBooksModalOpen(false);
   };
 
-  // دالة قراءة وفك ضغط حزم وبنوك الأسئلة QTI (ZIP أو XML)
   const handleQtiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -724,6 +725,7 @@ export default function App() {
     }
   };
 
+  // زر موسى العائم مع الصورة الجديدة
   const renderFloatingMusaButton = () => (
     <div className="fixed bottom-6 left-6 z-40">
       <button
@@ -732,11 +734,16 @@ export default function App() {
         className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-700 text-white rounded-2xl shadow-xl shadow-emerald-700/30 border-2 border-amber-300 hover:scale-105 transition transform active:scale-95 cursor-pointer"
         title="تحدث مع موسى الرفيق الذكي 🤖💬"
       >
-        <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-lg flex items-center justify-center shadow-xs">
-          مـ
+        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-white/40 bg-white flex-shrink-0">
+          <img 
+            src={MOUSA_AVATAR_SRC} 
+            alt="موسى" 
+            className="w-full h-full object-cover" 
+            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
         </div>
         <div className="text-right">
-          <span className="block text-xs font-black">تَحَدَّثْ مَعَ مُوسَى</span>
+          <span className="block text-xs font-black">تَحَدَّثْ مَعَ مُوسَى</span>
           <span className="block text-[10px] text-amber-200 font-bold">الرفيق الصوتي بالذكاء الاصطناعي 🌟</span>
         </div>
       </button>
@@ -813,13 +820,30 @@ export default function App() {
     );
   };
 
+  // عنصر أيقونة الهيدر الموحد
+  const renderHeaderLogo = () => (
+    <div className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-emerald-500/30 bg-white flex-shrink-0">
+      <img 
+        src={MOUSA_AVATAR_SRC} 
+        alt="شعار موسى" 
+        className="w-full h-full object-cover" 
+        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+      />
+    </div>
+  );
+
   // ================= 1. شاشة تسجيل الدخول =================
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-200/80">
-          <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl font-bold shadow-md shadow-emerald-200">
-            م
+          {/* صورة موسى في شاشة تسجيل الدخول */}
+          <div className="w-24 h-24 rounded-3xl overflow-hidden shadow-xl shadow-emerald-600/20 mx-auto mb-4 border-2 border-emerald-500/40 bg-white p-1">
+            <img 
+              src={MOUSA_AVATAR_SRC} 
+              alt="منصة تعلَّم مع موسى" 
+              className="w-full h-full object-cover rounded-2xl" 
+            />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-1">منصة تعلَّم مع موسى</h1>
           <p className="text-slate-500 text-xs text-center mb-6">بوابة الدخول للنظام المركزي</p>
@@ -941,9 +965,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
-              م
-            </div>
+            {renderHeaderLogo()}
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | لوحة المؤسس والإدارة العليا</h1>
               <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
@@ -1387,9 +1409,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
-              م
-            </div>
+            {renderHeaderLogo()}
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | لوحة رئيس القسم</h1>
               <p className="text-xs text-slate-500 font-medium">رئيس القسم: <b className="text-slate-800">{currentUser.name}</b></p>
@@ -1562,9 +1582,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
-              م
-            </div>
+            {renderHeaderLogo()}
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة المعلم</h1>
               <p className="text-xs text-slate-500 font-medium">المعلم: <b className="text-slate-800">{currentUser.name}</b></p>
@@ -1848,7 +1866,6 @@ export default function App() {
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <h3 className="font-bold text-sm text-slate-800">الأسئلة التفاعلية</h3>
                       <div className="flex items-center gap-2">
-                        {/* زر استيراد ملف QTI أو ZIP */}
                         <label className="cursor-pointer px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-xs">
                           <FileUp className="w-3.5 h-3.5" /> استيراد بنك أسئلة (QTI / ZIP)
                           <input
@@ -2178,9 +2195,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
-              م
-            </div>
+            {renderHeaderLogo()}
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة الطالب</h1>
               <p className="text-xs text-slate-500 font-medium">
@@ -2229,21 +2244,25 @@ export default function App() {
 
           {studentTab === 'ai_studio' && (
             <div className="space-y-6">
-              {/* بانر الترحيب التفاعلي من موسى */}
+              {/* بانر الترحيب التفاعلي من موسى بالصورة الجديدة */}
               <div className="relative overflow-hidden bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-emerald-900/10">
                 <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-5">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black text-4xl shadow-lg shadow-amber-500/30 flex-shrink-0 border-4 border-white/20">
-                    مـ
+                  <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden shadow-2xl shadow-emerald-950/40 flex-shrink-0 border-4 border-white/30 bg-white p-1">
+                    <img 
+                      src={MOUSA_AVATAR_SRC} 
+                      alt="موسى" 
+                      className="w-full h-full object-cover rounded-2xl" 
+                    />
                   </div>
                   <div className="text-center sm:text-right flex-1">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black text-amber-200 mb-2">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" /> رَفِيقُكَ الذَّكِي لِتَعَلُّمِ العَرَبِيَّةِ
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" /> رَفِيقُكَ الذَّكِي لِتَعَلُّمِ العَرَبِيَّةِ
                     </div>
                     <h2 className="text-xl sm:text-2xl font-black mb-2 leading-relaxed">
                       مَرْحَبًا بِكَ يَا بَطَلِي <span className="text-amber-300 font-extrabold">{currentUser.name}</span>! 🌟
                     </h2>
                     <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed max-w-2xl mb-4">
-                      أَنَا مُوسَى، رَفِيقُكَ المُسَاعِد! يُمْكِنُكَ التَّحَدُّثُ مَعِي، صِنَاعَةُ قَصَصٍ عَجِيبَةٍ، تَحَدِّي نُطْقِ الحُرُوفِ، أَوِ الرَّسْمِ لِأُخَمِّنَ إِبْدَاعَكَ!
+                      أَنَا مُوسَى، رَفِيقُكَ المُسَاعِد! يُمْكِنُكَ التَّحَدُّثُ مَعِي، صِنَاعَةُ قَصَصٍ عَجِيبَةٍ، تَحَدِّي نُطْقِ الحُرُوفِ، أَوِ الرَّسْمِ لِأُخَمِّنَ إِبْدَاعَكَ!
                     </p>
                     <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
                       <button
@@ -2251,14 +2270,14 @@ export default function App() {
                         onClick={() => setIsMusaChatOpen(true)}
                         className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-amber-400/20"
                       >
-                        <MessageCircle className="w-4 h-4" /> تَحَدَّثْ مَعَ مُوسَى الآن
+                        <MessageCircle className="w-4 h-4" /> تَحَدَّثْ مَعَ مُوسَى الآن
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsAdaptiveStoryOpen(true)}
                         className="px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 border border-white/20"
                       >
-                        <BookOpen className="w-4 h-4 text-amber-200" /> ابْدَأْ قِصَّةً تَفَاعُلِيَّةً
+                        <BookOpen className="w-4 h-4 text-amber-200" /> ابْدَأْ قِصَّةً تَفَاعُلِيَّةً
                       </button>
                     </div>
                   </div>
@@ -2577,9 +2596,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
-              م
-            </div>
+            {renderHeaderLogo()}
             <div>
               <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | بوابة ولي الأمر</h1>
               <p className="text-xs text-slate-500 font-medium">مرحباً بك: <b className="text-slate-800">{currentUser.name}</b></p>
