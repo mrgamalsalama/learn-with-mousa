@@ -1,0 +1,6 @@
+{
+  "name": "تعلَّم مع موسى | المنصة التفاعلية",
+  "description": "منصة تعلَّم مع موسى التفاعلية لتعليم اللغة العربية والأنشطة والقصص التفاعلية مع الذكاء الاصطناعي",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

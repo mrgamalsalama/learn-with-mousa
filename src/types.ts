@@ -145,3 +145,75 @@ export const STAGES_CONFIG: Record<SchoolStage, { nameAr: string; grades: { id: 
     ],
   },
 };
+
+// ===================== نماذج الذكاء الاصطناعي (Gemini AI Engine) =====================
+
+export interface MusaChatMessage {
+  id: string;
+  sender: 'musa' | 'child';
+  text: string;
+  timestamp: string;
+  hasAudio?: boolean;
+}
+
+export interface AdaptiveStoryNode {
+  step: number;
+  sceneTitle: string;
+  passage: string; // نص مشكول بالكامل
+  targetLetter: string;
+  question: string;
+  optionA: string;
+  optionB: string;
+  badgeEarned?: string;
+  isEnding: boolean;
+}
+
+export interface PhonicsVerificationResult {
+  isValid: boolean;
+  startsCorrectly: boolean;
+  formedWord: string;
+  meaningSimple: string;
+  encouragement: string;
+  badgeName?: string;
+  scoreAwarded: number;
+}
+
+export interface DrawingAnalysisResult {
+  recognizedObject: string;
+  startsWithTargetLetter: boolean;
+  targetLetter: string;
+  confidenceScore: number;
+  feedback: string;
+  badgeEarned?: string;
+  starsCount: number;
+}
+
+export interface DiagnosticReport {
+  studentName: string;
+  masteredLetters: string[];
+  needsPracticeLetters: string[];
+  engagementRate: number;
+  overallAccuracy: number;
+  teacherPedagogicalNotes: string;
+  recommendedNextSteps: string[];
+  strengths: string[];
+  growthAreas: string[];
+  generatedAt: string;
+}
+
+export interface ChildBadge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  earnedAt: string;
+  category: 'story' | 'phonics' | 'drawing' | 'quiz';
+}
+
+export interface ChildPhonicsRecord {
+  letter: string;
+  word: string;
+  isCorrect: boolean;
+  type: 'voice' | 'drawing' | 'quiz';
+  timestamp: string;
+}

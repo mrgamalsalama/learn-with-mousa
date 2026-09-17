@@ -1,0 +1,358 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  X, Send, Volume2, VolumeX, Mic, MicOff, Sparkles, Bot, 
+  MessageCircle, RefreshCw, Smile, Star, Heart
+} from 'lucide-react';
+import { MusaChatMessage } from '../types';
+import { chatWithMusa, speakArabicText, stopArabicSpeech } from '../geminiService';
+
+interface MusaCompanionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  studentName?: string;
+}
+
+export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
+  isOpen,
+  onClose,
+  studentName = 'صديقي البطل'
+}) => {
+  const [messages, setMessages] = useState<MusaChatMessage[]>([
+    {
+      id: 'msg_welcome',
+      sender: 'musa',
+      text: `أَهْلًا وَسَهْلًا بِكَ يَا ${studentName}! 🌟 أَنَا صَدِيقُكَ مُوسَى، وَأَنَا هُنَا لِأَتَحَدَّثَ مَعَكَ، وَنَتَعَلَّمَ أَجْمَلَ الحُرُوفِ وَالكَلِمَاتِ العَرَبِيَّة! مَاذَا تُحِبُّ أَنْ نَفْعَلَ اليَوْم؟ 🎈`,
+      timestamp: 'الآن',
+      hasAudio: true,
+    }
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (isOpen && !isMuted && messages.length === 1) {
+      speakArabicText(messages[0].text, () => setIsSpeaking(false));
+      setIsSpeaking(true);
+    }
+    return () => {
+      stopArabicSpeech();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
+
+  // إعداد التعرف الصوتي (Web Speech Recognition)
+  const toggleSpeechRecognition = () => {
+    if (isVoiceActive) {
+      recognitionRef.current?.stop();
+      setIsVoiceActive(false);
+      return;
+    }
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert('عذراً، خاصية الاستماع الصوتي غير مدعومة في متصفحك الحالي، يمكنك الكتابة أو اختيار العبارات الجاهزة!');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.lang = 'ar-SA';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setIsVoiceActive(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputText(transcript);
+        setIsVoiceActive(false);
+        handleSend(transcript);
+      };
+
+      recognition.onerror = (err: any) => {
+        console.warn('Speech recognition error:', err);
+        setIsVoiceActive(false);
+      };
+
+      recognition.onend = () => {
+        setIsVoiceActive(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setIsVoiceActive(false);
+    }
+  };
+
+  const handleSend = async (textToSend?: string) => {
+    const text = (textToSend ?? inputText).trim();
+    if (!text || isLoading) return;
+
+    stopArabicSpeech();
+    setIsSpeaking(false);
+
+    const userMsg: MusaChatMessage = {
+      id: 'msg_' + Date.now(),
+      sender: 'child',
+      text,
+      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    setInputText('');
+    setIsLoading(true);
+
+    // تحضير سجل المحادثة
+    const history = messages.map(m => ({
+      role: (m.sender === 'musa' ? 'model' : 'user') as 'user' | 'model',
+      text: m.text,
+    }));
+
+    try {
+      const reply = await chatWithMusa(history, text);
+      const musaMsg: MusaChatMessage = {
+        id: 'msg_musa_' + Date.now(),
+        sender: 'musa',
+        text: reply,
+        timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+        hasAudio: true,
+      };
+
+      setMessages(prev => [...prev, musaMsg]);
+
+      if (!isMuted) {
+        setIsSpeaking(true);
+        speakArabicText(reply, () => setIsSpeaking(false));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePlayAudio = (text: string) => {
+    if (isSpeaking) {
+      stopArabicSpeech();
+      setIsSpeaking(false);
+    } else {
+      setIsSpeaking(true);
+      speakArabicText(text, () => setIsSpeaking(false));
+    }
+  };
+
+  const quickPrompts = [
+    'مَرْحَبًا يَا مُوسَى! 👋',
+    'أَخْبِرْنِي طُرْفَةً لَطِيفَةً! 🎈',
+    'كَيْفَ أَنْطِقُ حَرْفَ البَاءِ؟ 🔤',
+    'مَا رَأْيُكَ فِي مَهَارَاتِي؟ 🌟',
+    'عَلِّمْنِي كَلِمَةً جَدِيدَةً! 📚',
+  ];
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-200">
+      <div 
+        id="musa-companion-modal"
+        className="bg-white rounded-3xl w-full max-w-xl h-[90vh] max-h-[680px] flex flex-col border border-emerald-200 shadow-2xl overflow-hidden"
+        dir="rtl"
+      >
+        {/* ترويسة نافذة موسى */}
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-4 text-white flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400 border-2 border-white flex items-center justify-center shadow-md transform hover:rotate-6 transition">
+                <span className="text-2xl font-black text-emerald-950">مـ</span>
+              </div>
+              {isSpeaking && (
+                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-200 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-400"></span>
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h3 className="font-extrabold text-base">مُوسَى | رَفِيقُكَ الذَّكِيّ</h3>
+                <span className="px-2 py-0.5 bg-emerald-500/80 rounded-full text-[10px] font-bold">
+                  Gemini AI
+                </span>
+              </div>
+              <p className="text-xs text-emerald-100 flex items-center gap-1">
+                {isSpeaking ? (
+                  <span className="text-amber-300 font-bold flex items-center gap-1">
+                    <Volume2 className="w-3.5 h-3.5 animate-pulse" /> يَتَحَدَّثُ إِلَيْكَ الآن...
+                  </span>
+                ) : (
+                  <span>مُتَّصِلٌ وَمُسْتَعِدٌّ لِلتَّعَلُّمِ وَالمَرَح 🎈</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setIsMuted(!isMuted);
+                if (!isMuted) stopArabicSpeech();
+              }}
+              className={`p-2 rounded-xl border transition ${
+                isMuted ? 'bg-rose-500/20 border-rose-300 text-rose-200' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+              }`}
+              title={isMuted ? 'تفعيل الصوت' : 'كتم الصوت'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                stopArabicSpeech();
+                onClose();
+              }}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"
+              title="إغلاق"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* جسم المحادثة */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/70">
+          {messages.map((msg) => {
+            const isMusa = msg.sender === 'musa';
+            return (
+              <div
+                key={msg.id}
+                className={`flex gap-2.5 ${isMusa ? 'items-start' : 'items-end flex-row-reverse'}`}
+              >
+                {isMusa ? (
+                  <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                    مـ
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                    أنا
+                  </div>
+                )}
+
+                <div
+                  className={`max-w-[82%] rounded-3xl p-3.5 text-sm shadow-xs transition ${
+                    isMusa
+                      ? 'bg-white text-slate-800 border border-emerald-100 rounded-tr-xs'
+                      : 'bg-emerald-600 text-white rounded-tl-xs'
+                  }`}
+                >
+                  <p className="leading-relaxed whitespace-pre-wrap font-medium">
+                    {msg.text}
+                  </p>
+                  <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100/50 text-[10px]">
+                    <span className={isMusa ? 'text-slate-400' : 'text-emerald-100'}>
+                      {msg.timestamp}
+                    </span>
+                    {isMusa && (
+                      <button
+                        type="button"
+                        onClick={() => handlePlayAudio(msg.text)}
+                        className="text-emerald-600 hover:text-emerald-800 font-bold flex items-center gap-1 transition pr-2"
+                        title="استمع للصوت"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>استمع</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {isLoading && (
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-sm flex items-center justify-center shrink-0 animate-bounce">
+                مـ
+              </div>
+              <div className="bg-white border border-emerald-100 rounded-3xl p-3.5 shadow-xs flex items-center gap-2">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                <span className="text-xs text-emerald-800 font-bold">مُوسَى يُفَكِّرُ فِي رَدٍّ جَمِيلٍ لَكَ... 🎈</span>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* خيارات المحادثة السريعة للطفل */}
+        <div className="px-4 py-2 bg-white border-t border-slate-100 overflow-x-auto flex gap-1.5 no-scrollbar">
+          {quickPrompts.map((prompt, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleSend(prompt)}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-semibold whitespace-nowrap transition transform active:scale-95"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+
+        {/* شريط الإدخال الصوتي والكتابي */}
+        <div className="p-3 bg-white border-t border-slate-200">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            className="flex items-center gap-2"
+          >
+            <button
+              type="button"
+              onClick={toggleSpeechRecognition}
+              className={`p-3 rounded-2xl border transition flex items-center justify-center shrink-0 ${
+                isVoiceActive
+                  ? 'bg-rose-500 text-white border-rose-600 animate-pulse shadow-md shadow-rose-200'
+                  : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+              }`}
+              title={isVoiceActive ? 'جارٍ الاستماع... انقر للإيقاف' : 'تحدث مع موسى بصوتك'}
+            >
+              {isVoiceActive ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={isVoiceActive ? 'تحدث الآن، موسى يستمع إليك...' : 'اكتب رسالتك لموسى هنا...'}
+              className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/70"
+            />
+
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isLoading}
+              className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl transition shrink-0 shadow-md shadow-emerald-200"
+              title="إرسال"
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};

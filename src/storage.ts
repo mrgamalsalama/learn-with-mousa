@@ -1,4 +1,4 @@
-import { UserProfile, Activity, StudentSubmission, StoryBankItem, BookItem } from './types';
+import { UserProfile, Activity, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase } from './supabaseClient';
 
@@ -7,6 +7,8 @@ const ACTIVITIES_KEY = 'lwm_activities';
 const SUBMISSIONS_KEY = 'lwm_submissions';
 const CURRENT_USER_KEY = 'lwm_current_user';
 const BOOKS_KEY = 'lwm_books_repository';
+const BADGES_KEY = 'lwm_student_badges';
+const PHONICS_RECORDS_KEY = 'lwm_student_phonics';
 
 export const INITIAL_USERS: UserProfile[] = [
   {
@@ -15,7 +17,50 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'admin',
     password: '123',
     role: 'super_admin',
-    loginCount: 0,
+    loginCount: 5,
+  },
+  {
+    id: 'usr_hod',
+    name: 'د. أحمد المنصوري (رئيس القسم)',
+    username: 'hod',
+    password: '123',
+    role: 'hod',
+    allowedStages: ['primary'],
+    allowedGrades: ['grade-1', 'grade-2', 'grade-3', 'grade-4'],
+    allowedTracks: ['arabic-a', 'arabic-b'],
+    loginCount: 8,
+  },
+  {
+    id: 'usr_teacher',
+    name: 'الأستاذة فاطمة الزهراء',
+    username: 'teacher',
+    password: '123',
+    role: 'teacher',
+    allowedStages: ['primary'],
+    allowedGrades: ['grade-1', 'grade-2'],
+    allowedTracks: ['arabic-a', 'arabic-b'],
+    loginCount: 12,
+  },
+  {
+    id: 'usr_student_mousa',
+    name: 'موسى البطل 🌟',
+    username: 'student',
+    password: '123',
+    role: 'student',
+    stage: 'primary',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    teacherId: 'usr_teacher',
+    loginCount: 15,
+  },
+  {
+    id: 'usr_parent',
+    name: 'الأستاذ عمر (ولي أمر موسى)',
+    username: 'parent',
+    password: '123',
+    role: 'parent',
+    studentId: 'usr_student_mousa',
+    loginCount: 6,
   }
 ];
 
@@ -54,7 +99,19 @@ export const getUsers = (): UserProfile[] => {
     localStorage.setItem(USERS_KEY, JSON.stringify(INITIAL_USERS));
     return INITIAL_USERS;
   }
-  return JSON.parse(data);
+  const currentList: UserProfile[] = JSON.parse(data);
+  // ضمان وجود حسابات الديمو الأساسية
+  let changed = false;
+  for (const initUser of INITIAL_USERS) {
+    if (!currentList.some(u => u.username === initUser.username)) {
+      currentList.push(initUser);
+      changed = true;
+    }
+  }
+  if (changed) {
+    localStorage.setItem(USERS_KEY, JSON.stringify(currentList));
+  }
+  return currentList;
 };
 
 export const saveUser = async (user: UserProfile): Promise<void> => {
@@ -255,4 +312,86 @@ export const updateBookAssignment = (
     books[bookIndex].assignedByTeacherId = teacherId;
     localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
   }
+};
+
+// ================= أوسمة وإنجازات الطالب (Gamification Badges) =================
+const INITIAL_BADGES: ChildBadge[] = [
+  {
+    id: 'badge_welcome',
+    title: 'نجم الحروف الصاعد 🌟',
+    description: 'الانضمام لمنصة تعلّم مع موسى واستكشاف الحروف',
+    icon: '🌟',
+    earnedAt: new Date().toLocaleDateString('ar-EG'),
+    category: 'phonics',
+  },
+  {
+    id: 'badge_story_1',
+    title: 'حكواتي حرف الباء 📖',
+    description: 'إكمال قصة تفاعلية مشكولة واتخاذ قرارات ذكية',
+    icon: '🏆',
+    earnedAt: new Date().toLocaleDateString('ar-EG'),
+    category: 'story',
+  },
+  {
+    id: 'badge_art_1',
+    title: 'فنان الكلمات والرسومات 🎨',
+    description: 'رسم عنصر يمثل حرف الباء والتعرف عليه بالذكاء الاصطناعي',
+    icon: '🎨',
+    earnedAt: new Date().toLocaleDateString('ar-EG'),
+    category: 'drawing',
+  }
+];
+
+export const getStudentBadges = (studentId: string): ChildBadge[] => {
+  const data = localStorage.getItem(`${BADGES_KEY}_${studentId}`);
+  if (!data) {
+    localStorage.setItem(`${BADGES_KEY}_${studentId}`, JSON.stringify(INITIAL_BADGES));
+    return INITIAL_BADGES;
+  }
+  try {
+    return JSON.parse(data);
+  } catch {
+    return INITIAL_BADGES;
+  }
+};
+
+export const saveStudentBadge = (studentId: string, badge: ChildBadge): ChildBadge[] => {
+  const badges = getStudentBadges(studentId);
+  if (!badges.some(b => b.title === badge.title)) {
+    badges.unshift(badge);
+    localStorage.setItem(`${BADGES_KEY}_${studentId}`, JSON.stringify(badges));
+  }
+  return badges;
+};
+
+// ================= سجل التحديات الصوتية والرسم للتحليل التشخيصي =================
+const INITIAL_PHONICS_RECORDS: ChildPhonicsRecord[] = [
+  { letter: 'أ', word: 'أَرْنَبٌ', isCorrect: true, type: 'voice', timestamp: 'اليوم 09:30 ص' },
+  { letter: 'ب', word: 'بَطَّةٌ', isCorrect: true, type: 'voice', timestamp: 'اليوم 09:35 ص' },
+  { letter: 'م', word: 'مَسْجِدٌ', isCorrect: true, type: 'voice', timestamp: 'اليوم 09:42 ص' },
+  { letter: 'س', word: 'سَمَكَةٌ', isCorrect: true, type: 'voice', timestamp: 'اليوم 09:50 ص' },
+  { letter: 'د', word: 'دَرَاجَةٌ', isCorrect: true, type: 'voice', timestamp: 'اليوم 10:05 ص' },
+  { letter: 'ص', word: 'سَقْرٌ', isCorrect: false, type: 'voice', timestamp: 'اليوم 10:15 ص' },
+  { letter: 'ض', word: 'دِفْدَعٌ', isCorrect: false, type: 'voice', timestamp: 'اليوم 10:20 ص' },
+  { letter: 'ب', word: 'بيت', isCorrect: true, type: 'drawing', timestamp: 'اليوم 10:30 ص' },
+];
+
+export const getStudentPhonicsRecords = (studentId: string): ChildPhonicsRecord[] => {
+  const data = localStorage.getItem(`${PHONICS_RECORDS_KEY}_${studentId}`);
+  if (!data) {
+    localStorage.setItem(`${PHONICS_RECORDS_KEY}_${studentId}`, JSON.stringify(INITIAL_PHONICS_RECORDS));
+    return INITIAL_PHONICS_RECORDS;
+  }
+  try {
+    return JSON.parse(data);
+  } catch {
+    return INITIAL_PHONICS_RECORDS;
+  }
+};
+
+export const saveStudentPhonicsRecord = (studentId: string, record: ChildPhonicsRecord): ChildPhonicsRecord[] => {
+  const records = getStudentPhonicsRecords(studentId);
+  records.unshift(record);
+  localStorage.setItem(`${PHONICS_RECORDS_KEY}_${studentId}`, JSON.stringify(records));
+  return records;
 };

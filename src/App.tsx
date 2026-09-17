@@ -3,19 +3,27 @@ import {
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
-  Library, Download, Eye, CheckSquare, X, Search, FileUp
+  Library, Download, Eye, CheckSquare, X, Search, FileUp,
+  Bot, Palette, Brain, Printer, MessageCircle, Star
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
-  STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem 
+  STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
+  ChildBadge
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
   getStoryBank, getBooksRepository, updateBookAssignment,
-  syncUsersFromCloud
+  syncUsersFromCloud, getStudentBadges
 } from './storage';
+import { MusaCompanionModal } from './components/MusaCompanionModal';
+import { AdaptiveStoryModal } from './components/AdaptiveStoryModal';
+import { PhonicsGateModal } from './components/PhonicsGateModal';
+import { DrawingCanvasModal } from './components/DrawingCanvasModal';
+import { DiagnosticReportModal } from './components/DiagnosticReportModal';
+import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
 
 export default function App() {
   const [currentUser, setUser] = useState<UserProfile | null>(null);
@@ -24,6 +32,17 @@ export default function App() {
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
   const [storyBank, setStoryBank] = useState<StoryBankItem[]>([]);
   const [books, setBooks] = useState<BookItem[]>([]);
+
+  // حالات أدوات الذكاء الاصطناعي (Gemini AI Suite)
+  const [isMusaChatOpen, setIsMusaChatOpen] = useState<boolean>(false);
+  const [isAdaptiveStoryOpen, setIsAdaptiveStoryOpen] = useState<boolean>(false);
+  const [isPhonicsGateOpen, setIsPhonicsGateOpen] = useState<boolean>(false);
+  const [isDrawingCanvasOpen, setIsDrawingCanvasOpen] = useState<boolean>(false);
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
+  const [diagnosticStudent, setDiagnosticStudent] = useState<UserProfile | null>(null);
+  const [isPrintableWorksheetOpen, setIsPrintableWorksheetOpen] = useState<boolean>(false);
+  const [worksheetStudent, setWorksheetStudent] = useState<UserProfile | null>(null);
+  const [studentBadges, setStudentBadges] = useState<ChildBadge[]>([]);
 
   // تبويبات لوحة المشرف العام
   const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
@@ -35,7 +54,7 @@ export default function App() {
   const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades' | 'library'>('activities');
 
   // تبويبات لوحة الطالب
-  const [studentTab, setStudentTab] = useState<'activities' | 'library'>('activities');
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'activities' | 'library'>('ai_studio');
 
   // تبويبات لوحة ولي الأمر
   const [parentTab, setParentTab] = useState<'progress' | 'library'>('progress');
@@ -685,6 +704,115 @@ export default function App() {
     return matchesSection && isRealBookCover && hasValidReadUrl;
   });
 
+  useEffect(() => {
+    if (currentUser?.id) {
+      setStudentBadges(getStudentBadges(currentUser.id));
+    } else {
+      setStudentBadges(getStudentBadges('usr_student_mousa'));
+    }
+  }, [currentUser, isPhonicsGateOpen, isAdaptiveStoryOpen, isDrawingCanvasOpen]);
+
+  const handleQuickLogin = (uname: string, pwd: string = '123') => {
+    setLoginUsername(uname);
+    setLoginPassword(pwd);
+    const all = getUsers();
+    const found = all.find((u) => u.username.toLowerCase() === uname.toLowerCase() && u.password === pwd);
+    if (found) {
+      const updatedUser = recordUserLogin(found);
+      setUser(updatedUser);
+      setUsers(all);
+    }
+  };
+
+  const renderFloatingMusaButton = () => (
+    <div className="fixed bottom-6 left-6 z-40">
+      <button
+        type="button"
+        onClick={() => setIsMusaChatOpen(true)}
+        className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-700 text-white rounded-2xl shadow-xl shadow-emerald-700/30 border-2 border-amber-300 hover:scale-105 transition transform active:scale-95 cursor-pointer"
+        title="تحدث مع موسى الرفيق الذكي 🤖💬"
+      >
+        <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-lg flex items-center justify-center shadow-xs">
+          مـ
+        </div>
+        <div className="text-right">
+          <span className="block text-xs font-black">تَحَدَّثْ مَعَ مُوسَى</span>
+          <span className="block text-[10px] text-amber-200 font-bold">الرفيق الصوتي بالذكاء الاصطناعي 🌟</span>
+        </div>
+      </button>
+    </div>
+  );
+
+  const renderAIModals = () => {
+    const activeStudentId = currentUser?.role === 'student' ? currentUser.id : (diagnosticStudent?.id || 'usr_student_mousa');
+    const activeStudentName = currentUser?.role === 'student' ? currentUser.name : (diagnosticStudent?.name || 'موسى البطل');
+
+    return (
+      <>
+        {isMusaChatOpen && (
+          <MusaCompanionModal
+            isOpen={isMusaChatOpen}
+            onClose={() => setIsMusaChatOpen(false)}
+            studentName={currentUser?.name || 'صديقي البطل'}
+          />
+        )}
+
+        {isAdaptiveStoryOpen && (
+          <AdaptiveStoryModal
+            isOpen={isAdaptiveStoryOpen}
+            onClose={() => {
+              setIsAdaptiveStoryOpen(false);
+              setStudentBadges(getStudentBadges(activeStudentId));
+            }}
+            studentId={activeStudentId}
+          />
+        )}
+
+        {isPhonicsGateOpen && (
+          <PhonicsGateModal
+            isOpen={isPhonicsGateOpen}
+            onClose={() => {
+              setIsPhonicsGateOpen(false);
+              setStudentBadges(getStudentBadges(activeStudentId));
+            }}
+            studentId={activeStudentId}
+          />
+        )}
+
+        {isDrawingCanvasOpen && (
+          <DrawingCanvasModal
+            isOpen={isDrawingCanvasOpen}
+            onClose={() => {
+              setIsDrawingCanvasOpen(false);
+              setStudentBadges(getStudentBadges(activeStudentId));
+            }}
+            studentId={activeStudentId}
+          />
+        )}
+
+        {isDiagnosticModalOpen && (
+          <DiagnosticReportModal
+            isOpen={isDiagnosticModalOpen}
+            onClose={() => setIsDiagnosticModalOpen(false)}
+            studentName={diagnosticStudent?.name || activeStudentName}
+            studentId={diagnosticStudent?.id || activeStudentId}
+            submissions={submissions.filter(s => s.studentId === (diagnosticStudent?.id || activeStudentId))}
+          />
+        )}
+
+        {isPrintableWorksheetOpen && (
+          <PrintableWorksheetModal
+            isOpen={isPrintableWorksheetOpen}
+            onClose={() => setIsPrintableWorksheetOpen(false)}
+            studentName={worksheetStudent?.name || activeStudentName}
+            grade={worksheetStudent?.grade ? getGradeLabel(worksheetStudent.grade) : 'الصف الأول الابتدائي'}
+            weakLetters={['ص', 'ض', 'ط']}
+          />
+        )}
+      </>
+    );
+  };
+
   // ================= 1. شاشة تسجيل الدخول =================
   if (!currentUser) {
     return (
@@ -741,12 +869,63 @@ export default function App() {
             </button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-            <span className="text-[11px] text-slate-400">
-              دخول المشرف العام: <b>admin</b> / كلمة المرور: <b>123</b>
+          {/* تجربة الأدوار بنقرة واحدة */}
+          <div className="mt-6 pt-4 border-t border-slate-100">
+            <span className="block text-[11px] font-bold text-slate-500 mb-2 text-center">
+              تجربة المنصة الفورية (اختر دوراً للدخول المباشر):
             </span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('student', '123')}
+                className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl font-bold border border-emerald-200 transition text-center"
+              >
+                👦 الطالب (موسى)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('teacher', '123')}
+                className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl font-bold border border-indigo-200 transition text-center"
+              >
+                👩‍🏫 المعلمة (فاطمة)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('parent', '123')}
+                className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl font-bold border border-amber-200 transition text-center"
+              >
+                👨‍👩‍👧 ولي الأمر (عمر)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('hod', '123')}
+                className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-xl font-bold border border-purple-200 transition text-center"
+              >
+                👔 رئيس القسم (د. أحمد)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('admin', '123')}
+                className="col-span-2 p-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold border border-slate-300 transition text-center"
+              >
+                🛡️ المشرف العام (الإدارة العليا)
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 text-center">
+            <button
+              type="button"
+              onClick={() => setIsMusaChatOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-emerald-700 hover:text-emerald-800 font-extrabold bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-full border border-emerald-200 transition"
+            >
+              <Bot className="w-4 h-4 text-emerald-600" /> تحدث مع موسى الآن قبل تسجيل الدخول 🤖
+            </button>
           </div>
         </div>
+
+        {renderFloatingMusaButton()}
+        {renderAIModals()}
       </div>
     );
   }
@@ -1821,11 +2000,23 @@ export default function App() {
                         <th className="pb-3 font-semibold">الدرجة</th>
                         <th className="pb-3 font-semibold">النسبة</th>
                         <th className="pb-3 font-semibold">تاريخ التسليم</th>
+                        <th className="pb-3 font-semibold text-center">أدوات الذكاء الاصطناعي 🧠</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {submissions.map((sub) => {
                         const percentage = Math.round((sub.score / sub.totalPoints) * 100) || 0;
+                        const targetStudent = users.find(u => u.id === sub.studentId) || {
+                          id: sub.studentId,
+                          name: sub.studentName,
+                          role: 'student' as const,
+                          grade: sub.grade,
+                          track: sub.track,
+                          stage: 'primary' as const,
+                          username: 'student',
+                          password: '123'
+                        };
+
                         return (
                           <tr key={sub.id} className="hover:bg-slate-50">
                             <td className="py-3 font-bold text-slate-800">{sub.studentName}</td>
@@ -1839,6 +2030,32 @@ export default function App() {
                               </span>
                             </td>
                             <td className="py-3 text-slate-400">{sub.submittedAt}</td>
+                            <td className="py-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDiagnosticStudent(targetStudent);
+                                    setIsDiagnosticModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-lg text-[10px] font-bold border border-cyan-200 transition flex items-center gap-1"
+                                  title="التقرير التشخيصي للطفل بالذكاء الاصطناعي"
+                                >
+                                  <Brain className="w-3 h-3 text-cyan-600" /> تقرير تشخيصي
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setWorksheetStudent(targetStudent);
+                                    setIsPrintableWorksheetOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition flex items-center gap-1"
+                                  title="توليد ورقة عمل علاجية للطباعة"
+                                >
+                                  <Printer className="w-3 h-3 text-emerald-600" /> ورقة علاجية
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1936,6 +2153,8 @@ export default function App() {
         )}
 
         {renderSharedReader()}
+        {renderFloatingMusaButton()}
+        {renderAIModals()}
       </div>
     );
   }
@@ -1979,7 +2198,17 @@ export default function App() {
         </header>
 
         <main className="max-w-5xl mx-auto px-4 py-8">
-          <div className="flex gap-2 mb-6">
+          <div className="flex flex-wrap gap-2 mb-6">
+            <button
+              onClick={() => setStudentTab('ai_studio')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'ai_studio' 
+                  ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md shadow-emerald-600/20' 
+                  : 'bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" /> أكاديمية موسى للذكاء الاصطناعي 🌟
+            </button>
             <button
               onClick={() => setStudentTab('activities')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
@@ -1997,6 +2226,184 @@ export default function App() {
               <Library className="w-4 h-4 text-emerald-400" /> رف القراءة ومكتبتي المصورة ({studentAssignedBooks.length})
             </button>
           </div>
+
+          {studentTab === 'ai_studio' && (
+            <div className="space-y-6">
+              {/* بانر الترحيب التفاعلي من موسى */}
+              <div className="relative overflow-hidden bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-emerald-900/10">
+                <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black text-4xl shadow-lg shadow-amber-500/30 flex-shrink-0 border-4 border-white/20">
+                    مـ
+                  </div>
+                  <div className="text-center sm:text-right flex-1">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black text-amber-200 mb-2">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" /> رَفِيقُكَ الذَّكِي لِتَعَلُّمِ العَرَبِيَّةِ
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black mb-2 leading-relaxed">
+                      مَرْحَبًا بِكَ يَا بَطَلِي <span className="text-amber-300 font-extrabold">{currentUser.name}</span>! 🌟
+                    </h2>
+                    <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed max-w-2xl mb-4">
+                      أَنَا مُوسَى، رَفِيقُكَ المُسَاعِد! يُمْكِنُكَ التَّحَدُّثُ مَعِي، صِنَاعَةُ قَصَصٍ عَجِيبَةٍ، تَحَدِّي نُطْقِ الحُرُوفِ، أَوِ الرَّسْمِ لِأُخَمِّنَ إِبْدَاعَكَ!
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                      <button
+                        type="button"
+                        onClick={() => setIsMusaChatOpen(true)}
+                        className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-amber-400/20"
+                      >
+                        <MessageCircle className="w-4 h-4" /> تَحَدَّثْ مَعَ مُوسَى الآن
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAdaptiveStoryOpen(true)}
+                        className="px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 border border-white/20"
+                      >
+                        <BookOpen className="w-4 h-4 text-amber-200" /> ابْدَأْ قِصَّةً تَفَاعُلِيَّةً
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* بطاقات المغامرات الأربع بالذكاء الاصطناعي */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* 1. الرفيق الصوتي */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div>
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xl mb-4">
+                      🤖
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold inline-block mb-2">
+                      محادثة واستماع صوتي
+                    </span>
+                    <h3 className="font-extrabold text-base text-slate-800 mb-1.5">الرفيق الصوتي مع موسى</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      تحدث مع موسى، واسأله عن الكلمات والحكايات، واستمع لصوته المشجع بنصوص مشكولة ومفهومة.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsMusaChatOpen(true)}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <MessageCircle className="w-4 h-4" /> فتح نافذة المحادثة
+                  </button>
+                </div>
+
+                {/* 2. صانع القصص التكيفية */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div>
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xl mb-4">
+                      📖
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold inline-block mb-2">
+                      قصص متفرعة بالتشكيل
+                    </span>
+                    <h3 className="font-extrabold text-base text-slate-800 mb-1.5">صانع القصص التفاعلية</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      اختر موضوع قصتك واصنع مساراتها بنفسك! كل قرار تتخذه يغير نهاية الحكاية مع نصوص عربية مضبوطة بالشكل.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAdaptiveStoryOpen(true)}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <BookOpen className="w-4 h-4" /> ابدأ صناعة القصة
+                  </button>
+                </div>
+
+                {/* 3. بوابة النطق والكلمة السحرية */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div>
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xl mb-4">
+                      🚪
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold inline-block mb-2">
+                      صوتيات وتحقق ذكي
+                    </span>
+                    <h3 className="font-extrabold text-base text-slate-800 mb-1.5">بوابة التحدي والكلمة السحرية</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      تحدي نطق الحروف والكلمات السحرية! تحقق من سلامة مخارج الحروف واكسب أوسمة الأبطال عند فتح الأبواب.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPhonicsGateOpen(true)}
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <Award className="w-4 h-4" /> افتح بوابة الحروف
+                  </button>
+                </div>
+
+                {/* 4. لوحة الرسم والتعرف البصري */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div>
+                    <div className="w-12 h-12 rounded-2xl bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xl mb-4">
+                      🎨
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 rounded-lg text-[10px] font-bold inline-block mb-2">
+                      رؤية حاسوبية ذكية
+                    </span>
+                    <h3 className="font-extrabold text-base text-slate-800 mb-1.5">لوحة الرسم والتعرف البصري</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      ارسم أي شكل على اللوحة التفاعلية ودع ذكاء موسى البصري يكتشف رسمتك ويشجعك بنجوم ذهبية!
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawingCanvasOpen(true)}
+                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <Palette className="w-4 h-4" /> افتح لوحة الرسم
+                  </button>
+                </div>
+              </div>
+
+              {/* أوسمتي وإنجازاتي */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Award className="w-5 h-5 text-amber-500" />
+                    <h3 className="font-extrabold text-base text-slate-800">أوسمتي المكتسبة وإنجازاتي 🏆</h3>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500">
+                    مجموع الأوسمة: <b className="text-emerald-600">{studentBadges.length}</b>
+                  </span>
+                </div>
+
+                {studentBadges.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <div className="text-4xl mb-2">🌟</div>
+                    <p className="text-xs font-bold text-slate-600 mb-1">لم تحصل على أي وسام بعد!</p>
+                    <p className="text-[11px] text-slate-400">
+                      جرب التحدث مع موسى، أو افتح بوابة الكلمات السحرية، أو ارسم رسمة جديدة لتكسب أوسمتك الأولى!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {studentBadges.map((badge) => (
+                      <div
+                        key={badge.id}
+                        className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 flex items-start gap-3"
+                      >
+                        <div className="text-2xl p-2 rounded-xl bg-white shadow-xs border border-amber-100 flex-shrink-0">
+                          {badge.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-extrabold text-xs text-amber-950 truncate mb-0.5">{badge.title}</h4>
+                          <p className="text-[10px] text-slate-600 leading-snug line-clamp-2">{badge.description}</p>
+                          <span className="text-[9px] text-amber-700 font-bold mt-1 block">
+                            {badge.earnedAt}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {studentTab === 'library' && (
             <div>
@@ -2145,6 +2552,8 @@ export default function App() {
           )}
         </main>
         {renderSharedReader()}
+        {renderFloatingMusaButton()}
+        {renderAIModals()}
       </div>
     );
   }
@@ -2223,11 +2632,35 @@ export default function App() {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2.5 rounded-2xl border border-emerald-100">
-                        <Award className="w-8 h-8 text-emerald-600" />
-                        <div>
-                          <span className="text-[10px] text-emerald-800 font-bold block">معدل التحصيل العام</span>
-                          <span className="text-lg font-black text-emerald-700">{avgPercentage}%</span>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDiagnosticStudent(student);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+                          title="استخراج تقرير تشخيصي ذكي بالذكاء الاصطناعي"
+                        >
+                          <Brain className="w-4 h-4" /> التقرير التشخيصي الذكي
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorksheetStudent(student);
+                            setIsPrintableWorksheetOpen(true);
+                          }}
+                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+                          title="توليد وطباعة أوراق عمل علاجية"
+                        >
+                          <Printer className="w-4 h-4" /> ورقة عمل علاجية
+                        </button>
+                        <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100">
+                          <Award className="w-7 h-7 text-emerald-600" />
+                          <div>
+                            <span className="text-[10px] text-emerald-800 font-bold block">معدل التحصيل</span>
+                            <span className="text-base font-black text-emerald-700">{avgPercentage}%</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2309,9 +2742,17 @@ export default function App() {
           )}
         </main>
         {renderSharedReader()}
+        {renderFloatingMusaButton()}
+        {renderAIModals()}
       </div>
     );
   }
 
-  return renderSharedReader();
+  return (
+    <>
+      {renderSharedReader()}
+      {renderFloatingMusaButton()}
+      {renderAIModals()}
+    </>
+  );
 }
