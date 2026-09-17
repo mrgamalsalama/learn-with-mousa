@@ -137,8 +137,16 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
         setIsSpeaking(true);
         speakArabicText(reply, () => setIsSpeaking(false));
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('خطأ في استلام رد موسى من النموذج:', err);
+      const errorMsg: MusaChatMessage = {
+        id: 'msg_err_' + Date.now(),
+        sender: 'musa',
+        text: `عُذْرًا يَا صَدِيقِي، حَدَثَ خَطَأٌ فِي الاتِّصَالِ: ${err?.message || String(err)}. يُمْكِنُكَ التَّحَقُّقُ مِنْ وَحْدَةِ التَّحَكُّمِ (Console).`,
+        timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+        hasAudio: false,
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
     }
