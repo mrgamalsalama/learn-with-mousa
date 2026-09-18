@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AdaptiveStoryNode, ChildBadge } from '../types';
-import { generateAdaptiveStoryScene, speakArabicText, stopArabicSpeech } from '../geminiService';
+import { generateAdaptiveStoryScene, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { saveStudentBadge } from '../storage';
 
 interface AdaptiveStoryModalProps {
@@ -33,12 +33,12 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
   useEffect(() => {
     return () => {
-      stopArabicSpeech();
+      stopMousaVoice();
     };
   }, []);
 
   const startNewStory = async (letterToUse = selectedLetter) => {
-    stopArabicSpeech();
+    stopMousaVoice();
     setIsSpeaking(false);
     setIsLoading(true);
     setEarnedBadge(null);
@@ -54,8 +54,8 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
       setCurrentNode(firstScene);
       setStoryHistory([firstScene]);
 
-      speakArabicText(firstScene.passage, () => setIsSpeaking(false));
       setIsSpeaking(true);
+      speakWithMousaVoice(firstScene.passage, () => setIsSpeaking(false));
     } catch (e) {
       console.error(e);
     } finally {
@@ -66,7 +66,7 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
   const handleChooseOption = async (chosenOption: string) => {
     if (!currentNode || isLoading) return;
 
-    stopArabicSpeech();
+    stopMousaVoice();
     setIsSpeaking(false);
     setIsLoading(true);
 
@@ -84,8 +84,8 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
       setCurrentNode(nextScene);
       setStoryHistory(prev => [...prev, nextScene]);
 
-      speakArabicText(nextScene.passage, () => setIsSpeaking(false));
       setIsSpeaking(true);
+      speakWithMousaVoice(nextScene.passage, () => setIsSpeaking(false));
 
       if (nextScene.isEnding) {
         confetti({
@@ -117,11 +117,11 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
   const handleReadCurrentScene = () => {
     if (!currentNode) return;
     if (isSpeaking) {
-      stopArabicSpeech();
+      stopMousaVoice();
       setIsSpeaking(false);
     } else {
       setIsSpeaking(true);
-      speakArabicText(currentNode.passage, () => setIsSpeaking(false));
+      speakWithMousaVoice(currentNode.passage, () => setIsSpeaking(false));
     }
   };
 
@@ -156,7 +156,7 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              stopArabicSpeech();
+              stopMousaVoice();
               onClose();
             }}
             className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"

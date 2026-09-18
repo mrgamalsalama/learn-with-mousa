@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PhonicsVerificationResult, ChildBadge } from '../types';
-import { verifyPhonicsWord, speakArabicText, stopArabicSpeech } from '../geminiService';
+import { verifyPhonicsWord, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
 
 interface PhonicsGateModalProps {
@@ -86,7 +86,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
     const word = (wordToVerify ?? inputWord).trim();
     if (!word || isLoading) return;
 
-    stopArabicSpeech();
+    stopMousaVoice();
     setIsLoading(true);
     setResult(null);
 
@@ -121,7 +121,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         });
 
-        speakArabicText(res.encouragement);
+        speakWithMousaVoice(res.encouragement);
       } else {
         setGateUnlocked(false);
         saveStudentPhonicsRecord(studentId, {
@@ -131,7 +131,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           type: 'voice',
           timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         });
-        speakArabicText(res.encouragement);
+        speakWithMousaVoice(res.encouragement);
       }
     } catch (e) {
       console.error(e);
@@ -141,7 +141,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
   };
 
   const nextLetterGate = () => {
-    stopArabicSpeech();
+    stopMousaVoice();
     setGateUnlocked(false);
     setResult(null);
     setInputWord('');
@@ -149,7 +149,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
   };
 
   const playLetterSound = () => {
-    speakArabicText(`صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`);
+    speakWithMousaVoice(`صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`);
   };
 
   if (!isOpen) return null;
@@ -183,7 +183,7 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              stopArabicSpeech();
+              stopMousaVoice();
               onClose();
             }}
             className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"

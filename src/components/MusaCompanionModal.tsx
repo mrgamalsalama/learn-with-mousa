@@ -4,7 +4,7 @@ import {
   MessageCircle, RefreshCw, Smile, Star, Heart
 } from 'lucide-react';
 import { MusaChatMessage } from '../types';
-import { chatWithMusa, speakArabicText, stopArabicSpeech } from '../geminiService';
+import { chatWithMusa, speakWithMousaVoice, stopMousaVoice, isMousaVoiceCached } from '../geminiService';
 
 interface MusaCompanionModalProps {
   isOpen: boolean;
@@ -37,11 +37,11 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
 
   useEffect(() => {
     if (isOpen && !isMuted && messages.length === 1) {
-      speakArabicText(messages[0].text, () => setIsSpeaking(false));
       setIsSpeaking(true);
+      speakWithMousaVoice(messages[0].text, () => setIsSpeaking(false));
     }
     return () => {
-      stopArabicSpeech();
+      stopMousaVoice();
     };
   }, [isOpen]);
 
@@ -101,7 +101,7 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
     const text = (textToSend ?? inputText).trim();
     if (!text || isLoading) return;
 
-    stopArabicSpeech();
+    stopMousaVoice();
     setIsSpeaking(false);
 
     const userMsg: MusaChatMessage = {
@@ -135,7 +135,7 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
 
       if (!isMuted) {
         setIsSpeaking(true);
-        speakArabicText(reply, () => setIsSpeaking(false));
+        speakWithMousaVoice(reply, () => setIsSpeaking(false));
       }
     } catch (err: any) {
       console.error('خطأ في استلام رد موسى من النموذج:', err);
@@ -154,11 +154,11 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
 
   const handlePlayAudio = (text: string) => {
     if (isSpeaking) {
-      stopArabicSpeech();
+      stopMousaVoice();
       setIsSpeaking(false);
     } else {
       setIsSpeaking(true);
-      speakArabicText(text, () => setIsSpeaking(false));
+      speakWithMousaVoice(text, () => setIsSpeaking(false));
     }
   };
 
@@ -196,14 +196,14 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <h3 className="font-extrabold text-base">مُوسَى | رَفِيقُكَ الذَّكِيّ</h3>
-                <span className="px-2 py-0.5 bg-emerald-500/80 rounded-full text-[10px] font-bold">
-                  Gemini AI
+                <span className="px-2 py-0.5 bg-emerald-500/80 rounded-full text-[10px] font-bold text-amber-200 flex items-center gap-1">
+                  <Sparkles className="w-2.5 h-2.5" /> صوت بشري واقعي (Gemini Native)
                 </span>
               </div>
               <p className="text-xs text-emerald-100 flex items-center gap-1">
                 {isSpeaking ? (
                   <span className="text-amber-300 font-bold flex items-center gap-1">
-                    <Volume2 className="w-3.5 h-3.5 animate-pulse" /> يَتَحَدَّثُ إِلَيْكَ الآن...
+                    <Volume2 className="w-3.5 h-3.5 animate-pulse" /> يَتَحَدَّثُ إِلَيْكَ الآن بنبرة موسى...
                   </span>
                 ) : (
                   <span>مُتَّصِلٌ وَمُسْتَعِدٌّ لِلتَّعَلُّمِ وَالمَرَح 🎈</span>
@@ -217,7 +217,7 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
               type="button"
               onClick={() => {
                 setIsMuted(!isMuted);
-                if (!isMuted) stopArabicSpeech();
+                if (!isMuted) stopMousaVoice();
               }}
               className={`p-2 rounded-xl border transition ${
                 isMuted ? 'bg-rose-500/20 border-rose-300 text-rose-200' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
@@ -230,7 +230,7 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                stopArabicSpeech();
+                stopMousaVoice();
                 onClose();
               }}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"

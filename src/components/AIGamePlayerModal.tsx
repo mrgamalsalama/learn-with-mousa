@@ -4,7 +4,7 @@ import {
   CheckCircle2, Star, Trophy, ArrowLeft, Lightbulb
 } from 'lucide-react';
 import { Activity, GameData, GameLevel, UserProfile, ChildBadge } from '../types';
-import { speakArabicText, stopArabicSpeech } from '../geminiService';
+import { speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { saveStudentBadge, saveSubmission } from '../storage';
 
 // مسار صورة موسى
@@ -134,10 +134,10 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
 
     // قراءة نص السؤال تلقائياً بصوت موسى
     const promptText = currentLevel.prompt.replace(/[\*\#\_]/g, '');
-    speakArabicText(promptText);
+    speakWithMousaVoice(promptText);
 
     return () => {
-      stopArabicSpeech();
+      stopMousaVoice();
     };
   }, [currentLevelIndex, isOpen, gameData]);
 
@@ -157,7 +157,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakArabicText(currentLevel.feedbackSuccess);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -167,7 +167,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakArabicText(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -213,7 +213,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakArabicText(currentLevel.feedbackSuccess);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -223,7 +223,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakArabicText(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -250,7 +250,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakArabicText(currentLevel.feedbackSuccess);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -260,7 +260,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakArabicText(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -404,7 +404,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                stopArabicSpeech();
+                stopMousaVoice();
                 onClose();
               }}
               className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition"
@@ -467,7 +467,7 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                stopArabicSpeech();
+                stopMousaVoice();
                 onClose();
               }}
               className="px-8 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm rounded-2xl transition shadow-lg shadow-emerald-600/25 flex items-center gap-2"
@@ -487,10 +487,13 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-extrabold text-xs text-amber-900">موسى يقول لك:</span>
+                  <span className="font-extrabold text-xs text-amber-900 flex items-center gap-1.5">
+                    موسى يقول لك:
+                    <span className="text-[10px] text-amber-700 font-normal bg-amber-200/60 px-1.5 py-0.5 rounded">صوت بشري أصلي ✨</span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => speakArabicText(currentLevel.prompt)}
+                    onClick={() => speakWithMousaVoice(currentLevel.prompt)}
                     className="flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-900 transition bg-amber-100/80 px-2 py-0.5 rounded-lg"
                   >
                     <Volume2 className="w-3.5 h-3.5" /> اسمع السؤال

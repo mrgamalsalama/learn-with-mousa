@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 import { 
   AdaptiveStoryNode, 
   PhonicsVerificationResult, 
@@ -12,17 +12,19 @@ import {
   GameLevel
 } from './types';
 
-// قراءة المفتاح بالشكل المطلوب
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
+// قراءة المفتاح بالشكل المطلوب مع دعم المتغيرات البيئية
+const apiKey = 
+  (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || 
+  import.meta.env.VITE_GEMINI_API_KEY || 
+  "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
 
-// النماذج المعتمدة لسرعة الاستجابة والدقة العالية عبر نموذج gemini-2.5-flash
-const PRIMARY_MODEL = 'gemini-2.5-flash';
+// النماذج المعتمدة لسرعة الاستجابة والدقة العالية
+const PRIMARY_MODEL = 'gemini-3.8-flash';
 const CANDIDATE_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-flash-lite-latest',
+  'gemini-3.8-flash',
   'gemini-flash-latest',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
 ];
 
 // إنشاء عميل الذكاء الاصطناعي بنمط التهيئة الكسولة (Lazy Initialization)
@@ -956,29 +958,161 @@ ${JSON.stringify(studentScores)}
   }
 }
 
-// ================= 8. قارئ النصوص الصوتي المدمج (Web Speech TTS) =================
-export function speakArabicText(text: string, onEnd?: () => void) {
+// ================= 8. ميزة النطق الصوتي الأصلي الفائق لشخصية موسى (Gemini Native Audio Output / TTS) =================
+
+// ذاكرة التخزين المؤقت للأصوات المولدة (Audio Cache) لتسريع الاستجابة وتوفير الحصة
+interface CachedAudioItem {
+  buffer: AudioBuffer;
+  wavUrl?: string;
+  timestamp: number;
+}
+
+const mousaAudioCache = new Map<string, CachedAudioItem>();
+
+let audioContextInstance: AudioContext | null = null;
+let currentSourceNode: AudioBufferSourceNode | null = null;
+
+/**
+ * الحصول على عميل AudioContext الموحد بنمط التهيئة الكسولة
+ */
+function getAudioContext(): AudioContext {
+  if (!audioContextInstance || audioContextInstance.state === 'closed') {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    audioContextInstance = new AudioCtx({ sampleRate: 24000 });
+  }
+  return audioContextInstance;
+}
+
+/**
+ * تنظيف النصوص العربية من الوسوم والرموز التعبيرية لضمان نطق سليم
+ */
+function cleanTextForSpeech(text: string): string {
+  return text
+    .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~]/g, '')
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * تحويل سلسلة Base64 إلى مصفوفة بايتات Uint8Array
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * تحويل بايتات الصوت الخام (16-bit Linear PCM Little-Endian @ 24kHz Mono) إلى AudioBuffer
+ */
+function pcmToAudioBuffer(pcmBytes: Uint8Array, audioCtx: AudioContext, sampleRate = 24000): AudioBuffer {
+  const numSamples = Math.floor(pcmBytes.byteLength / 2);
+  const audioBuffer = audioCtx.createBuffer(1, numSamples, sampleRate);
+  const channelData = audioBuffer.getChannelData(0);
+  const dataView = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength);
+
+  for (let i = 0; i < numSamples; i++) {
+    const int16 = dataView.getInt16(i * 2, true);
+    channelData[i] = int16 < 0 ? int16 / 32768 : int16 / 32767;
+  }
+  return audioBuffer;
+}
+
+/**
+ * تحويل بايتات PCM إلى ملف WAV قياسي قابل للتصدير أو التشغيل
+ */
+function pcmToWavBlob(pcmBytes: Uint8Array, sampleRate = 24000): Blob {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmBytes.byteLength;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  new Uint8Array(buffer, 44).set(pcmBytes);
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+/**
+ * تشغيل AudioBuffer في AudioContext مع التحكم في الإيقاف والإشعارات
+ */
+function playAudioBuffer(buffer: AudioBuffer, onEnd?: () => void) {
+  stopMousaVoice();
+
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    currentSourceNode = source;
+
+    source.onended = () => {
+      if (currentSourceNode === source) {
+        currentSourceNode = null;
+      }
+      if (onEnd) onEnd();
+    };
+
+    source.start(0);
+  } catch (err) {
+    console.warn('تعذر تشغيل عينة الصوت في AudioContext:', err);
+    if (onEnd) onEnd();
+  }
+}
+
+/**
+ * القارئ الاحتياطي عبر متصفح الويب (SpeechSynthesis) عند تعذر الاتصال أو انتهاء الحصة
+ */
+function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    if (onEnd) onEnd();
     return;
   }
 
   try {
-    window.speechSynthesis.cancel(); // إيقاف أي قراءة سابقة
-
-    // تنظيف الرموز البرمجية والأيقونات من النص قبل النطق
-    const cleanText = text
-      .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~]/g, '')
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-      .trim();
-
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ar-SA';
-    utterance.rate = 0.9; // سرعة هادئة للأطفال
-    utterance.pitch = 1.05; // نبرة مرحة ولطيفة
+    utterance.rate = 0.9;
+    utterance.pitch = 1.05;
 
-    // محاولة اختيار أفضل صوت عربي متاح في المتصفح
     const voices = window.speechSynthesis.getVoices();
-    const arabicVoice = voices.find(v => v.lang.startsWith('ar') || v.name.includes('Arabic') || v.name.includes('Maged') || v.name.includes('Tarik'));
+    const arabicVoice = voices.find(v => 
+      v.lang.startsWith('ar') || 
+      v.name.includes('Arabic') || 
+      v.name.includes('Maged') || 
+      v.name.includes('Tarik')
+    );
     if (arabicVoice) {
       utterance.voice = arabicVoice;
     }
@@ -989,15 +1123,171 @@ export function speakArabicText(text: string, onEnd?: () => void) {
     }
 
     window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    console.warn('تعذر تشغيل الصوت:', err);
+  } catch (e) {
     if (onEnd) onEnd();
   }
 }
 
-export function stopArabicSpeech() {
+/**
+ * إيقاف أي نطق صوتي نشط حالياً (سواء كان AudioContext أو SpeechSynthesis)
+ */
+export function stopMousaVoice(): void {
+  if (currentSourceNode) {
+    try {
+      currentSourceNode.stop();
+      currentSourceNode.disconnect();
+    } catch {}
+    currentSourceNode = null;
+  }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
+}
+
+/**
+ * التوافق التراجعي: إيقاف الصوت
+ */
+export function stopArabicSpeech(): void {
+  stopMousaVoice();
+}
+
+/**
+ * الدالة الرئيسية: توليد ونطق الصوت البشري فائق الواقعية لشخصية موسى (Gemini Native Audio)
+ * تدعم التخزين المؤقت التلقائي، والتشغيل الفوري عبر Web Audio API، مع نظام بديل ذكي
+ */
+export async function speakWithMousaVoice(text: string, onEnd?: () => void): Promise<boolean> {
+  const cleanText = cleanTextForSpeech(text);
+  if (!cleanText) {
+    if (onEnd) onEnd();
+    return false;
+  }
+
+  // 1. التحقق من التخزين المؤقت (Audio Cache)
+  const cacheKey = cleanText;
+  if (mousaAudioCache.has(cacheKey)) {
+    const cached = mousaAudioCache.get(cacheKey)!;
+    playAudioBuffer(cached.buffer, onEnd);
+    return true;
+  }
+
+  // 2. إيقاف أي نطق سابق
+  stopMousaVoice();
+
+  // 3. استدعاء نموذج Gemini الصوتي المباشر (gemini-3.1-flash-tts-preview)
+  try {
+    const ai = getAIClient();
+    if (!ai) {
+      speakBrowserSpeechSynthesis(cleanText, onEnd);
+      return false;
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-tts-preview',
+      contents: [{ parts: [{ text: cleanText }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: 'Puck', // نبرة صوت دافئة ومرحة وواضحة مخارج الحروف تناسب الأطفال وموسى
+            },
+          },
+        },
+      },
+    });
+
+    const candidate = response.candidates?.[0];
+    const part = candidate?.content?.parts?.[0];
+    const base64Data = part?.inlineData?.data;
+
+    if (base64Data) {
+      const pcmBytes = base64ToUint8Array(base64Data);
+      const audioCtx = getAudioContext();
+      const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
+      
+      let wavUrl: string | undefined;
+      try {
+        const blob = pcmToWavBlob(pcmBytes, 24000);
+        wavUrl = URL.createObjectURL(blob);
+      } catch {}
+
+      // حفظ العينة في الذاكرة المؤقتة لمنع تكرار استهلاك الحصة
+      mousaAudioCache.set(cacheKey, {
+        buffer,
+        wavUrl,
+        timestamp: Date.now()
+      });
+
+      // تشغيل الصوت فوراً
+      playAudioBuffer(buffer, onEnd);
+      return true;
+    } else {
+      throw new Error('لم يتم استلام مخرجات صوتية ثنائية من نموذج Gemini');
+    }
+  } catch (err: any) {
+    console.warn('تعذر توليد صوت موسى عبر Gemini Native TTS (سيتم استخدام القارئ البديل):', err?.message || err);
+    speakBrowserSpeechSynthesis(cleanText, onEnd);
+    return false;
+  }
+}
+
+/**
+ * التوافق التراجعي: دالة نطق النصوص العامة موجهة الآن تلقائياً لصوت موسى الأصلي
+ */
+export function speakArabicText(text: string, onEnd?: () => void): void {
+  speakWithMousaVoice(text, onEnd);
+}
+
+/**
+ * فحص ما إذا كان النص مخزناً مسبقاً في الذاكرة المؤقتة للأصوات
+ */
+export function isMousaVoiceCached(text: string): boolean {
+  const clean = cleanTextForSpeech(text);
+  return mousaAudioCache.has(clean);
+}
+
+/**
+ * حجم الذاكرة المؤقتة للأصوات المخزنة
+ */
+export function getMousaVoiceCacheSize(): number {
+  return mousaAudioCache.size;
+}
+
+/**
+ * تحميل مسبق لصوت موسى لمجموعة من النصوص المتكررة (مثل أصوات الحروف وعبارات التشجيع)
+ */
+export async function preloadMousaVoice(texts: string[]): Promise<void> {
+  for (const text of texts) {
+    const clean = cleanTextForSpeech(text);
+    if (!clean || mousaAudioCache.has(clean)) continue;
+    try {
+      const ai = getAIClient();
+      if (!ai) break;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-tts-preview',
+        contents: [{ parts: [{ text: clean }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Puck' }
+            }
+          }
+        }
+      });
+      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (data) {
+        const pcmBytes = base64ToUint8Array(data);
+        const audioCtx = getAudioContext();
+        const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
+        mousaAudioCache.set(clean, { buffer, timestamp: Date.now() });
+      }
+    } catch {
+      // إيقاف المعالجة المسبقة إن حدث ضغط على الحصة
+      break;
+    }
   }
 }
 

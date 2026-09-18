@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DrawingAnalysisResult, ChildBadge } from '../types';
-import { analyzeChildDrawing, speakArabicText, stopArabicSpeech } from '../geminiService';
+import { analyzeChildDrawing, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
 
 interface DrawingCanvasModalProps {
@@ -141,7 +141,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
     const canvas = canvasRef.current;
     if (!canvas || !hasDrawn || isLoading) return;
 
-    stopArabicSpeech();
+    stopMousaVoice();
     setIsLoading(true);
     setResult(null);
 
@@ -178,7 +178,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
       });
 
-      speakArabicText(res.feedback);
+      speakWithMousaVoice(res.feedback);
     } catch (e) {
       console.error(e);
     } finally {
@@ -217,7 +217,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              stopArabicSpeech();
+              stopMousaVoice();
               onClose();
             }}
             className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"
@@ -365,10 +365,18 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
               </div>
 
               {/* تعليق موسى المشكول */}
-              <div className="p-4 bg-white rounded-2xl border border-purple-100 shadow-xs">
-                <p className="text-sm font-semibold text-slate-800 leading-relaxed">
+              <div className="p-4 bg-white rounded-2xl border border-purple-100 shadow-xs flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-800 leading-relaxed flex-1">
                   {result.feedback}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => speakWithMousaVoice(result.feedback)}
+                  className="p-2 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-800 transition shrink-0"
+                  title="استمع لتعليق موسى بصوته الأصلي"
+                >
+                  <Volume2 className="w-4 h-4" />
+                </button>
               </div>
 
               {result.badgeEarned && (
