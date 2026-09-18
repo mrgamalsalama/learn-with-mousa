@@ -477,15 +477,23 @@ export default function App() {
     };
 
     await saveUser(newUser);
-    const updatedUsers = await syncUsersFromCloud();
-    setUsers(updatedUsers);
+    // تحديث واجهة المستخدم فوراً بالبيانات المحفوظة لضمان عدم توقف أو تجميد العملية
+    setUsers(getUsers());
+    
+    // محاولة مزامنة هادئة مع السحابة في الخلفية
+    syncUsersFromCloud().then((updatedUsers) => {
+      setUsers(updatedUsers);
+    }).catch((err) => {
+      console.warn('ملاحظة أثناء المزامنة السحابية في الخلفية:', err);
+    });
 
     setFormName('');
     setFormUsername('');
     setFormPassword('');
     setSelectedGrades([]);
     setSelectedTracks(['arabic-a']);
-    alert('تم حفظ الحساب سحابياً بنجاح، ويمكن الدخول به من أي جهاز الآن!');
+    setSelectedStudentId('');
+    alert('تم حفظ الحساب بنجاح، ويمكن الدخول به الآن!');
   };
 
   const handleDeleteUser = (id: string) => {

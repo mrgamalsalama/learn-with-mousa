@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   track TEXT,
   student_id TEXT,
   allowed_grades JSONB,
+  allowed_stages JSONB,
   allowed_tracks JSONB,
   login_count INTEGER DEFAULT 0,
   last_login TEXT,
