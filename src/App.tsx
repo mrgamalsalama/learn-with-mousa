@@ -5,7 +5,7 @@ import {
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
   Library, Download, Eye, CheckSquare, X, Search, FileUp,
   Bot, Palette, Brain, Printer, MessageCircle, Star,
-  Loader2, Wand2
+  Loader2, Wand2, Gamepad2, Trophy, Play
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -27,6 +27,8 @@ import { DrawingCanvasModal } from './components/DrawingCanvasModal';
 import { DiagnosticReportModal } from './components/DiagnosticReportModal';
 import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
 import { ClassDiagnosticModal } from './components/ClassDiagnosticModal';
+import { AIGamesTeacherSection } from './components/AIGamesTeacherSection';
+import { AIGamePlayerModal } from './components/AIGamePlayerModal';
 import { 
   generateAIPassage, 
   generateQuestionsFromPassage, 
@@ -62,10 +64,10 @@ export default function App() {
   const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library'>('overview');
 
   // تبويبات لوحة المعلم
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'grades' | 'library'>('activities');
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library'>('activities');
 
   // تبويبات لوحة الطالب
-  const [studentTab, setStudentTab] = useState<'ai_studio' | 'activities' | 'library'>('ai_studio');
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library'>('ai_studio');
 
   // تبويبات لوحة ولي الأمر
   const [parentTab, setParentTab] = useState<'progress' | 'library'>('progress');
@@ -87,6 +89,9 @@ export default function App() {
 
   // عارض الكتاب التفاعلي المباشر (Direct Reader State)
   const [activeReadingBook, setActiveReadingBook] = useState<BookItem | null>(null);
+
+  // حالة تشغيل اللعبة الذكية للطالب أو المعلم
+  const [activeGameToPlay, setActiveGameToPlay] = useState<Activity | null>(null);
 
   // بيانات تسجيل الدخول
   const [loginUsername, setLoginUsername] = useState('');
@@ -948,6 +953,31 @@ export default function App() {
             activityTitle="أنشطة القراءة والفهم التفاعلية"
           />
         )}
+
+        {activeGameToPlay && currentUser && (
+          <AIGamePlayerModal
+            isOpen={!!activeGameToPlay}
+            onClose={() => {
+              setActiveGameToPlay(null);
+              if (currentUser.role === 'student') {
+                setStudentBadges(getStudentBadges(currentUser.id));
+                syncStudentBadgesFromCloud(currentUser.id).then((b) => setStudentBadges(b));
+                syncSubmissionsFromCloud().then((subs) => setSubmissions(subs));
+              }
+            }}
+            activity={activeGameToPlay}
+            student={currentUser}
+            onGameCompleted={(newBadge) => {
+              if (currentUser.role === 'student') {
+                if (newBadge) {
+                  setStudentBadges((prev) => [newBadge, ...prev.filter((b) => b.id !== newBadge.id)]);
+                }
+                syncStudentBadgesFromCloud(currentUser.id).then((b) => setStudentBadges(b));
+                syncSubmissionsFromCloud().then((subs) => setSubmissions(subs));
+              }
+            }}
+          />
+        )}
       </>
     );
   };
@@ -1740,6 +1770,16 @@ export default function App() {
               <BookOpen className="w-4 h-4" /> أنشطتي المنشورة ({teacherActivities.length})
             </button>
             <button
+              onClick={() => setTeacherTab('games')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'games'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Gamepad2 className="w-4 h-4 text-amber-300" /> إرسال لعبة ذكية للطلاب 🎮
+            </button>
+            <button
               onClick={() => setTeacherTab('create')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                 teacherTab === 'create' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
@@ -2389,6 +2429,14 @@ export default function App() {
               )}
             </div>
           )}
+
+          {teacherTab === 'games' && (
+            <AIGamesTeacherSection
+              currentUser={currentUser}
+              activities={activities}
+              onActivitiesUpdated={(newActs) => setActivities(newActs)}
+            />
+          )}
         </main>
 
         {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
@@ -2488,6 +2536,140 @@ export default function App() {
     const studentActivities = activities.filter(
       (a) => a.grade === currentUser.grade && a.track === currentUser.track
     );
+    const studentWorksheets = studentActivities.filter((a) => a.activityType !== 'game');
+    const studentGames = studentActivities.filter((a) => a.activityType === 'game');
+
+    const startStarterGame = (type: 'phonics_treasure' | 'sentence_builder' | 'story_quest') => {
+      // إذا كان هناك نشاط من نفس النوع مرسل من المعلم، نطلقه فوراً
+      const existing = studentGames.find((g) => g.gameData?.gameType === type);
+      if (existing) {
+        setActiveGameToPlay(existing);
+        return;
+      }
+
+      let sampleData;
+      if (type === 'phonics_treasure') {
+        sampleData = {
+          gameType: 'phonics_treasure' as const,
+          targetSkill: 'تَمْيِيزُ الحُرُوفِ المُتَقَارِبَةِ صَوْتِيًّا (س / ص)',
+          instructions: 'ابْحَثْ عَنِ الكَلِمَةِ الصَّحِيحَةِ وَانْقُرْ عَلَى جَوْهَرَتِهَا السَّحْرِيَّةِ!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'أَيْنَ الكَلِمَةُ الَّتِي تَبْدَأُ بِحَرْفِ (الصَّادِ - صَـ)؟',
+              correctAnswers: ['صَقْرٌ'],
+              options: ['سَمَكَةٌ', 'صَقْرٌ', 'سَفِينَةٌ', 'سَيَّارَةٌ'],
+              feedbackSuccess: 'أَحْسَنْتَ يَا بَطَلِي! (صَقْرٌ) تَبْدَأُ بِالصَّادِ المُفَخَّمَةِ 🦅',
+              feedbackHint: 'انْتَبِهْ! الصَّادُ حَرْفٌ مُفَخَّمٌ مِثْلَ: صَـ.. صَقْرٌ!'
+            },
+            {
+              id: 2,
+              prompt: 'ابْحَثْ عَنِ الكَلِمَةِ الَّتِي تَحْتَوِي عَلَى (سِـ) مَكْسُورَةٍ:',
+              correctAnswers: ['سِتَارٌ'],
+              options: ['صُنْدُوقٌ', 'سِتَارٌ', 'صَابُونٌ', 'صَيْدَلِيَّةٌ'],
+              feedbackSuccess: 'إِجَابَةٌ رَائِعَةٌ جِدًّا! (سِتَارٌ) صَوْتُهَا سِـ نَاعِمٌ وَمُرَقَّقٌ 🌟',
+              feedbackHint: 'اسْتَمِعْ جَيِّدًا لِصَوْتِ الكَسْرَةِ الخَفِيفَةِ مَعَ السِّينِ: سِـ!'
+            },
+            {
+              id: 3,
+              prompt: 'أَيُّ كَلِمَةٍ مِمَّا يَلِي فِيهَا مَدٌّ بِالأَلِفِ مَعَ الصَّادِ (صَا)؟',
+              correctAnswers: ['صَابِرٌ'],
+              options: ['سَامِرٌ', 'صَابِرٌ', 'سَعِيدٌ', 'سُلَيْمَانُ'],
+              feedbackSuccess: 'يَا لَكَ مِنْ ذَكِيٍّ عَبْقَرِيٍّ! كَلِمَةُ (صَابِرٌ) صَوْتُهَا مَمْدُودٌ بِفَخَامَةٍ! 🏆',
+              feedbackHint: 'ابْحَثْ عَنْ كَلِمَةٍ فِيهَا صَادٌ تَلِيهَا أَلِفُ المَدِّ!'
+            }
+          ]
+        };
+      } else if (type === 'sentence_builder') {
+        sampleData = {
+          gameType: 'sentence_builder' as const,
+          targetSkill: 'تَرْتِيبُ الجُمْلَةِ الفِعْلِيَّةِ وَالاسْمِيَّةِ البَسِيطَةِ',
+          instructions: 'انْقُرْ عَلَى الكَلِمَاتِ بِالتَّرْتِيبِ الصَّحِيحِ لِتَصْنَعَ جُمْلَةً مُفِيدَةً!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'رَتِّبِ الكَلِمَاتِ لِتُكَوِّنَ جُمْلَةً تُعَبِّرُ عَنْ حُبِّ القِرَاءَةِ:',
+              correctAnswers: ['قَرَأَ', 'مُوسَى', 'قِصَّةً', 'مُفِيدَةً'],
+              options: ['قَرَأَ', 'مُفِيدَةً', 'قِصَّةً', 'مُوسَى'],
+              feedbackSuccess: 'مُمْتَازٌ جِدًّا! (قَرَأَ مُوسَى قِصَّةً مُفِيدَةً) جُمْلَةٌ تَامَّةُ المَعْنَى 📚',
+              feedbackHint: 'ابْدَأْ بِالفِعْلِ أَوَّلًا: (قَرَأَ...) مَنْ قَرَأَ؟'
+            },
+            {
+              id: 2,
+              prompt: 'رَتِّبْ كَلِمَاتِ الجُمْلَةِ التَّالِيَةِ لِتَصِفَ جَمَالَ الطَّبِيعَةِ:',
+              correctAnswers: ['تُغَرِّدُ', 'العَصَافِيرُ', 'فِي', 'الصَّبَاحِ'],
+              options: ['الصَّبَاحِ', 'فِي', 'تُغَرِّدُ', 'العَصَافِيرُ'],
+              feedbackSuccess: 'بَارَكَ اللَّهُ فِيكَ! جُمْلَةٌ نَقِيَّةٌ وَجَمِيلَةٌ كَصَوْتِ العَصَافِيرِ 🕊️',
+              feedbackHint: 'ابْدَأْ بِصَوْتِ التَّغْرِيدِ: (تُغَرِّدُ...)!'
+            },
+            {
+              id: 3,
+              prompt: 'رَتِّبِ الكَلِمَاتِ لِتُكَوِّنَ نَصِيحَةً لِلأَبْطَالِ:',
+              correctAnswers: ['العِلْمُ', 'نُورٌ', 'يَهْدِي', 'القُلُوبَ'],
+              options: ['يَهْدِي', 'نُورٌ', 'القُلُوبَ', 'العِلْمُ'],
+              feedbackSuccess: 'عَظِيمٌ يَا بَطَلِي العَبْقَرِي! صَنَعْتَ حِكْمَةً لُغَوِيَّةً خَالِدَةً 🌟',
+              feedbackHint: 'ابْدَأْ بِالمُبْتَدَإِ (العِلْمُ...)'
+            }
+          ]
+        };
+      } else {
+        sampleData = {
+          gameType: 'story_quest' as const,
+          targetSkill: 'المَغْزَى الأَخْلَاقِيُّ وَالفَهْمُ القِرَائِيُّ',
+          instructions: 'اقْرَأِ المَوْقِفَ وَاخْتَرِ التَّصَرُّفَ الصَّحِيحَ لِتُسَاعِدَ مُوسَى فِي مُغَامَرَتِهِ!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'وَجَدَ مُوسَى قِطَّةً صَغِيرَةً جَائِعَةً فِي حَدِيقَةِ الحَيِّ، مَاذَا يَفْعَلُ؟',
+              correctAnswers: ['يُقَدِّمُ لَهَا الطَّعَامَ وَالمَاءَ بِرِفْقٍ'],
+              options: [
+                'يُقَدِّمُ لَهَا الطَّعَامَ وَالمَاءَ بِرِفْقٍ',
+                'يَتْرُكُهَا وَيَذْهَبُ بَعِيدًا',
+                'يُخِيفُهَا بِصَوْتٍ عَالٍ'
+              ],
+              feedbackSuccess: 'أَحْسَنْتَ يَا بَطَلَ الرَّحْمَةِ! الرِّفْقُ بِالحَيَوَانِ خُلُقٌ نَبِيلٌ 🐱✨',
+              feedbackHint: 'فَكِّرْ فِي خُلُقِ الإِحْسَانِ وَالرَّحْمَةِ مَعَ الكَائِنَاتِ الضَّعِيفَةِ.'
+            },
+            {
+              id: 2,
+              prompt: 'أَرَادَ مُوسَى اسْتِعَارَةَ قَلَمٍ مِنْ زَمِيلِهِ، مَا العِبَارَةُ اللَّبِقَةُ الَّتِي يَقُولُهَا؟',
+              correctAnswers: ['مِنْ فَضْلِكَ يَا صَدِيقِي، هَلْ تُعِيرُنِي قَلَمَكَ؟'],
+              options: [
+                'أَعْطِنِي قَلَمَكَ حَالًا!',
+                'مِنْ فَضْلِكَ يَا صَدِيقِي، هَلْ تُعِيرُنِي قَلَمَكَ؟',
+                'سَآخُذُ القَلَمَ دُونَ إِذْنِكَ!'
+              ],
+              feedbackSuccess: 'يَا لَكَ مِنْ أَمِيرٍ مُؤَدَّبٍ! كَلِمَاتُكَ مَلِيئَةٌ بِالذَّوْقِ وَاللَّبَاقَةِ 💎',
+              feedbackHint: 'ابْحَثْ عَنِ الجُمْلَةِ الَّتِي فِيهَا اسْتِئْذَانٌ وَاحْتِرَامٌ (مِنْ فَضْلِكَ).'
+            },
+            {
+              id: 3,
+              prompt: 'رَأَى مُوسَى وَرَقَةً مَلْفُوفَةً فِيهَا لُغْزٌ: "أَنَا أَبْدَأُ بِحَرْفِ المِيمِ وَأُنِيرُ العُقُولَ"، فَمَا هِيَ؟',
+              correctAnswers: ['المَعْرِفَةُ'],
+              options: ['المَعْرِفَةُ', 'المِرْوَحَةُ', 'المَلْعَبُ'],
+              feedbackSuccess: 'فُزْتَ بِالمُغَامَرَةِ يَا فَارِسَ اللُّغَةِ! المَعْرِفَةُ هِيَ كَنْزُ الحَيَاةِ 🏰🌟',
+              feedbackHint: 'فَكِّرْ فِيمَا يُنِيرُ عَقْلَ الإِنْسَانِ وَيَجْعَلُهُ حَكِيمًا!'
+            }
+          ]
+        };
+      }
+
+      const starterActivity: Activity = {
+        id: `starter_${type}_${Date.now()}`,
+        title: type === 'phonics_treasure' ? 'كنز الحروف: تمييز س وص' : type === 'sentence_builder' ? 'متاهة تركيب الجمل البسيطة' : 'مغامرة موسى وقرارات الحكمة',
+        activityType: 'game',
+        gameData: sampleData,
+        teacherId: 'system_mousa',
+        teacherName: 'موسى الذكي',
+        stage: currentUser.stage,
+        grade: currentUser.grade,
+        track: currentUser.track,
+        questions: [],
+        createdAt: new Date().toLocaleDateString('ar-EG')
+      };
+
+      setActiveGameToPlay(starterActivity);
+    };
 
     const studentAssignedBooks = books.filter(
       (b) => 
@@ -2532,12 +2714,22 @@ export default function App() {
               <Sparkles className="w-4 h-4 text-amber-300" /> أكاديمية موسى للذكاء الاصطناعي 🌟
             </button>
             <button
+              onClick={() => setStudentTab('games')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'games' 
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20' 
+                  : 'bg-white border border-amber-200 text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <Gamepad2 className="w-4 h-4 text-amber-400" /> ألعاب موسى الذكية 🎮 ({studentGames.length})
+            </button>
+            <button
               onClick={() => setStudentTab('activities')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                 studentTab === 'activities' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
               }`}
             >
-              <FileText className="w-4 h-4" /> الأنشطة والواجبات ({studentActivities.length})
+              <FileText className="w-4 h-4" /> الأنشطة والواجبات ({studentWorksheets.length})
             </button>
             <button
               onClick={() => setStudentTab('library')}
@@ -2588,6 +2780,79 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* قسم حزمة ألعاب موسى التفاعلية الثلاث بالذكاء الاصطناعي */}
+              <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-6 text-white shadow-xl shadow-amber-500/20 relative overflow-hidden">
+                <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black text-amber-100 mb-2">
+                      <Gamepad2 className="w-4 h-4 text-amber-200" /> ألعاب موسى التفاعلية الثلاث المولّدة بالذكاء الاصطناعي
+                    </div>
+                    <h3 className="text-xl font-black mb-1.5 flex items-center gap-2">
+                      تَحَدِّيَاتُ الأَلْعَابِ الذَّكِيَّةِ مَعَ مُوسَى 🎮
+                    </h3>
+                    <p className="text-xs text-amber-100 leading-relaxed max-w-xl">
+                      اختر لعبتك المفضلة الآن: كنز الحروف والصوتيات، أو تركيب الجمل وبنائها، أو اتخاذ القرارات في مغامرات موسى! اربح النجوم والأوسمة فوراً.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setStudentTab('games')}
+                      className="px-5 py-2.5 bg-white text-amber-900 hover:bg-amber-50 font-black rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md flex-1 md:flex-initial"
+                    >
+                      <Trophy className="w-4 h-4 text-amber-600" /> ساحة الألعاب ({studentGames.length})
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => startStarterGame('phonics_treasure')}
+                    className="bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 rounded-2xl p-3.5 text-right transition flex items-center gap-3 group text-white"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-amber-400/30 flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-110 transition">
+                      💎
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-extrabold text-xs text-white">كَنْزُ الحُرُوفِ</h4>
+                      <p className="text-[10px] text-amber-100 truncate">فرز وتمييز الأصوات المشكولة</p>
+                    </div>
+                    <Play className="w-3.5 h-3.5 text-amber-200 opacity-60 group-hover:opacity-100" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => startStarterGame('sentence_builder')}
+                    className="bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 rounded-2xl p-3.5 text-right transition flex items-center gap-3 group text-white"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-emerald-400/30 flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-110 transition">
+                      🧩
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-extrabold text-xs text-white">تَرْكِيبُ الجُمَلِ</h4>
+                      <p className="text-[10px] text-amber-100 truncate">ترتيب الكلمات المفيدة</p>
+                    </div>
+                    <Play className="w-3.5 h-3.5 text-amber-200 opacity-60 group-hover:opacity-100" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => startStarterGame('story_quest')}
+                    className="bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 rounded-2xl p-3.5 text-right transition flex items-center gap-3 group text-white"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-400/30 flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-110 transition">
+                      🏰
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-extrabold text-xs text-white">مُغَامَرَةُ الحِكَايَةِ</h4>
+                      <p className="text-[10px] text-amber-100 truncate">قرارات وحكمة موسى</p>
+                    </div>
+                    <Play className="w-3.5 h-3.5 text-amber-200 opacity-60 group-hover:opacity-100" />
+                  </button>
                 </div>
               </div>
 
@@ -2731,6 +2996,181 @@ export default function App() {
             </div>
           )}
 
+          {studentTab === 'games' && (
+            <div className="space-y-6">
+              {/* ترويسة ساحة الألعاب التفاعلية */}
+              <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-amber-500/20 relative overflow-hidden">
+                <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black text-amber-100 mb-2">
+                      <Gamepad2 className="w-4 h-4 text-amber-200" /> ساحة ألعاب الذكاء الاصطناعي التفاعلية
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black mb-1.5">
+                      مَرْحَبًا بِكَ فِي سَاحَةِ الأَلْعَابِ الذَّكِيَّةِ 🎮
+                    </h2>
+                    <p className="text-xs sm:text-sm text-amber-100 max-w-xl">
+                      اختر أي لعبة مسندة من معلمك أو العب التحديات المباشرة مع موسى لتكسب الأوسمة ونقاط التميز!
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white/15 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/20">
+                    <Trophy className="w-7 h-7 text-amber-200" />
+                    <div>
+                      <div className="text-[11px] text-amber-100 font-bold">أوسمتك الحالية</div>
+                      <div className="text-lg font-black text-white">{studentBadges.length} وسام 🏆</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ألعاب الصف المسندة من المعلم */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-amber-600" /> ألعاب صفي المسندة من المعلم ({studentGames.length})
+                  </h3>
+                  <span className="text-xs text-slate-400 font-medium">ألعاب مخصصة لمنهجك الدراسي</span>
+                </div>
+
+                {studentGames.length === 0 ? (
+                  <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-xs">
+                    <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                      <Gamepad2 className="w-7 h-7" />
+                    </div>
+                    <h4 className="font-bold text-slate-700 text-sm mb-1">لا توجد ألعاب مسندة من معلمك حالياً</h4>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto mb-2">
+                      سيقوم معلمك بإسناد ألعاب ذكاء اصطناعي جديدة لصفك قريباً. وفي هذه الأثناء، يمكنك الاستمتاع بالتحديات الجاهزة أدناه!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {studentGames.map((gameAct) => {
+                      const gType = gameAct.gameData?.gameType || 'phonics_treasure';
+                      const icon = gType === 'phonics_treasure' ? '💎' : gType === 'sentence_builder' ? '🧩' : '🏰';
+                      const label = gType === 'phonics_treasure' ? 'كنز الحروف والصوتيات' : gType === 'sentence_builder' ? 'تركيب وبناء الجمل' : 'مغامرة موسى والقرارات';
+                      return (
+                        <div
+                          key={gameAct.id}
+                          className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-[10px] font-black flex items-center gap-1">
+                                <span>{icon}</span> {label}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">{gameAct.createdAt}</span>
+                            </div>
+                            <h4 className="font-extrabold text-sm text-slate-800 mb-1.5">{gameAct.title}</h4>
+                            {gameAct.gameData?.targetSkill && (
+                              <p className="text-xs text-amber-800 font-bold bg-amber-50/60 p-2 rounded-xl mb-3 border border-amber-100">
+                                🎯 المهارة: {gameAct.gameData.targetSkill}
+                              </p>
+                            )}
+                            <p className="text-xs text-slate-500 mb-4 line-clamp-2">
+                              {gameAct.gameData?.instructions || 'انطلق في هذا التحدي التفاعلي مع موسى واجمع النقاط!'}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 gap-3">
+                            <span className="text-xs text-slate-500 font-semibold">
+                              إعداد: <b className="text-slate-700">{gameAct.teacherName}</b>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveGameToPlay(gameAct)}
+                              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                            >
+                              <Play className="w-3.5 h-3.5" /> العب الآن 🎮
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ألعاب موسى التأسيسية المباشرة */}
+              <div className="space-y-3 pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" /> ألعاب موسى التأسيسية المباشرة (ابدأ اللعب فوراً)
+                  </h3>
+                  <span className="text-xs text-slate-400">جاهزة للعب في أي وقت</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* 1. كنز الحروف */}
+                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-2xl mb-3">
+                        💎
+                      </div>
+                      <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-md border border-amber-200 inline-block mb-1.5">
+                        صوتيات وتمييز بصري
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">كَنْزُ الحُرُوفِ وَالصَّوْتِيَّاتِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        ابحث عن الكلمات الصحيحة ذات الحركات التشكيلية والمخارج المتقاربة واملأ جعبة موسى بالجواهر!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('phonics_treasure')}
+                      className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب كنز الحروف 💎
+                    </button>
+                  </div>
+
+                  {/* 2. تركيب الجمل */}
+                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-2xl mb-3">
+                        🧩
+                      </div>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-200 inline-block mb-1.5">
+                        تركيب ونحو مبسط
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">مَتَاهَةُ تَرْكِيبِ الجُمَلِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        رتّب الكلمات المبعثرة المشكولة بدقة لتصنع جملاً تامة المعنى ذات سياق تربوي سليم!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('sentence_builder')}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب تركيب الجمل 🧩
+                    </button>
+                  </div>
+
+                  {/* 3. مغامرة الحكاية */}
+                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-800 flex items-center justify-center text-2xl mb-3">
+                        🏰
+                      </div>
+                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-md border border-indigo-200 inline-block mb-1.5">
+                        فهم قرائي وقيم أخلاقية
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">مُغَامَرَةُ مَوْسَى وَالحِكَايَةِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        ساعد موسى في مواقفه الحياتية عبر اتخاذ القرارات اللغوية والتربوية الصائبة لإنهاء المغامرة!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('story_quest')}
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب مغامرة الحكاية 🏰
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {studentTab === 'library' && (
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -2853,23 +3293,53 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {studentActivities.map((act) => (
-                        <div key={act.id} className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-                          <div>
-                            <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 mb-2 inline-block">
-                              نشاط متاح
-                            </span>
-                            <h3 className="font-bold text-slate-800 text-sm mb-1">{act.title}</h3>
-                            <p className="text-xs text-slate-400 mb-4">إعداد: {act.teacherName} • {act.questions.length} أسئلة</p>
-                          </div>
-                          <button
-                            onClick={() => setSelectedActivityToSolve(act)}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                      {studentActivities.map((act) => {
+                        const isGame = act.activityType === 'game';
+                        return (
+                          <div
+                            key={act.id}
+                            className={`bg-white rounded-2xl p-5 border shadow-xs flex flex-col justify-between ${
+                              isGame ? 'border-amber-200 hover:border-amber-300' : 'border-slate-200/80'
+                            }`}
                           >
-                            بدء حل النشاط الآن
-                          </button>
-                        </div>
-                      ))}
+                            <div>
+                              {isGame ? (
+                                <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-bold border border-amber-200 mb-2 inline-flex items-center gap-1">
+                                  <Gamepad2 className="w-3 h-3 text-amber-600" /> لعبة تعليمية ذكية 🎮
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 mb-2 inline-block">
+                                  نشاط متاح
+                                </span>
+                              )}
+                              <h3 className="font-bold text-slate-800 text-sm mb-1">{act.title}</h3>
+                              {isGame && act.gameData?.targetSkill && (
+                                <p className="text-[11px] text-amber-800 font-semibold mb-2 bg-amber-50/70 px-2 py-1 rounded-lg">
+                                  🎯 {act.gameData.targetSkill}
+                                </p>
+                              )}
+                              <p className="text-xs text-slate-400 mb-4">
+                                إعداد: {act.teacherName} • {isGame ? `${act.gameData?.levels.length || 3} مستويات تحدي` : `${act.questions.length} أسئلة`}
+                              </p>
+                            </div>
+                            {isGame ? (
+                              <button
+                                onClick={() => setActiveGameToPlay(act)}
+                                className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20"
+                              >
+                                <Play className="w-3.5 h-3.5 text-amber-200" /> العب اللعبة الآن 🎮
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setSelectedActivityToSolve(act)}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+                              >
+                                بدء حل النشاط الآن
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

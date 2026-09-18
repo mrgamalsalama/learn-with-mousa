@@ -22,10 +22,12 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 2. جدول الأنشطة والاختبارات التفاعلية
+-- 2. جدول الأنشطة والاختبارات التفاعلية وحزمة الألعاب
 CREATE TABLE IF NOT EXISTS public.activities (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
+  activity_type TEXT DEFAULT 'worksheet',
+  game_data JSONB,
   description TEXT,
   passage TEXT,
   teacher_id TEXT NOT NULL,
@@ -36,6 +38,11 @@ CREATE TABLE IF NOT EXISTS public.activities (
   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TEXT
 );
+
+-- تحديث الأعمدة في حال كانت الجداول منشأة مسبقاً
+ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS activity_type TEXT DEFAULT 'worksheet';
+ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS game_data JSONB;
+ALTER TABLE public.badges ADD COLUMN IF NOT EXISTS category TEXT;
 
 -- 3. جدول تسليمات ودرجات الطلاب
 CREATE TABLE IF NOT EXISTS public.submissions (

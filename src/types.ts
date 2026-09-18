@@ -81,10 +81,34 @@ export interface BookItem {
   assignedByTeacherId?: string;
 }
 
+// أنواع الأنشطة والمهام
+export type ActivityType = 'worksheet' | 'story' | 'game';
+
+// حزمة الألعاب التعليمية التفاعلية المولدة بالذكاء الاصطناعي
+export type AIGameType = 'phonics_treasure' | 'sentence_builder' | 'story_quest';
+
+export interface GameLevel {
+  id: number;
+  prompt: string;
+  correctAnswers: string[];
+  options: string[];
+  feedbackSuccess: string;
+  feedbackHint: string;
+}
+
+export interface GameData {
+  gameType: AIGameType;
+  targetSkill: string;
+  instructions: string;
+  levels: GameLevel[];
+}
+
 // النشاط التفاعلي
 export interface Activity {
   id: string;
   title: string;
+  activityType?: ActivityType;
+  gameData?: GameData;
   description?: string;
   passage?: string;
   teacherId: string;
@@ -208,7 +232,7 @@ export interface ChildBadge {
   description: string;
   icon: string;
   earnedAt: string;
-  category: 'story' | 'phonics' | 'drawing' | 'quiz';
+  category: 'story' | 'phonics' | 'drawing' | 'quiz' | 'game';
 }
 
 export interface ChildPhonicsRecord {

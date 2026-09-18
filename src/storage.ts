@@ -1,4 +1,4 @@
-import { UserProfile, Activity, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase } from './supabaseClient';
 
@@ -233,21 +233,43 @@ export const syncActivitiesFromCloud = async (): Promise<Activity[]> => {
       .order('created_at', { ascending: false });
 
     if (!error && Array.isArray(data) && data.length > 0) {
-      const formatted: Activity[] = data.map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        description: a.description || undefined,
-        passage: a.passage || undefined,
-        teacherId: a.teacher_id,
-        teacherName: a.teacher_name,
-        stage: a.stage,
-        grade: a.grade,
-        track: a.track,
-        questions: Array.isArray(a.questions)
+      const formatted: Activity[] = data.map((a: any) => {
+        let actType: ActivityType = (a.activity_type as ActivityType) || 'worksheet';
+        let gData: GameData | undefined = a.game_data;
+
+        // استخراج بيانات اللعبة إذا كانت مخزنة في passage أو questions كـ fallback توافقي
+        if (!gData && typeof a.passage === 'string' && a.passage.startsWith('__GAME__:')) {
+          try {
+            const parsed = JSON.parse(a.passage.replace('__GAME__:', ''));
+            actType = 'game';
+            gData = parsed.gameData || parsed;
+          } catch (e) {}
+        }
+        const questionsList = Array.isArray(a.questions)
           ? a.questions
-          : (typeof a.questions === 'string' ? JSON.parse(a.questions) : []),
-        createdAt: a.created_at || new Date().toISOString()
-      }));
+          : (typeof a.questions === 'string' ? JSON.parse(a.questions) : []);
+
+        if (!gData && questionsList.length > 0 && questionsList[0]?.gameData) {
+          actType = 'game';
+          gData = questionsList[0].gameData;
+        }
+
+        return {
+          id: a.id,
+          title: a.title,
+          activityType: actType,
+          gameData: gData,
+          description: a.description || undefined,
+          passage: a.passage || undefined,
+          teacherId: a.teacher_id,
+          teacherName: a.teacher_name,
+          stage: a.stage,
+          grade: a.grade,
+          track: a.track,
+          questions: questionsList,
+          createdAt: a.created_at || new Date().toISOString()
+        };
+      });
       localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(formatted));
       return formatted;
     }
@@ -273,21 +295,43 @@ export const saveActivity = async (activity: Activity): Promise<void> => {
   localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
 
   try {
-    const { error } = await supabase.from('activities').upsert({
+    const payload: any = {
       id: activity.id,
       title: activity.title,
       description: activity.description || null,
-      passage: activity.passage || null,
+      passage: activity.passage || (activity.gameData ? `__GAME__:${JSON.stringify({ activityType: 'game', gameData: activity.gameData })}` : null),
       teacher_id: activity.teacherId,
       teacher_name: activity.teacherName,
       stage: activity.stage,
       grade: activity.grade,
       track: activity.track,
-      questions: activity.questions,
+      questions: activity.gameData
+        ? [{ id: 'game_node', text: '__GAME__', type: 'multiple_choice', correctAnswer: '', points: 10, gameData: activity.gameData, activityType: 'game' }]
+        : (activity.questions || []),
       created_at: activity.createdAt || new Date().toISOString()
-    });
+    };
+
+    if (activity.activityType) {
+      payload.activity_type = activity.activityType;
+    }
+    if (activity.gameData) {
+      payload.game_data = activity.gameData;
+    }
+
+    let { error } = await supabase.from('activities').upsert(payload);
+    // إذا كان المخطط لا يدعم activity_type أو description أو game_data نعيد المحاولة بالصيغة التوافقية المضمونة
+    if (error && error.message && (error.message.includes('activity_type') || error.message.includes('game_data') || error.message.includes('description'))) {
+      delete payload.activity_type;
+      delete payload.game_data;
+      delete payload.description;
+      const retry = await supabase.from('activities').upsert(payload);
+      error = retry.error;
+    }
+
     if (error) {
       console.warn('ملاحظة في حفظ النشاط سحابياً:', error.message);
+    } else {
+      console.log('تم حفظ النشاط/اللعبة سحابياً بنجاح:', activity.title);
     }
   } catch (e) {
     console.error('فشل رفع النشاط سحابياً:', e);
@@ -559,15 +603,23 @@ export const saveStudentBadge = (studentId: string, badge: ChildBadge): ChildBad
   // مزامنة فورية غير متزامنة مع Supabase لجدول badges
   (async () => {
     try {
-      const { error } = await supabase.from('badges').upsert({
+      const payload: any = {
         id: badge.id,
         student_id: studentId,
         title: badge.title,
         description: badge.description,
         icon: badge.icon,
-        category: badge.category,
         earned_at: badge.earnedAt || new Date().toLocaleDateString('ar-EG')
-      });
+      };
+      if (badge.category) {
+        payload.category = badge.category;
+      }
+      let { error } = await supabase.from('badges').upsert(payload);
+      if (error && error.message && error.message.includes('category')) {
+        delete payload.category;
+        const retry = await supabase.from('badges').upsert(payload);
+        error = retry.error;
+      }
       if (error) {
         console.warn('ملاحظة في حفظ الوسام سحابياً:', error.message);
       }
