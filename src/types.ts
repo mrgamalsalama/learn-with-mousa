@@ -203,6 +203,7 @@ export interface DiagnosticReport {
 
 export interface ChildBadge {
   id: string;
+  studentId?: string;
   title: string;
   description: string;
   icon: string;

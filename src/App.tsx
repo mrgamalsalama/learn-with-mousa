@@ -17,7 +17,8 @@ import {
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
   getStoryBank, getBooksRepository, updateBookAssignment,
-  syncUsersFromCloud, getStudentBadges
+  syncUsersFromCloud, syncActivitiesFromCloud, syncSubmissionsFromCloud,
+  getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges
 } from './storage';
 import { MusaCompanionModal } from './components/MusaCompanionModal';
 import { AdaptiveStoryModal } from './components/AdaptiveStoryModal';
@@ -143,14 +144,34 @@ export default function App() {
   useEffect(() => {
     setUser(getCurrentUser());
     
-    syncUsersFromCloud().then(cloudUsers => {
-      setUsers(cloudUsers);
-    });
-
+    // تحميل البيانات التأسيسية محلياً فوراً
     setActivities(getActivities());
     setSubmissions(getSubmissions());
     setStoryBank(getStoryBank());
     setBooks(getBooksRepository());
+
+    // مزامنة سحابية كاملة لجميع جداول Supabase (المستخدمين، الأنشطة، التسليمات)
+    syncUsersFromCloud().then(cloudUsers => setUsers(cloudUsers));
+    syncActivitiesFromCloud().then(cloudActs => setActivities(cloudActs));
+    syncSubmissionsFromCloud().then(cloudSubs => setSubmissions(cloudSubs));
+
+    // الاشتراك اللحظي في تحديثات Supabase Realtime
+    const unsubscribe = subscribeToCloudChanges({
+      onUsersChange: () => syncUsersFromCloud().then(u => setUsers(u)),
+      onActivitiesChange: () => syncActivitiesFromCloud().then(a => setActivities(a)),
+      onSubmissionsChange: () => syncSubmissionsFromCloud().then(s => setSubmissions(s)),
+      onBadgesChange: () => {
+        const curr = getCurrentUser();
+        const activeStId = curr?.role === 'student' ? curr.id : (curr?.role === 'parent' ? (curr.studentId || '') : '');
+        if (activeStId) {
+          syncStudentBadgesFromCloud(activeStId).then(b => setStudentBadges(b));
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const openReader = (book: BookItem) => {
@@ -544,7 +565,9 @@ export default function App() {
       createdAt: new Date().toLocaleDateString('ar-EG'),
     };
 
-    saveActivity(newActivity);
+    saveActivity(newActivity).then(() => {
+      syncActivitiesFromCloud().then(acts => setActivities(acts));
+    });
     setActivities(getActivities());
     setActTitle('');
     setActPassage('');
@@ -558,7 +581,7 @@ export default function App() {
         points: 5,
       },
     ]);
-    alert('تم نشر النشاط التفاعلي بنجاح!');
+    alert('تم نشر النشاط التفاعلي ومزامنته سحابياً بنجاح!');
     setTeacherTab('activities');
   };
 
@@ -589,7 +612,9 @@ export default function App() {
       answers: studentAnswers,
     };
 
-    saveSubmission(sub);
+    saveSubmission(sub).then(() => {
+      syncSubmissionsFromCloud().then(subs => setSubmissions(subs));
+    });
     setSubmissions(getSubmissions());
     setLastScore({ score: earnedPoints, total: totalPoints });
     setQuizFinished(true);
@@ -775,10 +800,17 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (currentUser?.id) {
-      setStudentBadges(getStudentBadges(currentUser.id));
+    const targetStudentId = currentUser?.role === 'student'
+      ? currentUser.id
+      : (currentUser?.role === 'parent' ? (currentUser.studentId || '') : (currentUser ? '' : 'usr_student_mousa'));
+
+    if (targetStudentId) {
+      setStudentBadges(getStudentBadges(targetStudentId));
+      syncStudentBadgesFromCloud(targetStudentId).then(cloudBadges => {
+        setStudentBadges(cloudBadges);
+      });
     } else {
-      setStudentBadges(getStudentBadges('usr_student_mousa'));
+      setStudentBadges([]);
     }
   }, [currentUser, isPhonicsGateOpen, isAdaptiveStoryOpen, isDrawingCanvasOpen]);
 
@@ -839,6 +871,7 @@ export default function App() {
             onClose={() => {
               setIsAdaptiveStoryOpen(false);
               setStudentBadges(getStudentBadges(activeStudentId));
+              syncStudentBadgesFromCloud(activeStudentId).then(b => setStudentBadges(b));
             }}
             studentId={activeStudentId}
           />
@@ -850,6 +883,7 @@ export default function App() {
             onClose={() => {
               setIsPhonicsGateOpen(false);
               setStudentBadges(getStudentBadges(activeStudentId));
+              syncStudentBadgesFromCloud(activeStudentId).then(b => setStudentBadges(b));
             }}
             studentId={activeStudentId}
           />
@@ -861,6 +895,7 @@ export default function App() {
             onClose={() => {
               setIsDrawingCanvasOpen(false);
               setStudentBadges(getStudentBadges(activeStudentId));
+              syncStudentBadgesFromCloud(activeStudentId).then(b => setStudentBadges(b));
             }}
             studentId={activeStudentId}
           />
@@ -2216,8 +2251,10 @@ export default function App() {
                         <button
                           onClick={() => {
                             if (confirm('هل أنت متأكد من حذف هذا النشاط؟')) {
-                              deleteActivity(act.id);
-                              setActivities(getActivities());
+                              deleteActivity(act.id).then(() => {
+                                syncActivitiesFromCloud().then(acts => setActivities(acts));
+                              });
+                              setActivities(getActivities().filter(a => a.id !== act.id));
                             }
                           }}
                           className="p-1.5 text-slate-400 hover:text-rose-600 transition"
