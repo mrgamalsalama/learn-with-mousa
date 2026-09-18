@@ -6,6 +6,9 @@ import {
 import { MusaChatMessage } from '../types';
 import { chatWithMusa, speakWithMousaVoice, stopMousaVoice, isMousaVoiceCached } from '../geminiService';
 
+// مسار شعار شخصية موسى الرسمي المعتمد في المنصة
+const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
+
 interface MusaCompanionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -183,8 +186,12 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
         <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-4 text-white flex items-center justify-between shadow-md">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400 border-2 border-white flex items-center justify-center shadow-md transform hover:rotate-6 transition">
-                <span className="text-2xl font-black text-emerald-950">مـ</span>
+              <div className="w-12 h-12 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center shadow-md transform hover:rotate-6 transition overflow-hidden">
+                <img
+                  src={MOUSA_AVATAR_SRC}
+                  alt="شعار شخصية موسى"
+                  className="w-full h-full rounded-full object-contain p-1"
+                />
               </div>
               {isSpeaking && (
                 <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
@@ -251,11 +258,15 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
                 className={`flex gap-2.5 ${isMusa ? 'items-start' : 'items-end flex-row-reverse'}`}
               >
                 {isMusa ? (
-                  <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
-                    مـ
+                  <div className="w-8 h-8 rounded-full bg-amber-400 border border-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                    <img
+                      src={MOUSA_AVATAR_SRC}
+                      alt="موسى"
+                      className="w-full h-full rounded-full object-contain p-0.5"
+                    />
                   </div>
                 ) : (
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                     أنا
                   </div>
                 )}
@@ -293,8 +304,12 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
 
           {isLoading && (
             <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 font-black text-sm flex items-center justify-center shrink-0 animate-bounce">
-                مـ
+              <div className="w-8 h-8 rounded-full bg-amber-400 border border-white flex items-center justify-center shrink-0 animate-bounce overflow-hidden">
+                <img
+                  src={MOUSA_AVATAR_SRC}
+                  alt="موسى يفكر"
+                  className="w-full h-full rounded-full object-contain p-0.5"
+                />
               </div>
               <div className="bg-white border border-emerald-100 rounded-3xl p-3.5 shadow-xs flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
