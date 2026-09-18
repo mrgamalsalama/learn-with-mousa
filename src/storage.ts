@@ -1,6 +1,12 @@
 import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase } from './supabaseClient';
+import { 
+  cacheMultipleGamesOffline, 
+  enqueueOfflineSubmission, 
+  syncOfflineSubmissionsQueue, 
+  getOfflineQueue as getIndexedDBOfflineQueue 
+} from './db/offlineCache';
 
 const USERS_KEY = 'lwm_users';
 const ACTIVITIES_KEY = 'lwm_activities';
@@ -271,12 +277,16 @@ export const syncActivitiesFromCloud = async (): Promise<Activity[]> => {
         };
       });
       localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(formatted));
+      // حفظ كائنات الألعاب والتحديات في مخزن IndexedDB الدائم دون اتصال
+      cacheMultipleGamesOffline(formatted);
       return formatted;
     }
   } catch (err) {
     console.warn('تعذر جلب الأنشطة سحابياً:', err);
   }
-  return getActivities();
+  const localActs = getActivities();
+  cacheMultipleGamesOffline(localActs);
+  return localActs;
 };
 
 export const getActivities = (): Activity[] => {
@@ -395,6 +405,13 @@ export const saveSubmission = async (submission: StudentSubmission): Promise<voi
   }
   localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(subs));
 
+  // إذا كان التطبيق دون اتصال بالإنترنت (Offline)، يتم فوراً إدراج التسليم في طابور الانتظار المحلي
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  if (isOffline) {
+    await enqueueOfflineSubmission(submission);
+    return;
+  }
+
   try {
     const { error } = await supabase.from('submissions').upsert({
       id: submission.id,
@@ -410,12 +427,46 @@ export const saveSubmission = async (submission: StudentSubmission): Promise<voi
       answers: submission.answers
     });
     if (error) {
-      console.warn('ملاحظة في رفع التسليم سحابياً:', error.message);
+      console.warn('ملاحظة في رفع التسليم سحابياً، سيتم الحفظ في طابور عدم الاتصال:', error.message);
+      await enqueueOfflineSubmission(submission);
     }
   } catch (e) {
-    console.error('فشل رفع التسليم سحابياً:', e);
+    console.warn('فشل رفع التسليم سحابياً، سيتم حفظه في طابور عدم الاتصال:', e);
+    await enqueueOfflineSubmission(submission);
   }
 };
+
+/**
+ * تفريغ ومزامنة طابور التسليمات عند استعادة اتصال الشبكة
+ */
+export const drainOfflineQueue = async (): Promise<number> => {
+  return await syncOfflineSubmissionsQueue(async (sub) => {
+    const { error } = await supabase.from('submissions').upsert({
+      id: sub.id,
+      activity_id: sub.activityId,
+      activity_title: sub.activityTitle,
+      student_id: sub.studentId,
+      student_name: sub.studentName,
+      grade: sub.grade || null,
+      track: sub.track || null,
+      score: sub.score,
+      total_points: sub.totalPoints,
+      submitted_at: sub.submittedAt,
+      answers: sub.answers
+    });
+    return !error;
+  });
+};
+
+export const getOfflineSubmissionsQueue = getIndexedDBOfflineQueue;
+
+// تفعيل الاستماع التلقائي لعودة الاتصال
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('🟢 تم رصد استعادة الاتصال بالشبكة، جاري مزامنة طابور التسليمات...');
+    drainOfflineQueue();
+  });
+}
 
 // ================= بنك القصص ومستودع الكتب =================
 

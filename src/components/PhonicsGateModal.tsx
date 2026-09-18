@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  X, Mic, MicOff, Volume2, Sparkles, CheckCircle2, 
+  X, Volume2, Sparkles, CheckCircle2, 
   AlertCircle, Unlock, Lock, Award, RefreshCw, Star, ChevronLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PhonicsVerificationResult, ChildBadge } from '../types';
 import { verifyPhonicsWord, speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
 import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
+import { ChildMicWaveVisualizer, MousaSpeakingAvatar } from './AudioInteractionVisualizer';
 
 interface PhonicsGateModalProps {
   isOpen: boolean;
@@ -253,18 +254,11 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           {/* حقل الإدخال والنطق المباشر */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center gap-2">
-              <button
-                type="button"
+              <ChildMicWaveVisualizer
+                isListening={isListening}
                 onClick={toggleMic}
-                className={`p-3.5 rounded-2xl border transition flex items-center justify-center shrink-0 ${
-                  isListening
-                    ? 'bg-rose-500 text-white border-rose-600 animate-pulse shadow-md shadow-rose-200'
-                    : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                }`}
-                title={isListening ? 'جارٍ الاستماع... انقر للإيقاف' : 'انطق الكلمة عبر الميكروفون'}
-              >
-                {isListening ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-              </button>
+                size="md"
+              />
 
               <input
                 type="text"

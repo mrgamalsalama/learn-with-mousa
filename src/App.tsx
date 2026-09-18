@@ -5,7 +5,7 @@ import {
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
   Library, Download, Eye, CheckSquare, X, Search, FileUp,
   Bot, Palette, Brain, Printer, MessageCircle, Star,
-  Loader2, Wand2, Gamepad2, Trophy, Play
+  Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -18,8 +18,10 @@ import {
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
   getStoryBank, getBooksRepository, updateBookAssignment,
   syncUsersFromCloud, syncActivitiesFromCloud, syncSubmissionsFromCloud,
-  getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges
+  getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges,
+  getOfflineSubmissionsQueue, drainOfflineQueue
 } from './storage';
+import { getCachedGamesOffline } from './db/offlineCache';
 import { MusaCompanionModal } from './components/MusaCompanionModal';
 import { AdaptiveStoryModal } from './components/AdaptiveStoryModal';
 import { PhonicsGateModal } from './components/PhonicsGateModal';
@@ -29,6 +31,8 @@ import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
 import { ClassDiagnosticModal } from './components/ClassDiagnosticModal';
 import { AIGamesTeacherSection } from './components/AIGamesTeacherSection';
 import { AIGamePlayerModal } from './components/AIGamePlayerModal';
+import { QuickAIDiagnosticModal } from './components/QuickAIDiagnosticModal';
+import { ShareableBadgeModal } from './components/ShareableBadgeModal';
 import { 
   generateAIPassage, 
   generateQuestionsFromPassage, 
@@ -56,6 +60,12 @@ export default function App() {
   const [isPrintableWorksheetOpen, setIsPrintableWorksheetOpen] = useState<boolean>(false);
   const [worksheetStudent, setWorksheetStudent] = useState<UserProfile | null>(null);
   const [studentBadges, setStudentBadges] = useState<ChildBadge[]>([]);
+  const [isQuickDiagnosticOpen, setIsQuickDiagnosticOpen] = useState<boolean>(false);
+  const [quickDiagnosticStudent, setQuickDiagnosticStudent] = useState<{ id: string; name: string } | null>(null);
+  const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
+  const [selectedBadgeForShare, setSelectedBadgeForShare] = useState<ChildBadge | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
   // تبويبات لوحة المشرف العام
   const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
@@ -179,8 +189,33 @@ export default function App() {
       }
     });
 
+    // التحقق من حالة الاتصال وفحص طابور التسليمات
+    const checkOfflineStatus = async () => {
+      const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setIsOnline(online);
+      if (online) {
+        await drainOfflineQueue();
+      }
+      const q = await getOfflineSubmissionsQueue();
+      setOfflineQueueCount(q.length);
+
+      // في حال عدم توفر أنشطة أو انقطاع الاتصال، استرجاع الألعاب المحفوظة في IndexedDB
+      if (!online) {
+        const cached = await getCachedGamesOffline();
+        if (cached && cached.length > 0) {
+          setActivities((prev) => (prev.length === 0 ? cached : prev));
+        }
+      }
+    };
+
+    window.addEventListener('online', checkOfflineStatus);
+    window.addEventListener('offline', checkOfflineStatus);
+    checkOfflineStatus();
+
     return () => {
       unsubscribe();
+      window.removeEventListener('online', checkOfflineStatus);
+      window.removeEventListener('offline', checkOfflineStatus);
     };
   }, []);
 
@@ -978,7 +1013,68 @@ export default function App() {
             }}
           />
         )}
+
+        {/* 1-Click AI Learning Diagnostic Modal */}
+        {isQuickDiagnosticOpen && quickDiagnosticStudent && (
+          <QuickAIDiagnosticModal
+            isOpen={isQuickDiagnosticOpen}
+            onClose={() => setIsQuickDiagnosticOpen(false)}
+            studentName={quickDiagnosticStudent.name}
+            studentId={quickDiagnosticStudent.id}
+            submissions={submissions}
+            onLaunchRecommendedGame={(recommendedGameType) => {
+              setIsQuickDiagnosticOpen(false);
+              const matchedGame = activities.find(
+                a => a.activityType === 'game' && a.gameData?.gameType === recommendedGameType
+              ) || activities.find(a => a.activityType === 'game');
+              if (matchedGame) {
+                setActiveGameToPlay(matchedGame);
+              }
+            }}
+          />
+        )}
+
+        {/* Shareable Badge Modal */}
+        {showShareBadgeModal && (
+          <ShareableBadgeModal
+            isOpen={showShareBadgeModal}
+            onClose={() => setShowShareBadgeModal(false)}
+            badge={selectedBadgeForShare}
+            studentName={currentUser?.name || 'موسى البطل'}
+          />
+        )}
       </>
+    );
+  };
+
+  // شريط مرونة العمل دون إنترنت وحالة المزامنة التلقائية
+  const renderOfflineBanner = () => {
+    if (isOnline && offlineQueueCount === 0) return null;
+    return (
+      <div className={`px-4 py-2 text-xs font-bold flex items-center justify-between border-b shadow-xs transition z-20 ${
+        !isOnline 
+          ? 'bg-amber-500 text-amber-950 border-amber-600' 
+          : 'bg-emerald-600 text-white border-emerald-700'
+      }`}>
+        <div className="flex items-center gap-2">
+          {!isOnline ? (
+            <>
+              <WifiOff className="w-4 h-4 text-amber-950 animate-pulse" />
+              <span>وضع العمل دون إنترنت (Offline Mode) — الألعاب والتحديات متاحة ومحفوظة، وسيتم رفع تسليماتك فور عودة الاتصال ⚡</span>
+            </>
+          ) : (
+            <>
+              <Wifi className="w-4 h-4 text-emerald-200" />
+              <span>متصل بالسحابة 🟢 جارٍ تفريغ طابور المزامنة ({offlineQueueCount} تسليم)...</span>
+            </>
+          )}
+        </div>
+        {offlineQueueCount > 0 && (
+          <span className="px-2 py-0.5 bg-black/20 rounded-md text-[10px] font-black">
+            {offlineQueueCount} معلّق
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -1742,6 +1838,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800">
+        {renderOfflineBanner()}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {renderHeaderLogo()}
@@ -2340,16 +2437,38 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsClassDiagnosticOpen(true)}
-                  disabled={submissions.length === 0}
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50"
-                  title="تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"
-                >
-                  <BarChart3 className="w-4 h-4 text-amber-300" />
-                  تقرير الفاقد التعليمي والتحليل التراكمي للفصل 📊
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstStudent = users.find(u => u.role === 'student');
+                      if (firstStudent) {
+                        setQuickDiagnosticStudent({ id: firstStudent.id, name: firstStudent.name });
+                        setIsQuickDiagnosticOpen(true);
+                      } else if (submissions.length > 0) {
+                        setQuickDiagnosticStudent({ id: submissions[0].studentId, name: submissions[0].studentName });
+                        setIsQuickDiagnosticOpen(true);
+                      }
+                    }}
+                    disabled={submissions.length === 0}
+                    className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                    title="توليد التقرير الذكي الفوري للطالب بنقرة واحدة"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>توليد التقرير الذكي الفوري للطالب ⚡</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsClassDiagnosticOpen(true)}
+                    disabled={submissions.length === 0}
+                    className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50"
+                    title="تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"
+                  >
+                    <BarChart3 className="w-4 h-4 text-amber-300" />
+                    تقرير الفاقد التعليمي للفصل 📊
+                  </button>
+                </div>
               </div>
 
               {submissions.length === 0 ? (
@@ -2396,6 +2515,17 @@ export default function App() {
                             <td className="py-3 text-slate-400">{sub.submittedAt}</td>
                             <td className="py-3 text-center">
                               <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickDiagnosticStudent({ id: sub.studentId, name: sub.studentName });
+                                    setIsQuickDiagnosticOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1"
+                                  title="توليد التقرير التشخيصي الفوري لهذا الطالب بنقرة واحدة"
+                                >
+                                  <Zap className="w-3 h-3 text-amber-600" /> تشخيص فوري ⚡
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2831,6 +2961,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800">
+        {renderOfflineBanner()}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {renderHeaderLogo()}
@@ -3133,9 +3264,23 @@ export default function App() {
                         <div className="flex-1 min-w-0">
                           <h4 className="font-extrabold text-xs text-amber-950 truncate mb-0.5">{badge.title}</h4>
                           <p className="text-[10px] text-slate-600 leading-snug line-clamp-2">{badge.description}</p>
-                          <span className="text-[9px] text-amber-700 font-bold mt-1 block">
-                            {badge.earnedAt}
-                          </span>
+                          <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-200/50">
+                            <span className="text-[9px] text-amber-700 font-bold">
+                              {badge.earnedAt}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedBadgeForShare(badge);
+                                setShowShareBadgeModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-[9px] font-black transition shadow-2xs"
+                              title="مشاركة الوسام كبطاقة فخر مع العائلة"
+                            >
+                              <Share2 className="w-2.5 h-2.5" />
+                              <span>مشاركة 🌟</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -3612,6 +3757,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800">
+        {renderOfflineBanner()}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {renderHeaderLogo()}
@@ -3668,6 +3814,18 @@ export default function App() {
                       </div>
 
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickDiagnosticStudent({ id: student.id, name: student.name });
+                            setIsQuickDiagnosticOpen(true);
+                          }}
+                          className="px-3 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+                          title="توليد التقرير الذكي الفوري للطالب بنقرة واحدة"
+                        >
+                          <Sparkles className="w-4 h-4 text-amber-300" />
+                          <span>التقرير الفوري ⚡</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => {

@@ -7,6 +7,7 @@ import {
 import { Activity, GameData, GameLevel, UserProfile, ChildBadge } from '../types';
 import { speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
 import { saveStudentBadge, saveSubmission } from '../storage';
+import { ShareableBadgeModal } from './ShareableBadgeModal';
 
 // مسار صورة موسى
 const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
@@ -110,6 +111,8 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
   const [levelStatus, setLevelStatus] = useState<'playing' | 'success' | 'hint'>('playing');
   const [feedbackMsg, setFeedbackMsg] = useState<string>('');
   const [shakeError, setShakeError] = useState<boolean>(false);
+  const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
+  const [currentEarnedBadge, setCurrentEarnedBadge] = useState<ChildBadge | null>(null);
 
   // حالة لعبة تركيب الجمل
   const [selectedWordSequence, setSelectedWordSequence] = useState<string[]>([]);
@@ -502,10 +505,12 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       earnedAt: new Date().toLocaleDateString('ar-EG')
     };
 
+    setCurrentEarnedBadge(newBadge);
+
     // حفظ الوسام في جدول badges في Supabase
     saveStudentBadge(student.id, newBadge);
 
-    // تسجيل الدرجة في جدول submissions ليراها المعلم فوراً
+    // تسجيل الدرجة في جدول submissions ليراها المعلم فوراً ومستشار التشخيص الذكي
     saveSubmission({
       id: `sub_game_${Date.now()}`,
       activityId: activity.id,
@@ -520,6 +525,10 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
         new Date().toLocaleDateString('ar-EG') +
         ' ' +
         new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      gameType: gameData.gameType,
+      targetSkill: gameData.targetSkill,
+      accuracyRate: 100,
+      repeatedErrors: [],
       answers: {
         gameType: gameData.gameType,
         status: 'completed',
@@ -705,17 +714,28 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                stopMousaVoice();
-                onClose();
-              }}
-              className="px-8 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm rounded-2xl transition shadow-lg shadow-emerald-600/25 flex items-center gap-2"
-            >
-              <Trophy className="w-5 h-5 text-amber-300" />
-              العودة إلى البوابة وقائمة الألعاب
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
+              <button
+                type="button"
+                onClick={() => setShowShareBadgeModal(true)}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-sm rounded-2xl transition shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4 text-yellow-200" />
+                مشاركة الإنجاز مع العائلة 🌟
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  stopMousaVoice();
+                  onClose();
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm rounded-2xl transition shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2"
+              >
+                <Trophy className="w-5 h-5 text-amber-300" />
+                العودة للألعاب
+              </button>
+            </div>
           </div>
         ) : (
           /* منطقة اللعب التفاعلية */
@@ -1171,6 +1191,14 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
         )}
 
       </div>
+
+      {/* نافذة مشاركة وسام الإنجاز المكتسب مع الأسرة */}
+      <ShareableBadgeModal
+        isOpen={showShareBadgeModal}
+        onClose={() => setShowShareBadgeModal(false)}
+        badge={currentEarnedBadge}
+        studentName={student.name}
+      />
     </div>
   );
 };

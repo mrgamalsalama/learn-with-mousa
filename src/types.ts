@@ -133,7 +133,7 @@ export interface Activity {
   createdAt: string;
 }
 
-// رصد درجات الطلاب
+// رصد درجات وتسليمات الطلاب مع بيانات التشخيص والتعلم التكيفي
 export interface StudentSubmission {
   id: string;
   activityId: string;
@@ -146,6 +146,11 @@ export interface StudentSubmission {
   totalPoints: number;
   submittedAt: string;
   answers: Record<string, string>;
+  // حقول إضافية ذكية للتحليل التشخيصي والألعاب التفاعلية
+  gameType?: AIGameType | string;
+  targetSkill?: string;
+  accuracyRate?: number;
+  repeatedErrors?: string[];
 }
 
 // ثوابت المراحل والصفوف
@@ -278,3 +283,31 @@ export interface ClassDiagnosticSummary {
   actionableRecommendations: string[];
   generatedAt: string;
 }
+
+// نتيجة التقرير التشخيصي الفوري بنقرة واحدة (1-Click AI Diagnostic)
+export interface QuickAIDiagnosticResult {
+  studentName: string;
+  reportText: string;               // نص التحليل التربوي الموجز الدافئ المشكول (2-3 أسطر)
+  strengths: string;                // نقاط القوة والإتقان المكتسبة
+  challenge: string;                // التحدي الصوتي أو الإملائي
+  recommendation: {
+    gameType: AIGameType | string;  // نوع اللعبة الموصى بها
+    gameTitleAr: string;            // اسم اللعبة بالعربية
+    suggestedDuration: string;      // مدة الجولة المقترحة (مثل: 3 دقائق)
+    rationale: string;              // سبب التوصية التربوي
+  };
+  analyzedSubmissionsCount: number;
+  generatedAt: string;
+}
+
+// حالة مؤشر التفاعل الصوتي البصري الموحد
+export type AudioInteractionState = 'idle' | 'speaking' | 'listening';
+
+// طابور التسليمات والمزامنة دون إنترنت (Offline Sync Queue)
+export interface OfflineQueueItem {
+  id: string;
+  submission: StudentSubmission;
+  queuedAt: string;
+  retryCount: number;
+}
+

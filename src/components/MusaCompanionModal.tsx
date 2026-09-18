@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  X, Send, Volume2, VolumeX, Mic, MicOff, Sparkles, Bot, 
+  X, Send, Volume2, VolumeX, Sparkles, Bot, 
   MessageCircle, RefreshCw, Smile, Star, Heart
 } from 'lucide-react';
 import { MusaChatMessage } from '../types';
 import { chatWithMusa, speakWithMousaVoice, stopMousaVoice, isMousaVoiceCached } from '../geminiService';
+import { MousaSpeakingAvatar, ChildMicWaveVisualizer } from './AudioInteractionVisualizer';
 
 // مسار شعار شخصية موسى الرسمي المعتمد في المنصة
 const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
@@ -185,21 +186,11 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
         {/* ترويسة نافذة موسى */}
         <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-4 text-white flex items-center justify-between shadow-md">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center shadow-md transform hover:rotate-6 transition overflow-hidden">
-                <img
-                  src={MOUSA_AVATAR_SRC}
-                  alt="شعار شخصية موسى"
-                  className="w-full h-full rounded-full object-contain p-1"
-                />
-              </div>
-              {isSpeaking && (
-                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-200 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-400"></span>
-                </span>
-              )}
-            </div>
+            <MousaSpeakingAvatar
+              src={MOUSA_AVATAR_SRC}
+              isSpeaking={isSpeaking}
+              size="md"
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <h3 className="font-extrabold text-base">مُوسَى | رَفِيقُكَ الذَّكِيّ</h3>
@@ -344,18 +335,11 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
             }}
             className="flex items-center gap-2"
           >
-            <button
-              type="button"
+            <ChildMicWaveVisualizer
+              isListening={isVoiceActive}
               onClick={toggleSpeechRecognition}
-              className={`p-3 rounded-2xl border transition flex items-center justify-center shrink-0 ${
-                isVoiceActive
-                  ? 'bg-rose-500 text-white border-rose-600 animate-pulse shadow-md shadow-rose-200'
-                  : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-              }`}
-              title={isVoiceActive ? 'جارٍ الاستماع... انقر للإيقاف' : 'تحدث مع موسى بصوتك'}
-            >
-              {isVoiceActive ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-            </button>
+              size="md"
+            />
 
             <input
               type="text"
