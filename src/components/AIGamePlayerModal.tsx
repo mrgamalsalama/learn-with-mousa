@@ -4,7 +4,7 @@ import {
   CheckCircle2, Star, Trophy, ArrowLeft, Lightbulb
 } from 'lucide-react';
 import { Activity, GameData, GameLevel, UserProfile, ChildBadge } from '../types';
-import { speakWithMousaVoice, stopMousaVoice } from '../geminiService';
+import { speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
 import { saveStudentBadge, saveSubmission } from '../storage';
 
 // مسار صورة موسى
@@ -141,6 +141,32 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
     };
   }, [currentLevelIndex, isOpen, gameData]);
 
+  // التوليد الاستباقي (Pre-buffering) لأصوات وخيارات المستوى الحالي والمستوى التالي
+  useEffect(() => {
+    if (!isOpen || !gameData?.levels) return;
+
+    const currentLvl = gameData.levels[currentLevelIndex];
+    const nextLvl = gameData.levels[currentLevelIndex + 1];
+
+    const toPrebuffer: string[] = [];
+
+    if (currentLvl) {
+      if (currentLvl.feedbackSuccess) toPrebuffer.push(currentLvl.feedbackSuccess);
+      if (currentLvl.feedbackHint) toPrebuffer.push(currentLvl.feedbackHint);
+      if (currentLvl.options) toPrebuffer.push(...currentLvl.options);
+    }
+
+    if (nextLvl) {
+      if (nextLvl.prompt) toPrebuffer.push(nextLvl.prompt.replace(/[\*\#\_]/g, ''));
+      if (nextLvl.feedbackSuccess) toPrebuffer.push(nextLvl.feedbackSuccess);
+      if (nextLvl.feedbackHint) toPrebuffer.push(nextLvl.feedbackHint);
+      if (nextLvl.options) toPrebuffer.push(...nextLvl.options);
+    }
+
+    // تجهيز الأصوات في الخلفية مسبقاً قبل نقر الطالب لتعمل فوراً 0ms
+    prebufferMousaAudio(toPrebuffer);
+  }, [isOpen, gameData, currentLevelIndex]);
+
   if (!isOpen || !gameData || !currentLevel) return null;
 
   // ================= 1. منطق لعبة كنز الحروف والكلمات السحرية =================
@@ -176,6 +202,8 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
   const handleSelectWord = (word: string, index: number) => {
     if (levelStatus === 'success') return;
     playSound('pop');
+    // نطق الكلمة المختارة فوراً بصوت موسى (المخزنة مسبقاً 0ms)
+    speakWithMousaVoice(word);
 
     const nextSelected = [...selectedWordSequence, word];
     setSelectedWordSequence(nextSelected);
@@ -526,9 +554,23 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
                       <div className="w-12 h-12 rounded-2xl bg-amber-100 group-hover:scale-110 transition-transform flex items-center justify-center text-2xl mb-2 shadow-xs">
                         💎
                       </div>
-                      <span className="text-base sm:text-lg font-black text-slate-800 group-hover:text-amber-900">
-                        {opt}
-                      </span>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-base sm:text-lg font-black text-slate-800 group-hover:text-amber-900">
+                          {opt}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speakWithMousaVoice(opt);
+                          }}
+                          className="p-1.5 rounded-xl bg-amber-100/80 hover:bg-amber-200 text-amber-800 transition"
+                          title="استمع للكلمة بصوت موسى (فوري 0ms)"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -625,7 +667,21 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
                           {opt}
                         </span>
                       </div>
-                      <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:-translate-x-1 transition" />
+                      <div className="flex items-center gap-2">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speakWithMousaVoice(opt);
+                          }}
+                          className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition"
+                          title="استمع للخيار بصوت موسى (فوري 0ms)"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </span>
+                        <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:-translate-x-1 transition" />
+                      </div>
                     </button>
                   ))}
                 </div>

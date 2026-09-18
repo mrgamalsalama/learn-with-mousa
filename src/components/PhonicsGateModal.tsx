@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, Mic, MicOff, Volume2, Sparkles, CheckCircle2, 
   AlertCircle, Unlock, Lock, Award, RefreshCw, Star, ChevronLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PhonicsVerificationResult, ChildBadge } from '../types';
-import { verifyPhonicsWord, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
+import { verifyPhonicsWord, speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
 import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
 
 interface PhonicsGateModalProps {
@@ -45,6 +45,17 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
 
   const recognitionRef = useRef<any>(null);
   const currentConfig = LETTERS_CONFIG[currentLetterIndex];
+
+  // التوليد الاستباقي (Pre-buffering) لأصوات الحرف الحالي والأمثلة
+  useEffect(() => {
+    if (!isOpen || !currentConfig) return;
+
+    prebufferMousaAudio([
+      `صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`,
+      currentConfig.sound,
+      ...currentConfig.examples
+    ]);
+  }, [isOpen, currentLetterIndex, currentConfig]);
 
   const toggleMic = () => {
     if (isListening) {

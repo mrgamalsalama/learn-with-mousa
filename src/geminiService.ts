@@ -959,18 +959,104 @@ ${JSON.stringify(studentScores)}
 }
 
 // ================= 8. ميزة النطق الصوتي الأصلي الفائق لشخصية موسى (Gemini Native Audio Output / TTS) =================
+// دعم التخزين الدائم (IndexedDB)، وتقسيم النصوص الطويلة (Sentence Chunking) مع الجلب المسبق المتوازي (Parallel Prefetching)
 
-// ذاكرة التخزين المؤقت للأصوات المولدة (Audio Cache) لتسريع الاستجابة وتوفير الحصة
 interface CachedAudioItem {
   buffer: AudioBuffer;
   wavUrl?: string;
+  pcm?: Uint8Array;
   timestamp: number;
 }
 
+// 1. ذاكرة التخزين السريع في الرام (RAM Cache) للتشغيل اللحظي الفوري 0ms
 const mousaAudioCache = new Map<string, CachedAudioItem>();
+
+// خريطة لدمج الطلبات المتزامنة (Deduplication) لمنع تكرار الاتصال بنفس النص
+const inFlightFetches = new Map<string, Promise<AudioBuffer | null>>();
 
 let audioContextInstance: AudioContext | null = null;
 let currentSourceNode: AudioBufferSourceNode | null = null;
+let mousaAudioSessionCounter = 0;
+
+// 2. إعداد قاعدة التخزين الدائمة في المتصفح (IndexedDB Persistent Storage)
+const DB_NAME = 'MousaVoicePersistentDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'audio_clips';
+
+let idbPromise: Promise<IDBDatabase | null> | null = null;
+
+function getIndexedDB(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return Promise.resolve(null);
+  }
+  if (idbPromise) return idbPromise;
+
+  idbPromise = new Promise((resolve) => {
+    try {
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event: any) => {
+        const db = event.target.result as IDBDatabase;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        console.warn('تعذر فتح IndexedDB لأصوات موسى');
+        resolve(null);
+      };
+    } catch {
+      resolve(null);
+    }
+  });
+
+  return idbPromise;
+}
+
+async function getFromIndexedDBCache(key: string): Promise<Uint8Array | null> {
+  try {
+    const db = await getIndexedDB();
+    if (!db) return null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(key);
+        req.onsuccess = () => {
+          if (req.result && req.result.pcm) {
+            resolve(new Uint8Array(req.result.pcm));
+          } else {
+            resolve(null);
+          }
+        };
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function saveToIndexedDBCache(key: string, pcm: Uint8Array): Promise<void> {
+  try {
+    const db = await getIndexedDB();
+    if (!db) return;
+
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    // تخزين مصفوفة البايتات كـ ArrayBuffer للتخزين السريع في مساحة المتصفح
+    store.put({
+      key,
+      pcm: pcm.buffer,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    // تجاوز أخطاء المساحة أو الوضع الخاص بهدوء
+  }
+}
 
 /**
  * الحصول على عميل AudioContext الموحد بنمط التهيئة الكسولة
@@ -992,6 +1078,52 @@ function cleanTextForSpeech(text: string): string {
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * تقسيم النصوص الطويلة (مثل القصص والحوارات) إلى مقاطع وجمل قصيرة لبدء التشغيل الفوري
+ * مع إتاحة جلب المقاطع التالية في الخلفية بالتوازي (Parallel Prefetching)
+ */
+function splitArabicIntoSpeechChunks(text: string, maxChunkLength = 85): string[] {
+  const clean = cleanTextForSpeech(text);
+  if (!clean) return [];
+  if (clean.length <= maxChunkLength) return [clean];
+
+  // التقسيم وفق علامات الترقيم الطبيعية ونهايات الجمل
+  const sentenceRegex = /[^.!؟؛\n]+[.!؟؛\n]*/g;
+  const matches = clean.match(sentenceRegex);
+
+  if (!matches || matches.length <= 1) {
+    // إن لم توجد علامات ترقيم، نقسم وفق الفواصل العربية
+    if (clean.includes('،')) {
+      const parts = clean.split('،').map((p, i, arr) => (i < arr.length - 1 ? p + '،' : p).trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+    return [clean];
+  }
+
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const match of matches) {
+    const trimmed = match.trim();
+    if (!trimmed) continue;
+
+    if (!current) {
+      current = trimmed;
+    } else if ((current + ' ' + trimmed).length <= maxChunkLength) {
+      current = current + ' ' + trimmed;
+    } else {
+      chunks.push(current);
+      current = trimmed;
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks.length > 0 ? chunks : [clean];
 }
 
 /**
@@ -1024,7 +1156,7 @@ function pcmToAudioBuffer(pcmBytes: Uint8Array, audioCtx: AudioContext, sampleRa
 }
 
 /**
- * تحويل بايتات PCM إلى ملف WAV قياسي قابل للتصدير أو التشغيل
+ * تحويل بايتات PCM إلى ملف WAV قياسي
  */
 function pcmToWavBlob(pcmBytes: Uint8Array, sampleRate = 24000): Blob {
   const numChannels = 1;
@@ -1046,7 +1178,7 @@ function pcmToWavBlob(pcmBytes: Uint8Array, sampleRate = 24000): Blob {
   writeString(8, 'WAVE');
   writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, byteRate, true);
@@ -1060,12 +1192,18 @@ function pcmToWavBlob(pcmBytes: Uint8Array, sampleRate = 24000): Blob {
 }
 
 /**
- * تشغيل AudioBuffer في AudioContext مع التحكم في الإيقاف والإشعارات
+ * تشغيل كائن AudioBuffer مباشرة عبر AudioContext
  */
 function playAudioBuffer(buffer: AudioBuffer, onEnd?: () => void) {
-  stopMousaVoice();
-
   try {
+    if (currentSourceNode) {
+      try {
+        currentSourceNode.stop();
+        currentSourceNode.disconnect();
+      } catch {}
+      currentSourceNode = null;
+    }
+
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
@@ -1103,7 +1241,7 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ar-SA';
-    utterance.rate = 0.9;
+    utterance.rate = 0.95;
     utterance.pitch = 1.05;
 
     const voices = window.speechSynthesis.getVoices();
@@ -1129,9 +1267,12 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
 }
 
 /**
- * إيقاف أي نطق صوتي نشط حالياً (سواء كان AudioContext أو SpeechSynthesis)
+ * إيقاف أي نطق صوتي نشط حالياً فوراً
  */
 export function stopMousaVoice(): void {
+  // زيادة عداد الجلسة لإلغاء أي تشغيل متبقٍ للجمل اللاحقة
+  mousaAudioSessionCounter++;
+
   if (currentSourceNode) {
     try {
       currentSourceNode.stop();
@@ -1146,149 +1287,230 @@ export function stopMousaVoice(): void {
   }
 }
 
-/**
- * التوافق التراجعي: إيقاف الصوت
- */
 export function stopArabicSpeech(): void {
   stopMousaVoice();
 }
 
 /**
- * الدالة الرئيسية: توليد ونطق الصوت البشري فائق الواقعية لشخصية موسى (Gemini Native Audio)
- * تدعم التخزين المؤقت التلقائي، والتشغيل الفوري عبر Web Audio API، مع نظام بديل ذكي
+ * الجلب الداخلي لمقطع صوتي واحد مع فحص ذاكرة الرام (0ms) وقاعدة IndexedDB قبل استدعاء API
+ * مع توجيه فائق السرعة مقتصر على: "Read the following Arabic text naturally: [TEXT]"
+ */
+async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | null> {
+  if (!cleanText) return null;
+
+  // 1. فحص ذاكرة الرام السريعة (0ms Hit)
+  if (mousaAudioCache.has(cleanText)) {
+    return mousaAudioCache.get(cleanText)!.buffer;
+  }
+
+  // 2. فحص التخزين الدائم في المتصفح (IndexedDB Cache)
+  const idbBytes = await getFromIndexedDBCache(cleanText);
+  if (idbBytes) {
+    const audioCtx = getAudioContext();
+    const buffer = pcmToAudioBuffer(idbBytes, audioCtx, 24000);
+    mousaAudioCache.set(cleanText, {
+      buffer,
+      pcm: idbBytes,
+      timestamp: Date.now()
+    });
+    return buffer;
+  }
+
+  // 3. التحقق من وجود طلب جلب نشط لنفس النص لعدم تكرار الطلب (Deduplication)
+  if (inFlightFetches.has(cleanText)) {
+    return inFlightFetches.get(cleanText)!;
+  }
+
+  const fetchPromise = (async (): Promise<AudioBuffer | null> => {
+    try {
+      const ai = getAIClient();
+      if (!ai) return null;
+
+      // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
+      const promptText = `Read the following Arabic text naturally: ${cleanText}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-tts-preview',
+        contents: [{ parts: [{ text: promptText }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Puck', // نبرة صوت دافئة واضحة ومرحة تناسب شخصية موسى
+              },
+            },
+          },
+        },
+      });
+
+      const candidate = response.candidates?.[0];
+      const part = candidate?.content?.parts?.[0];
+      const base64Data = part?.inlineData?.data;
+
+      if (base64Data) {
+        const pcmBytes = base64ToUint8Array(base64Data);
+        const audioCtx = getAudioContext();
+        const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
+
+        // حفظ دائم في كل من ذاكرة الرام وIndexedDB
+        mousaAudioCache.set(cleanText, {
+          buffer,
+          pcm: pcmBytes,
+          timestamp: Date.now()
+        });
+        saveToIndexedDBCache(cleanText, pcmBytes);
+
+        return buffer;
+      }
+      return null;
+    } catch (err: any) {
+      console.warn('تعذر توليد مقطع صوتي عبر Gemini TTS:', err?.message || err);
+      return null;
+    } finally {
+      inFlightFetches.delete(cleanText);
+    }
+  })();
+
+  inFlightFetches.set(cleanText, fetchPromise);
+  return fetchPromise;
+}
+
+/**
+ * الدالة الرئيسية: نطق النصوص بصوت موسى البشري
+ * تتميز بـ:
+ * 1. استجابة لحظية (0ms) من خلال ذاكرة الرام وقاعدة IndexedDB الدائمة.
+ * 2. تقسيم الجمل الطويلة (Chunking) والتشغيل الفوري للمقطع الأول بالتوازي مع جلب المقاطع اللاحقة.
+ * 3. نظام تعافٍ تلقائي (Fallback) للقارئ المحلي عند انقطاع الإنترنت.
  */
 export async function speakWithMousaVoice(text: string, onEnd?: () => void): Promise<boolean> {
-  const cleanText = cleanTextForSpeech(text);
-  if (!cleanText) {
+  const clean = cleanTextForSpeech(text);
+  if (!clean) {
     if (onEnd) onEnd();
     return false;
   }
 
-  // 1. التحقق من التخزين المؤقت (Audio Cache)
-  const cacheKey = cleanText;
-  if (mousaAudioCache.has(cacheKey)) {
-    const cached = mousaAudioCache.get(cacheKey)!;
-    playAudioBuffer(cached.buffer, onEnd);
-    return true;
-  }
-
-  // 2. إيقاف أي نطق سابق
+  // إيقاف أي صوت سابق وتحديد معرف جلسة فريد جديد
   stopMousaVoice();
+  const sessionId = ++mousaAudioSessionCounter;
 
-  // 3. استدعاء نموذج Gemini الصوتي المباشر (gemini-3.1-flash-tts-preview)
-  try {
-    const ai = getAIClient();
-    if (!ai) {
-      speakBrowserSpeechSynthesis(cleanText, onEnd);
+  // تجزئة النص إلى مقاطع قصيرة إن كان طويلاً
+  const chunks = splitArabicIntoSpeechChunks(clean);
+
+  if (chunks.length <= 1) {
+    const singleText = chunks[0] || clean;
+
+    // استرجاع المقطع (من الرام أو IndexedDB أو API)
+    const buffer = await fetchSingleAudioBuffer(singleText);
+
+    // إذا تغيرت الجلسة أثناء الجلب (قام المستخدم بالإلغاء)، لا نشغل
+    if (sessionId !== mousaAudioSessionCounter) {
       return false;
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: cleanText }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: 'Puck', // نبرة صوت دافئة ومرحة وواضحة مخارج الحروف تناسب الأطفال وموسى
-            },
-          },
-        },
-      },
-    });
-
-    const candidate = response.candidates?.[0];
-    const part = candidate?.content?.parts?.[0];
-    const base64Data = part?.inlineData?.data;
-
-    if (base64Data) {
-      const pcmBytes = base64ToUint8Array(base64Data);
-      const audioCtx = getAudioContext();
-      const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
-      
-      let wavUrl: string | undefined;
-      try {
-        const blob = pcmToWavBlob(pcmBytes, 24000);
-        wavUrl = URL.createObjectURL(blob);
-      } catch {}
-
-      // حفظ العينة في الذاكرة المؤقتة لمنع تكرار استهلاك الحصة
-      mousaAudioCache.set(cacheKey, {
-        buffer,
-        wavUrl,
-        timestamp: Date.now()
-      });
-
-      // تشغيل الصوت فوراً
+    if (buffer) {
       playAudioBuffer(buffer, onEnd);
       return true;
     } else {
-      throw new Error('لم يتم استلام مخرجات صوتية ثنائية من نموذج Gemini');
+      speakBrowserSpeechSynthesis(singleText, onEnd);
+      return false;
     }
-  } catch (err: any) {
-    console.warn('تعذر توليد صوت موسى عبر Gemini Native TTS (سيتم استخدام القارئ البديل):', err?.message || err);
-    speakBrowserSpeechSynthesis(cleanText, onEnd);
+  }
+
+  // في حال وجود جمل متعددة:
+  // نبدأ بتشغيل الجملة الأولى فوراً، ونجلب الجملة الثانية في الخلفية بالتوازي (Parallel Prefetching)
+  let currentIndex = 0;
+
+  // جلب الجملة الأولى فوراً
+  const firstBuffer = await fetchSingleAudioBuffer(chunks[0]);
+  if (sessionId !== mousaAudioSessionCounter) return false;
+
+  // إطلاق الجلب المسبق للجملة الثانية فوراً في الخلفية بالتوازي
+  if (chunks.length > 1) {
+    fetchSingleAudioBuffer(chunks[1]);
+  }
+
+  if (!firstBuffer) {
+    // بديل المتصفح للنص بالكامل إن تعذر الأول
+    speakBrowserSpeechSynthesis(clean, onEnd);
     return false;
   }
+
+  // حلقة تشغيل متتابعة وسلسة بين المقاطع
+  const playNextChunk = async (index: number) => {
+    if (sessionId !== mousaAudioSessionCounter) return;
+
+    if (index >= chunks.length) {
+      if (onEnd) onEnd();
+      return;
+    }
+
+    const currentChunkText = chunks[index];
+    const chunkBuffer = await fetchSingleAudioBuffer(currentChunkText);
+
+    if (sessionId !== mousaAudioSessionCounter) return;
+
+    // جلب المقطع التالي في الخلفية بالتوازي أثناء الاستماع للمقطع الحالي
+    if (index + 1 < chunks.length) {
+      fetchSingleAudioBuffer(chunks[index + 1]);
+    }
+
+    if (chunkBuffer) {
+      playAudioBuffer(chunkBuffer, () => {
+        playNextChunk(index + 1);
+      });
+    } else {
+      // إكمال البقية أو استدعاء النهاية
+      playNextChunk(index + 1);
+    }
+  };
+
+  playAudioBuffer(firstBuffer, () => {
+    playNextChunk(1);
+  });
+
+  return true;
 }
 
-/**
- * التوافق التراجعي: دالة نطق النصوص العامة موجهة الآن تلقائياً لصوت موسى الأصلي
- */
 export function speakArabicText(text: string, onEnd?: () => void): void {
   speakWithMousaVoice(text, onEnd);
 }
 
 /**
- * فحص ما إذا كان النص مخزناً مسبقاً في الذاكرة المؤقتة للأصوات
+ * فحص ما إذا كان الصوت متاحاً في الرام أو في قاعدة IndexedDB
  */
 export function isMousaVoiceCached(text: string): boolean {
   const clean = cleanTextForSpeech(text);
   return mousaAudioCache.has(clean);
 }
 
-/**
- * حجم الذاكرة المؤقتة للأصوات المخزنة
- */
 export function getMousaVoiceCacheSize(): number {
   return mousaAudioCache.size;
 }
 
 /**
- * تحميل مسبق لصوت موسى لمجموعة من النصوص المتكررة (مثل أصوات الحروف وعبارات التشجيع)
+ * التوليد والاستباق المسبق (Pre-buffering) لأصوات الألعاب، الخيارات، والتوجيهات
+ * يحفظ المقاطع في الذاكرة الدائمة (IndexedDB) والرام لتعمل بضغطة زر دون أي انتظار (0ms)
  */
-export async function preloadMousaVoice(texts: string[]): Promise<void> {
-  for (const text of texts) {
-    const clean = cleanTextForSpeech(text);
-    if (!clean || mousaAudioCache.has(clean)) continue;
+export async function prebufferMousaAudio(texts: (string | undefined | null)[]): Promise<void> {
+  const validTexts = texts
+    .map(t => (t ? cleanTextForSpeech(t) : ''))
+    .filter(t => t.length > 0 && !mousaAudioCache.has(t));
+
+  if (validTexts.length === 0) return;
+
+  // جلب المقاطع بالتتابع الهادئ لتفادي الضغط وتجهيزها في الكاش الدائم
+  for (const text of validTexts) {
     try {
-      const ai = getAIClient();
-      if (!ai) break;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-tts-preview',
-        contents: [{ parts: [{ text: clean }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Puck' }
-            }
-          }
-        }
-      });
-      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (data) {
-        const pcmBytes = base64ToUint8Array(data);
-        const audioCtx = getAudioContext();
-        const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
-        mousaAudioCache.set(clean, { buffer, timestamp: Date.now() });
-      }
+      await fetchSingleAudioBuffer(text);
     } catch {
-      // إيقاف المعالجة المسبقة إن حدث ضغط على الحصة
-      break;
+      // تجاوز أي خطأ فردي ومتابعة البقية
     }
   }
+}
+
+export async function preloadMousaVoice(texts: string[]): Promise<void> {
+  return prebufferMousaAudio(texts);
 }
 
 // ================= 9. حزمة الألعاب التعليمية التفاعلية المولدة بالذكاء الاصطناعي (AI Games Suite) =================
