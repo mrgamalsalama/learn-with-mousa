@@ -72,8 +72,16 @@ export const AIGamesTeacherSection: React.FC<AIGamesTeacherSectionProps> = ({
         defaultTitle = `كنز الحروف: ${targetSkill}`;
       } else if (gameType === 'sentence_builder') {
         defaultTitle = `متاهة الجمل: ${targetSkill}`;
-      } else {
+      } else if (gameType === 'story_quest') {
         defaultTitle = `مغامرة موسى: ${targetSkill}`;
+      } else if (gameType === 'vowel_train') {
+        defaultTitle = `قطار الحركات والمدود: ${targetSkill}`;
+      } else if (gameType === 'letter_blending') {
+        defaultTitle = `معمل دمج الكلمات: ${targetSkill}`;
+      } else if (gameType === 'vocab_detective') {
+        defaultTitle = `محقق المفردات: ${targetSkill}`;
+      } else {
+        defaultTitle = `فرز الظواهر اللغوية: ${targetSkill}`;
       }
       setGameTitle(defaultTitle);
     } catch (err: any) {
@@ -199,6 +207,10 @@ export const AIGamesTeacherSection: React.FC<AIGamesTeacherSectionProps> = ({
               <option value="phonics_treasure">💎 كنز الحروف والكلمات السحرية (صيد وأصوات)</option>
               <option value="sentence_builder">🧩 متاهة تركيب الجمل التفاعلية (بناء وتركيب)</option>
               <option value="story_quest">🏰 مغامرة موسى وقرارات الحكاية (اختيارات قصصية)</option>
+              <option value="vowel_train">🚂 قطار الحركات والمدود (حركات قصيرة وطويلة)</option>
+              <option value="letter_blending">🧪 معمل دمج الحروف وتكوين الكلمات (تركيب صوتي)</option>
+              <option value="vocab_detective">🔍 محقق المفردات (الترادف والتضاد والمعاني)</option>
+              <option value="category_sorter">⚖️ فرز الظواهر اللغوية (شمسية/قمرية، تاء/هاء)</option>
             </select>
           </div>
         </div>
@@ -377,6 +389,10 @@ export const AIGamesTeacherSection: React.FC<AIGamesTeacherSectionProps> = ({
                       {game.gameData?.gameType === 'phonics_treasure' && '💎 كنز الحروف'}
                       {game.gameData?.gameType === 'sentence_builder' && '🧩 تركيب الجمل'}
                       {game.gameData?.gameType === 'story_quest' && '🏰 مغامرة موسى'}
+                      {game.gameData?.gameType === 'vowel_train' && '🚂 قطار المدود'}
+                      {game.gameData?.gameType === 'letter_blending' && '🧪 معمل الكلمات'}
+                      {game.gameData?.gameType === 'vocab_detective' && '🔍 محقق المفردات'}
+                      {game.gameData?.gameType === 'category_sorter' && '⚖️ فرز الظواهر'}
                     </span>
                     <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold">
                       {getGradeLabel(game.grade || '')}

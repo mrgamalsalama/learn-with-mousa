@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Award, Sparkles, Volume2, ArrowRight, RotateCcw, 
-  CheckCircle2, Star, Trophy, ArrowLeft, Lightbulb
+  CheckCircle2, Star, Trophy, ArrowLeft, Lightbulb,
+  Search, FlaskConical, Scale
 } from 'lucide-react';
 import { Activity, GameData, GameLevel, UserProfile, ChildBadge } from '../types';
 import { speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
@@ -114,6 +115,10 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
   const [selectedWordSequence, setSelectedWordSequence] = useState<string[]>([]);
   const [availableWords, setAvailableWords] = useState<string[]>([]);
 
+  // حالة لعبة فرز الظواهر اللغوية
+  const [sorterWordIndex, setSorterWordIndex] = useState<number>(0);
+  const [sorterFinishedWords, setSorterFinishedWords] = useState<Record<string, boolean>>({});
+
   // إعداد المستوى الحالي عند التبديل
   const currentLevel: GameLevel | undefined = gameData?.levels?.[currentLevelIndex];
   const totalLevels = gameData?.levels?.length || 1;
@@ -130,6 +135,9 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       const shuffled = [...currentLevel.options].sort(() => Math.random() - 0.5);
       setAvailableWords(shuffled);
       setSelectedWordSequence([]);
+    } else if (gameData.gameType === 'category_sorter') {
+      setSorterWordIndex(0);
+      setSorterFinishedWords({});
     }
 
     // قراءة نص السؤال تلقائياً بصوت موسى
@@ -154,6 +162,9 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       if (currentLvl.feedbackSuccess) toPrebuffer.push(currentLvl.feedbackSuccess);
       if (currentLvl.feedbackHint) toPrebuffer.push(currentLvl.feedbackHint);
       if (currentLvl.options) toPrebuffer.push(...currentLvl.options);
+      if (currentLvl.segments) toPrebuffer.push(...currentLvl.segments);
+      if (currentLvl.wordPuzzle) toPrebuffer.push(currentLvl.wordPuzzle);
+      if (currentLvl.categories) toPrebuffer.push(...currentLvl.categories);
     }
 
     if (nextLvl) {
@@ -161,6 +172,9 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       if (nextLvl.feedbackSuccess) toPrebuffer.push(nextLvl.feedbackSuccess);
       if (nextLvl.feedbackHint) toPrebuffer.push(nextLvl.feedbackHint);
       if (nextLvl.options) toPrebuffer.push(...nextLvl.options);
+      if (nextLvl.segments) toPrebuffer.push(...nextLvl.segments);
+      if (nextLvl.wordPuzzle) toPrebuffer.push(nextLvl.wordPuzzle);
+      if (nextLvl.categories) toPrebuffer.push(...nextLvl.categories);
     }
 
     // تجهيز الأصوات في الخلفية مسبقاً قبل نقر الطالب لتعمل فوراً 0ms
@@ -293,6 +307,142 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
     }
   };
 
+  // ================= 4. منطق لعبة قطار الحركات والمدود =================
+  const handleVowelTrainChoice = (carriageWord: string) => {
+    if (levelStatus === 'success') return;
+    playSound('pop');
+
+    const isCorrect = currentLevel.correctAnswers.some(
+      (ans) => ans.trim() === carriageWord.trim() || carriageWord.includes(ans.trim())
+    );
+
+    if (isCorrect) {
+      playSound('correct');
+      setLevelStatus('success');
+      setFeedbackMsg(currentLevel.feedbackSuccess);
+      setStars((prev) => prev + 1);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
+
+      setTimeout(() => {
+        advanceToNextLevel();
+      }, 2400);
+    } else {
+      playSound('wrong');
+      setLevelStatus('hint');
+      setShakeError(true);
+      setFeedbackMsg(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
+      setTimeout(() => setShakeError(false), 700);
+    }
+  };
+
+  // ================= 5. منطق لعبة معمل دمج الحروف وتكوين الكلمات =================
+  const handleLetterBlendingChoice = (blendedWord: string) => {
+    if (levelStatus === 'success') return;
+    playSound('pop');
+
+    const isCorrect = currentLevel.correctAnswers.some(
+      (ans) => ans.trim() === blendedWord.trim() || blendedWord.includes(ans.trim())
+    );
+
+    if (isCorrect) {
+      playSound('correct');
+      setLevelStatus('success');
+      setFeedbackMsg(currentLevel.feedbackSuccess);
+      setStars((prev) => prev + 1);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
+
+      setTimeout(() => {
+        advanceToNextLevel();
+      }, 2400);
+    } else {
+      playSound('wrong');
+      setLevelStatus('hint');
+      setShakeError(true);
+      setFeedbackMsg(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
+      setTimeout(() => setShakeError(false), 700);
+    }
+  };
+
+  // ================= 6. منطق لعبة محقق المفردات (الترادف والتضاد) =================
+  const handleVocabDetectiveChoice = (choice: string) => {
+    if (levelStatus === 'success') return;
+    playSound('pop');
+
+    const isCorrect = currentLevel.correctAnswers.some(
+      (ans) => ans.trim() === choice.trim() || choice.includes(ans.trim())
+    );
+
+    if (isCorrect) {
+      playSound('correct');
+      setLevelStatus('success');
+      setFeedbackMsg(currentLevel.feedbackSuccess);
+      setStars((prev) => prev + 1);
+      speakWithMousaVoice(currentLevel.feedbackSuccess);
+
+      setTimeout(() => {
+        advanceToNextLevel();
+      }, 2400);
+    } else {
+      playSound('wrong');
+      setLevelStatus('hint');
+      setShakeError(true);
+      setFeedbackMsg(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
+      setTimeout(() => setShakeError(false), 700);
+    }
+  };
+
+  // ================= 7. منطق لعبة فرز الظواهر اللغوية =================
+  const sorterWords = currentLevel?.options || [];
+  const activeSorterWord = sorterWords[sorterWordIndex] || '';
+  const sorterCategories = currentLevel?.categories && currentLevel.categories.length >= 2 
+    ? currentLevel.categories 
+    : ['اللام الشمسية ☀️', 'اللام القمرية 🌙'];
+
+  const handleCategorySortChoice = (category: string) => {
+    if (levelStatus === 'success' || !activeSorterWord) return;
+    playSound('pop');
+
+    let isCorrect = false;
+    if (currentLevel.categoryMap && currentLevel.categoryMap[activeSorterWord]) {
+      isCorrect = currentLevel.categoryMap[activeSorterWord].trim() === category.trim();
+    } else {
+      const belongsToFirst = currentLevel.correctAnswers.some(
+        (ans) => ans.trim() === activeSorterWord.trim() || activeSorterWord.includes(ans.trim())
+      );
+      isCorrect = (category === sorterCategories[0] && belongsToFirst) || (category === sorterCategories[1] && !belongsToFirst);
+    }
+
+    if (isCorrect) {
+      playSound('correct');
+      setSorterFinishedWords((prev) => ({ ...prev, [activeSorterWord]: true }));
+
+      if (sorterWordIndex + 1 < sorterWords.length) {
+        setSorterWordIndex((prev) => prev + 1);
+        setLevelStatus('playing');
+        setFeedbackMsg(`أَحْسَنْتَ! اخْتِيَارٌ صَحِيحٌ لِـ (${activeSorterWord}) 👏`);
+      } else {
+        setLevelStatus('success');
+        setFeedbackMsg(currentLevel.feedbackSuccess);
+        setStars((prev) => prev + 1);
+        speakWithMousaVoice(currentLevel.feedbackSuccess);
+
+        setTimeout(() => {
+          advanceToNextLevel();
+        }, 2400);
+      }
+    } else {
+      playSound('wrong');
+      setLevelStatus('hint');
+      setShakeError(true);
+      setFeedbackMsg(currentLevel.feedbackHint);
+      speakWithMousaVoice(currentLevel.feedbackHint);
+      setTimeout(() => setShakeError(false), 700);
+    }
+  };
+
   // التقدم للمستوى التالي أو إنهاء اللعبة وتتويج البطل
   const advanceToNextLevel = () => {
     if (currentLevelIndex + 1 < totalLevels) {
@@ -324,6 +474,22 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       badgeTitle = 'فارس مغامرات موسى 🏰';
       badgeDesc = `اتخذ القرارات اللغوية الصائبة وأكمل مغامرة (${gameData.targetSkill})`;
       badgeIcon = '🏰';
+    } else if (gameData.gameType === 'vowel_train') {
+      badgeTitle = 'قائد قطار المدود والحركات 🚂';
+      badgeDesc = `ميز بين الحركات القصيرة والمدود الطويلة بمهارة (${gameData.targetSkill})`;
+      badgeIcon = '🚂';
+    } else if (gameData.gameType === 'letter_blending') {
+      badgeTitle = 'عالم معمل دمج الكلمات 🧪';
+      badgeDesc = `دمج المقاطع الصوتية والحروف وكون كلمات عربية بمهارة (${gameData.targetSkill})`;
+      badgeIcon = '🧪';
+    } else if (gameData.gameType === 'vocab_detective') {
+      badgeTitle = 'المحقق اللغوي العبقري 🔍';
+      badgeDesc = `فك شفرات الكلمات واكتشف الترادف والتضاد بمهارة (${gameData.targetSkill})`;
+      badgeIcon = '🔍';
+    } else if (gameData.gameType === 'category_sorter') {
+      badgeTitle = 'خبير تصنيف الظواهر اللغوية ⚖️';
+      badgeDesc = `فرز وصنف الكلمات وأتقن التمييز بين الظواهر بمهارة (${gameData.targetSkill})`;
+      badgeIcon = '⚖️';
     }
 
     const newBadge: ChildBadge = {
@@ -389,6 +555,41 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
           accent: 'indigo',
           titleAr: 'مغامرة موسى وقرارات الحكاية 🏰',
           badgeTag: 'المغامرة القصصية'
+        };
+      case 'vowel_train':
+        return {
+          bgGrad: 'from-blue-600 via-cyan-600 to-teal-700',
+          accent: 'sky',
+          titleAr: 'قطار الحركات والمدود 🚂',
+          badgeTag: 'لعبة قطار المدود'
+        };
+      case 'letter_blending':
+        return {
+          bgGrad: 'from-violet-600 via-fuchsia-600 to-pink-700',
+          accent: 'purple',
+          titleAr: 'معمل دمج الحروف والكلمات 🧪',
+          badgeTag: 'معمل كيمياء الكلمات'
+        };
+      case 'vocab_detective':
+        return {
+          bgGrad: 'from-amber-600 via-orange-600 to-red-700',
+          accent: 'amber',
+          titleAr: 'محقق المفردات والترادف 🔍',
+          badgeTag: 'تحقيق لغوي ذكي'
+        };
+      case 'category_sorter':
+        return {
+          bgGrad: 'from-teal-600 via-emerald-600 to-green-700',
+          accent: 'teal',
+          titleAr: 'فرز وتصنيف الظواهر اللغوية ⚖️',
+          badgeTag: 'لعبة الفرز والتصنيف'
+        };
+      default:
+        return {
+          bgGrad: 'from-amber-500 via-orange-500 to-amber-600',
+          accent: 'amber',
+          titleAr: 'ألعاب موسى الذكية 🎮',
+          badgeTag: 'تحدي لغوي'
         };
     }
   };
@@ -477,14 +678,26 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
             {/* بطاقة الوسام الممنوح */}
             <div className="bg-white border-2 border-amber-300 rounded-3xl p-5 shadow-lg max-w-sm w-full mb-8 flex items-center gap-4 text-right">
               <div className="text-4xl p-3 bg-amber-50 rounded-2xl border border-amber-200 flex-shrink-0">
-                {gameData.gameType === 'phonics_treasure' ? '💎' : gameData.gameType === 'sentence_builder' ? '🧩' : '🏰'}
+                {gameData.gameType === 'phonics_treasure' && '💎'}
+                {gameData.gameType === 'sentence_builder' && '🧩'}
+                {gameData.gameType === 'story_quest' && '🏰'}
+                {gameData.gameType === 'vowel_train' && '🚂'}
+                {gameData.gameType === 'letter_blending' && '🧪'}
+                {gameData.gameType === 'vocab_detective' && '🔍'}
+                {gameData.gameType === 'category_sorter' && '⚖️'}
               </div>
               <div>
                 <span className="text-[10px] font-bold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md inline-block mb-1">
                   وسام مكتسب جديد
                 </span>
                 <h4 className="font-black text-sm text-slate-800">
-                  {gameData.gameType === 'phonics_treasure' ? 'بطل كنز الحروف 💎' : gameData.gameType === 'sentence_builder' ? 'مهندس الجمل الماهر 🧩' : 'فارس مغامرات موسى 🏰'}
+                  {gameData.gameType === 'phonics_treasure' && 'بطل كنز الحروف 💎'}
+                  {gameData.gameType === 'sentence_builder' && 'مهندس الجمل الماهر 🧩'}
+                  {gameData.gameType === 'story_quest' && 'فارس مغامرات موسى 🏰'}
+                  {gameData.gameType === 'vowel_train' && 'قائد قطار المدود 🚂'}
+                  {gameData.gameType === 'letter_blending' && 'عالم معمل الكلمات 🧪'}
+                  {gameData.gameType === 'vocab_detective' && 'المحقق اللغوي العبقري 🔍'}
+                  {gameData.gameType === 'category_sorter' && 'خبير تصنيف الظواهر ⚖️'}
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
                   تم تسجيل درجتك (10/10) وإضافة الوسام إلى حائط إنجازاتك فوراً!
@@ -682,6 +895,254 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
                         </span>
                         <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:-translate-x-1 transition" />
                       </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* محرك اللعبة 4: قطار الحركات والمدود */}
+            {gameData.gameType === 'vowel_train' && (
+              <div className="space-y-4 my-2">
+                <div className="text-center mb-1">
+                  <span className="text-xs font-bold text-sky-800 bg-sky-100 px-3 py-1 rounded-full">
+                    🚂 قِطَارُ الحَرَكَاتِ وَالمُدُودِ: {gameData.targetSkill}
+                  </span>
+                </div>
+
+                {/* قاطرة القطار ومسار السكة الحديدية */}
+                <div className="bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50 border border-sky-200 rounded-2xl p-3 flex items-center justify-between shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl animate-pulse">🚂</span>
+                    <div className="text-right">
+                      <span className="text-[10px] font-black text-sky-700 bg-sky-100 px-2 py-0.5 rounded">قَاطِرَةُ مُوسَى</span>
+                      <p className="text-xs font-bold text-slate-600">اخْتَرِ العَرَبَةَ الَّتِي تَحْمِلُ الإِجَابَةَ الصَّحِيحَةَ!</p>
+                    </div>
+                  </div>
+                  <span className="text-xl animate-bounce">💨✨</span>
+                </div>
+
+                {/* عربات القطار كخيارات */}
+                <div className={`grid grid-cols-2 gap-3.5 ${shakeError ? 'animate-bounce' : ''}`}>
+                  {currentLevel.options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleVowelTrainChoice(opt)}
+                      disabled={levelStatus === 'success'}
+                      className="group relative p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-sky-50/60 border-2 border-sky-200 hover:border-sky-500 hover:shadow-lg transition-all duration-200 flex flex-col items-center justify-center text-center disabled:opacity-75"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-sky-100 group-hover:scale-110 transition-transform flex items-center justify-center text-2xl mb-2 shadow-xs">
+                        🚃
+                      </div>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-base sm:text-lg font-black text-slate-800 group-hover:text-sky-950">
+                          {opt}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speakWithMousaVoice(opt);
+                          }}
+                          className="p-1.5 rounded-xl bg-sky-100/80 hover:bg-sky-200 text-sky-800 transition"
+                          title="استمع للكلمة بصوت موسى (فوري 0ms)"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-sky-600 font-bold mt-1">عَرَبَةُ رَقْم {idx + 1}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* محرك اللعبة 5: معمل دمج الحروف وتكوين الكلمات */}
+            {gameData.gameType === 'letter_blending' && (
+              <div className="space-y-4 my-2">
+                <div className="text-center mb-1">
+                  <span className="text-xs font-bold text-violet-800 bg-violet-100 px-3 py-1 rounded-full">
+                    🧪 مَعْمَلُ دَمْجِ الحُرُوفِ وَالمَقَاطِعِ الصَّوْتِيَّةِ
+                  </span>
+                </div>
+
+                {/* منصة التفاعل الصوتي للمقاطع المكونة للكلمة */}
+                <div className="bg-gradient-to-b from-purple-50 to-pink-50 border-2 border-dashed border-purple-300 rounded-3xl p-4 text-center">
+                  <span className="text-xs font-bold text-purple-700 block mb-2">
+                    المَقَاطِعُ الصَّوْتِيَّةُ (انْقُرْ لِسَمَاعِ نُطْقِ كُلِّ مَقْطَع):
+                  </span>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {(currentLevel.segments && currentLevel.segments.length > 0 
+                      ? currentLevel.segments 
+                      : (currentLevel.options[0] ? currentLevel.options[0].split('') : [])
+                    ).map((seg, sIdx) => (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => speakWithMousaVoice(seg)}
+                        className="px-4 py-2.5 bg-white border-2 border-purple-300 hover:border-purple-600 text-purple-900 font-black text-lg rounded-2xl shadow-xs transition hover:scale-105 flex items-center gap-1.5"
+                        title="اسمع صوت المقطع"
+                      >
+                        <span>{seg}</span>
+                        <Volume2 className="w-3.5 h-3.5 text-purple-500" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* خيارات الكلمة الناتجة عن الدمج */}
+                <div className={`grid grid-cols-2 gap-3.5 ${shakeError ? 'animate-bounce' : ''}`}>
+                  {currentLevel.options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleLetterBlendingChoice(opt)}
+                      disabled={levelStatus === 'success'}
+                      className="group relative p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-purple-50/50 border-2 border-purple-200 hover:border-purple-500 hover:shadow-lg transition-all duration-200 flex flex-col items-center justify-center text-center disabled:opacity-75"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-purple-100 group-hover:scale-110 transition-transform flex items-center justify-center text-2xl mb-2 shadow-xs">
+                        🧪
+                      </div>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-base sm:text-lg font-black text-slate-800 group-hover:text-purple-950">
+                          {opt}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speakWithMousaVoice(opt);
+                          }}
+                          className="p-1.5 rounded-xl bg-purple-100/80 hover:bg-purple-200 text-purple-800 transition"
+                          title="استمع للكلمة بصوت موسى (فوري 0ms)"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* محرك اللعبة 6: محقق المفردات (الترادف والتضاد) */}
+            {gameData.gameType === 'vocab_detective' && (
+              <div className="space-y-4 my-2">
+                <div className="text-center mb-1">
+                  <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-1 rounded-full">
+                    🔍 مَلَفُّ التَّحْقِيقِ اللُّغَوِيِّ: {gameData.targetSkill}
+                  </span>
+                </div>
+
+                {/* بطاقة الكلمة المستهدفة بالبحث الجنائي اللغوي */}
+                <div className="bg-gradient-to-r from-amber-100/80 via-yellow-50 to-orange-100/80 border-2 border-amber-300 rounded-3xl p-4 text-center relative shadow-xs">
+                  <span className="text-xs font-bold text-amber-800 block mb-1">
+                    الكَلِمَةُ المَطْلُوبُ التَّحْقِيقُ عَنْهَا:
+                  </span>
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-2xl sm:text-3xl font-black text-amber-950 bg-white/80 px-5 py-1.5 rounded-2xl border border-amber-300 shadow-xs">
+                      {currentLevel.wordPuzzle || currentLevel.options[0]}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => speakWithMousaVoice(currentLevel.wordPuzzle || currentLevel.options[0])}
+                      className="p-2 bg-amber-200/80 hover:bg-amber-300 text-amber-900 rounded-xl transition shadow-xs"
+                      title="استمع للكلمة بصوت موسى"
+                    >
+                      <Volume2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* خيارات المحقق لاختيار المرادف أو التضاد */}
+                <div className={`grid grid-cols-2 gap-3.5 ${shakeError ? 'animate-bounce' : ''}`}>
+                  {currentLevel.options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleVocabDetectiveChoice(opt)}
+                      disabled={levelStatus === 'success'}
+                      className="group relative p-4 sm:p-5 rounded-3xl bg-white border-2 border-amber-200 hover:border-amber-500 hover:shadow-lg transition-all duration-200 flex flex-col items-center justify-center text-center disabled:opacity-75"
+                    >
+                      <div className="w-10 h-10 rounded-2xl bg-amber-100 group-hover:scale-110 transition-transform flex items-center justify-center text-xl mb-2 shadow-xs">
+                        🕵️
+                      </div>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-base sm:text-lg font-black text-slate-800 group-hover:text-amber-950">
+                          {opt}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speakWithMousaVoice(opt);
+                          }}
+                          className="p-1.5 rounded-xl bg-amber-100/80 hover:bg-amber-200 text-amber-800 transition"
+                          title="استمع للخيار بصوت موسى (فوري 0ms)"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* محرك اللعبة 7: فرز الظواهر اللغوية */}
+            {gameData.gameType === 'category_sorter' && (
+              <div className="space-y-4 my-2">
+                <div className="text-center mb-1">
+                  <span className="text-xs font-bold text-teal-800 bg-teal-100 px-3 py-1 rounded-full">
+                    ⚖️ فَرْزُ وَتَصْنِيفُ الظَّوَاهِرِ اللُّغَوِيَّةِ
+                  </span>
+                </div>
+
+                {/* بطاقة الكلمة الحالية المعروضة للفرز */}
+                {activeSorterWord ? (
+                  <div className={`bg-gradient-to-b from-teal-50 to-emerald-50 border-2 border-teal-300 rounded-3xl p-5 text-center shadow-xs ${shakeError ? 'animate-bounce border-rose-400' : ''}`}>
+                    <span className="text-xs font-bold text-teal-700 block mb-1">
+                      الكَلِمَةُ {sorterWordIndex + 1} مِنْ {sorterWords.length} (انْقُرْ عَلَى السَّلَّةِ الصَّحِيحَةِ فِي الأَسْفَل):
+                    </span>
+                    <div className="flex items-center justify-center gap-3 my-2">
+                      <span className="text-2xl sm:text-3xl font-black text-teal-950 bg-white px-6 py-2 rounded-2xl border border-teal-200 shadow-sm">
+                        {activeSorterWord}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => speakWithMousaVoice(activeSorterWord)}
+                        className="p-2.5 bg-teal-200 hover:bg-teal-300 text-teal-900 rounded-2xl transition shadow-xs"
+                        title="استمع للكلمة بصوت موسى"
+                      >
+                        <Volume2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* سلتا التصنيف التفاعليتان */}
+                <div className="grid grid-cols-2 gap-4">
+                  {sorterCategories.map((cat, cIdx) => (
+                    <button
+                      key={cIdx}
+                      type="button"
+                      onClick={() => handleCategorySortChoice(cat)}
+                      disabled={levelStatus === 'success' || !activeSorterWord}
+                      className={`p-5 rounded-3xl border-2 transition-all flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+                        cIdx === 0
+                          ? 'bg-amber-50/70 border-amber-300 hover:border-amber-500 text-amber-950'
+                          : 'bg-indigo-50/70 border-indigo-300 hover:border-indigo-500 text-indigo-950'
+                      }`}
+                    >
+                      <span className="text-3xl mb-1">{cIdx === 0 ? '☀️' : '🌙'}</span>
+                      <span className="font-black text-sm sm:text-base mb-1">{cat}</span>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        انقر لوضع الكلمة هنا 📥
+                      </span>
                     </button>
                   ))}
                 </div>

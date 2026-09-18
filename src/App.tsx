@@ -11,7 +11,7 @@ import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
-  ChildBadge
+  ChildBadge, AIGameType
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -2539,7 +2539,7 @@ export default function App() {
     const studentWorksheets = studentActivities.filter((a) => a.activityType !== 'game');
     const studentGames = studentActivities.filter((a) => a.activityType === 'game');
 
-    const startStarterGame = (type: 'phonics_treasure' | 'sentence_builder' | 'story_quest') => {
+    const startStarterGame = (type: AIGameType) => {
       // إذا كان هناك نشاط من نفس النوع مرسل من المعلم، نطلقه فوراً
       const existing = studentGames.find((g) => g.gameData?.gameType === type);
       if (existing) {
@@ -2612,6 +2612,146 @@ export default function App() {
             }
           ]
         };
+      } else if (type === 'vowel_train') {
+        sampleData = {
+          gameType: 'vowel_train' as const,
+          targetSkill: 'التَّمْيِيزُ بَيْنَ الحَرَكَاتِ القَصِيرَةِ وَالمُدُودِ الطَّوِيلَةِ',
+          instructions: 'اخْتَرِ عَرَبَةَ القِطَارِ الَّتِي تَحْمِلُ الكَلِمَةَ بِالمَدِّ أَوِ الحَرَكَةِ المَطْلُوبَةِ!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'أَيُّ عَرَبَةٍ تَحْمِلُ كَلِمَةً فِيهَا (مَدٌّ بِالأَلِفِ - ــا)؟',
+              correctAnswers: ['كِتَابٌ'],
+              options: ['كَتَبَ', 'كِتَابٌ', 'كُتُبٌ', 'يَكْتُبُ'],
+              feedbackSuccess: 'طُوط طُوط! 🚂💨 أَحْسَنْتَ! كَلِمَةُ (كِتَابٌ) فِيهَا صَوْتُ أَلِفِ المَدِّ الطَّوِيلِ!',
+              feedbackHint: 'اسْتَمِعْ إِلَى امْتِدَادِ صَوْتِ الفَتْحَةِ الطَّوِيلَةِ: تَا.. كِتَابٌ!'
+            },
+            {
+              id: 2,
+              prompt: 'أَيْنَ عَرَبَةُ القِطَارِ الَّتِي فِيهَا كَلِمَةٌ بِمَدِّ (الوَاوِ - ــو)؟',
+              correctAnswers: ['عُصْفُورٌ'],
+              options: ['عُصْفُورٌ', 'عَصِيرٌ', 'عَطَفَ', 'عَنْبَرٌ'],
+              feedbackSuccess: 'صَافِرَةُ القِطَارِ تُحَيِّيكَ! 🚂🌟 (عُصْفُورٌ) تَحْتَوِي عَلَى مَدِّ الوَاوِ الجَمِيلِ!',
+              feedbackHint: 'ضُمَّ شَفَتَيْكَ وَمُدَّ الصَّوْتَ: فُو.. عُصْفُورٌ!'
+            },
+            {
+              id: 3,
+              prompt: 'اخْتَرِ الكَلِمَةَ الَّتِي تَحْتَوِي عَلَى حَرَكَةٍ قَصِيرَةٍ فَقَطْ (بِلَا مَدٍّ):',
+              correctAnswers: ['لَعِبَ'],
+              options: ['لَاعِبٌ', 'لَعِبَ', 'يَلْعَبُونَ', 'لِعَابٌ'],
+              feedbackSuccess: 'عَبْقَرِيُّ قِطَارِ الحَرَكَاتِ! 🚂🎉 كَلِمَةُ (لَعِبَ) كُلُّ حَرَكَاتِهَا قَصِيرَةٌ وَسَرِيعَةٌ!',
+              feedbackHint: 'الحَرَكَةُ القَصِيرَةُ نَنْطِقُهَا بِسُرْعَةٍ دُونَ مَطٍّ فِي الصَّوْتِ!'
+            }
+          ]
+        };
+      } else if (type === 'letter_blending') {
+        sampleData = {
+          gameType: 'letter_blending' as const,
+          targetSkill: 'دَمْجُ المَقَاطِعِ الصَّوْتِيَّةِ وَالحُرُوفِ لِتَكْوِينِ الكَلِمَاتِ',
+          instructions: 'انْقُرْ عَلَى المَقَاطِعِ لِسَمَاعِ صَوْتِهَا، ثُمَّ اخْتَرِ الكَلِمَةَ الكَامِلَةَ النَّاتِجَةَ عَنِ الدَّمْجِ!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'ادْمُجِ المَقَاطِعَ الصَّوْتِيَّةَ: [ مَسْـ ] + [ ـجِـ ] + [ ـدٌ ] لِتُكَوِّنَ كَلِمَةً:',
+              correctAnswers: ['مَسْجِدٌ'],
+              options: ['مَسْجِدٌ', 'مَسْبَحٌ', 'مَصْنَعٌ', 'مَسْرَحٌ'],
+              segments: ['مَسْـ', 'ـجِـ', 'ـدٌ'],
+              feedbackSuccess: 'مَعْمَلٌ عَبْقَرِيٌّ! 🧪✨ رَكَّبْتَ الكَلِمَةَ (مَسْجِدٌ) بِتَفَوُّقٍ بَاهِرٍ!',
+              feedbackHint: 'انْطِقِ المَقْطَعَ السَّاكِنَ أَوَّلًا: مَسْـ، ثُمَّ أَضِفِ الكَسْرَةَ: ـجِـ، ثُمَّ التَّنْوِينَ: ـدٌ!'
+            },
+            {
+              id: 2,
+              prompt: 'مَا الكَلِمَةُ الَّتِي تَنْتُجُ عَنْ دَمْجِ: [ مُـ ] + [ ـعَلِّـ ] + [ ـمٌ ]؟',
+              correctAnswers: ['مُعَلِّمٌ'],
+              options: ['مُعَلِّمٌ', 'مُهَنْدِسٌ', 'مُتَعَلِّمٌ', 'مُمَرِّضٌ'],
+              segments: ['مُـ', 'ـعَلِّـ', 'ـمٌ'],
+              feedbackSuccess: 'نَجَاحٌ كِيمْيَائِيٌّ لُغَوِيٌّ! 🧪🌟 كَوَّنْتَ كَلِمَةَ (مُعَلِّمٌ) صَانِعِ الأَجْيَالِ!',
+              feedbackHint: 'انْتَبِهْ لِلشَّدَّةِ مَعَ الكَسْرَةِ فِي المَقْطَعِ الأَوْسَطِ: ـعَلِّـ!'
+            },
+            {
+              id: 3,
+              prompt: 'ادْمُجِ الحُرُوفَ التَّالِيَةَ: [ مَـ ] + [ ـدْ ] + [ رَ ] + [ سَـ ] + [ ـةٌ ]:',
+              correctAnswers: ['مَدْرَسَةٌ'],
+              options: ['مَدْرَسَةٌ', 'مَكْتَبَةٌ', 'مَزْرَعَةٌ', 'مَحْكَمَةٌ'],
+              segments: ['مَدْ', 'رَ', 'سَـ', 'ـةٌ'],
+              feedbackSuccess: 'عَالِمُ الكَلِمَاتِ الصَّغِيرُ! 🧪🏆 أَصْبَحْتَ خَبِيرَ دَمْجِ الحُرُوفِ فِي المَدْرَسَةِ!',
+              feedbackHint: 'اقْرَأِ المَقْطَعَ الأَوَّلَ السَّاكِنَ: مَدْ.. مَدْرَسَةٌ!'
+            }
+          ]
+        };
+      } else if (type === 'vocab_detective') {
+        sampleData = {
+          gameType: 'vocab_detective' as const,
+          targetSkill: 'مُحَقِّقُ المُفْرَدَاتِ: التَّرَادُفُ وَالتَّضَادُّ اللُّغَوِيُّ',
+          instructions: 'ابْحَثْ فِي أَدِلَّةِ التَّحْقِيقِ عَنْ مُرَادِفِ أَوِ ضِدِّ الكَلِمَةِ المَطْلُوبَةِ!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'أَيُّهَا المُحَقِّقُ الذَّكِيُّ، مَا مُرَادِفُ (مَعْنَى) كَلِمَةِ: [ مَسْرُورٌ ]؟',
+              wordPuzzle: 'مَسْرُورٌ',
+              correctAnswers: ['فَرِحٌ'],
+              options: ['فَرِحٌ', 'حَزِينٌ', 'غَاضِبٌ', 'خَائِفٌ'],
+              feedbackSuccess: 'حُلَّتِ القَضِيَّةُ بِنَجَاحٍ! 🔍🎉 (مَسْرُورٌ) تَعْنِي (فَرِحٌ)!',
+              feedbackHint: 'تَذَكَّرِ الشُّعُورَ الجَمِيلَ عِنْدَمَا تَحْصُلُ عَلَى هَدِيَّةٍ: سُرُورٌ وَفَرَحٌ!'
+            },
+            {
+              id: 2,
+              prompt: 'ابْحَثْ فِي الأَدِلَّةِ عَنْ ضِدِّ (عَكْسِ) كَلِمَةِ: [ شُجَاعٌ ]:',
+              wordPuzzle: 'شُجَاعٌ',
+              correctAnswers: ['جَبَانٌ'],
+              options: ['جَبَانٌ', 'قَوِيٌّ', 'بَطَلٌ', 'صَبُورٌ'],
+              feedbackSuccess: 'مُحَقِّقٌ عَبْقَرِيٌّ لَا تَفُوتُهُ فَائِتَةٌ! 🔍🌟 عَكْسُ الشُّجَاعِ هُوَ (جَبَانٌ)!',
+              feedbackHint: 'نَحْنُ نَبْحَثُ عَنِ الضِّدِّ (العَكْسِ) وَلَيْسَ المَعْنَى!'
+            },
+            {
+              id: 3,
+              prompt: 'مَا مُرَادِفُ (مَعْنَى) كَلِمَةِ: [ غَنِيمَةٌ ]؟',
+              wordPuzzle: 'غَنِيمَةٌ',
+              correctAnswers: ['مَكْسَبٌ'],
+              options: ['مَكْسَبٌ', 'خَسَارَةٌ', 'صُعُوبَةٌ', 'هَزِيمَةٌ'],
+              feedbackSuccess: 'كَتَبْتَ تَقْرِيرَ التَّحْقِيقِ الكَامِلَ بِامْتِيَازٍ! 🔍🏆 غَنِيمَةٌ تَعْنِي مَكْسَبٌ كَبِيرٌ!',
+              feedbackHint: 'الغَنِيمَةُ هِيَ الفَوْزُ وَالمَكْسَبُ الَّذِي يَحْصُلُ عَلَيْهِ الفَائِزُ!'
+            }
+          ]
+        };
+      } else if (type === 'category_sorter') {
+        sampleData = {
+          gameType: 'category_sorter' as const,
+          targetSkill: 'تَصْنِيفُ الكَلِمَاتِ حَسَبَ اللَّامِ الشَّمْسِيَّةِ وَالقَمَرِيَّةِ',
+          instructions: 'فَرِّزِ الكَلِمَاتِ بِوَضْعِ كُلِّ كَلِمَةٍ فِي سَلَّتِهَا الصَّحِيحَةِ (شَمْسِيَّةٌ أَمْ قَمَرِيَّةٌ)!',
+          levels: [
+            {
+              id: 1,
+              prompt: 'صَنِّفِ الكَلِمَاتِ التَّالِيَةَ إِلَى لَامٍ شَمْسِيَّةٍ ☀️ أَوْ لَامٍ قَمَرِيَّةٍ 🌙:',
+              categories: ['اللَّامُ الشَّمْسِيَّةُ ☀️', 'اللَّامُ القَمَرِيَّةُ 🌙'],
+              options: ['الشَّمْسُ', 'القَمَرُ', 'النُّورُ', 'الكِتَابُ'],
+              categoryMap: {
+                'الشَّمْسُ': 'اللَّامُ الشَّمْسِيَّةُ ☀️',
+                'القَمَرُ': 'اللَّامُ القَمَرِيَّةُ 🌙',
+                'النُّورُ': 'اللَّامُ الشَّمْسِيَّةُ ☀️',
+                'الكِتَابُ': 'اللَّامُ القَمَرِيَّةُ 🌙'
+              },
+              correctAnswers: ['الشَّمْسُ', 'النُّورُ'],
+              feedbackSuccess: 'تَصْنِيفٌ مُتْقَنٌ جِدًّا يَا بَطَلِي! ⚖️🌟 مَيَّزْتَ بَيْنَ الشَّمْسِيَّةِ وَالقَمَرِيَّةِ بِبَرَاعَةٍ!',
+              feedbackHint: 'انْتَبِهْ: اللَّامُ الشَّمْسِيَّةُ لَا تُنْطَقُ وَيَلِيهَا حَرْفٌ مُشَدَّدٌ، أَمَّا القَمَرِيَّةُ فَتُنْطَقُ وَتَظْهَرُ سَاكِنَةً!'
+            },
+            {
+              id: 2,
+              prompt: 'فَرْزُ التَّاءِ المَرْبُوطَةِ (ـة / ة) 🌸 وَالتَّاءِ المَفْتُوحَةِ (ت) 🏷️:',
+              categories: ['تَاءٌ مَرْبُوطَةٌ 🌸', 'تَاءٌ مَفْتُوحَةٌ 🏷️'],
+              options: ['شَجَرَةٌ', 'بَيْتٌ', 'حَدِيقَةٌ', 'صَوْتٌ'],
+              categoryMap: {
+                'شَجَرَةٌ': 'تَاءٌ مَرْبُوطَةٌ 🌸',
+                'بَيْتٌ': 'تَاءٌ مَفْتُوحَةٌ 🏷️',
+                'حَدِيقَةٌ': 'تَاءٌ مَرْبُوطَةٌ 🌸',
+                'صَوْتٌ': 'تَاءٌ مَفْتُوحَةٌ 🏷️'
+              },
+              correctAnswers: ['شَجَرَةٌ', 'حَدِيقَةٌ'],
+              feedbackSuccess: 'خَبِيرُ التَّاءِ العَبْقَرِيُّ! ⚖️🌸 فَرَزْتَ التَّاءَ المَرْبُوطَةَ وَالمَفْتُوحَةَ بِامْتِيَازٍ!',
+              feedbackHint: 'التَّاءُ المَرْبُوطَةُ تُنْطَقُ هَاءً عِنْدَ الوَقْفِ (شَجَرَهْ)، أَمَّا المَفْتُوحَةُ فَتَبْقَى تَاءً صَرِيحَةً!'
+            }
+          ]
+        };
       } else {
         sampleData = {
           gameType: 'story_quest' as const,
@@ -2654,9 +2794,18 @@ export default function App() {
         };
       }
 
+      let starterTitle = '';
+      if (type === 'phonics_treasure') starterTitle = 'كنز الحروف: تمييز س وص';
+      else if (type === 'sentence_builder') starterTitle = 'متاهة تركيب الجمل البسيطة';
+      else if (type === 'story_quest') starterTitle = 'مغامرة موسى وقرارات الحكمة';
+      else if (type === 'vowel_train') starterTitle = 'قطار الحركات والمدود السريع';
+      else if (type === 'letter_blending') starterTitle = 'معمل دمج الحروف وتكوين الكلمات';
+      else if (type === 'vocab_detective') starterTitle = 'محقق المفردات: الترادف والتضاد';
+      else starterTitle = 'فرز الظواهر اللغوية: شمسية وقمرية';
+
       const starterActivity: Activity = {
         id: `starter_${type}_${Date.now()}`,
-        title: type === 'phonics_treasure' ? 'كنز الحروف: تمييز س وص' : type === 'sentence_builder' ? 'متاهة تركيب الجمل البسيطة' : 'مغامرة موسى وقرارات الحكمة',
+        title: starterTitle,
         activityType: 'game',
         gameData: sampleData,
         teacherId: 'system_mousa',
@@ -3097,11 +3246,11 @@ export default function App() {
                   <span className="text-xs text-slate-400">جاهزة للعب في أي وقت</span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {/* 1. كنز الحروف */}
-                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-2xl mb-3">
+                      <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-xl mb-2.5">
                         💎
                       </div>
                       <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-md border border-amber-200 inline-block mb-1.5">
@@ -3122,9 +3271,9 @@ export default function App() {
                   </div>
 
                   {/* 2. تركيب الجمل */}
-                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-2xl mb-3">
+                      <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-xl mb-2.5">
                         🧩
                       </div>
                       <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-200 inline-block mb-1.5">
@@ -3145,15 +3294,15 @@ export default function App() {
                   </div>
 
                   {/* 3. مغامرة الحكاية */}
-                  <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-800 flex items-center justify-center text-2xl mb-3">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-800 flex items-center justify-center text-xl mb-2.5">
                         🏰
                       </div>
                       <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-md border border-indigo-200 inline-block mb-1.5">
                         فهم قرائي وقيم أخلاقية
                       </span>
-                      <h4 className="font-black text-sm text-slate-800 mb-1">مُغَامَرَةُ مَوْسَى وَالحِكَايَةِ</h4>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">مُغَامَرَةُ مُوسَى وَالحِكَايَةِ</h4>
                       <p className="text-xs text-slate-500 mb-4 leading-relaxed">
                         ساعد موسى في مواقفه الحياتية عبر اتخاذ القرارات اللغوية والتربوية الصائبة لإنهاء المغامرة!
                       </p>
@@ -3164,6 +3313,98 @@ export default function App() {
                       className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
                     >
                       <Play className="w-3.5 h-3.5" /> العب مغامرة الحكاية 🏰
+                    </button>
+                  </div>
+
+                  {/* 4. قطار الحركات والمدود */}
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-800 flex items-center justify-center text-xl mb-2.5">
+                        🚂
+                      </div>
+                      <span className="px-2 py-0.5 bg-sky-50 text-sky-800 text-[10px] font-bold rounded-md border border-sky-200 inline-block mb-1.5">
+                        حركات قصيرة ومدود طويلة
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">قِطَارُ الحَرَكَاتِ وَالمُدُودِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        وجّه قاطرة موسى نحو العربة الصحيحة وميّز بين الحركات القصيرة والمدود الطويلة بصوت فوري!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('vowel_train')}
+                      className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب قطار الحركات 🚂
+                    </button>
+                  </div>
+
+                  {/* 5. معمل دمج الحروف */}
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-11 h-11 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center text-xl mb-2.5">
+                        🧪
+                      </div>
+                      <span className="px-2 py-0.5 bg-purple-50 text-purple-800 text-[10px] font-bold rounded-md border border-purple-200 inline-block mb-1.5">
+                        تحليل ودمج مقاطع
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">مَعْمَلُ دَمْجِ الحُرُوفِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        استمع لنطق كل مقطع صوتي في المختبر، ثم ادمج المقاطع لتكوين الكلمات السليمة واكسب وسام العالِم!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('letter_blending')}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب معمل الدمج 🧪
+                    </button>
+                  </div>
+
+                  {/* 6. محقق المفردات */}
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center text-xl mb-2.5">
+                        🔍
+                      </div>
+                      <span className="px-2 py-0.5 bg-amber-50 text-amber-900 text-[10px] font-bold rounded-md border border-amber-200 inline-block mb-1.5">
+                        ترادف وتضاد لغوي
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">مُحَقِّقُ المُفْرَدَاتِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        اكتشف اللغز وابحث عن معاني الكلمات أو أضدادها بالاستماع لنطق موسى وحل قضايا المفردات الغامضة!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('vocab_detective')}
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب محقق المفردات 🔍
+                    </button>
+                  </div>
+
+                  {/* 7. فرز الظواهر اللغوية */}
+                  <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between">
+                    <div>
+                      <div className="w-11 h-11 rounded-2xl bg-teal-100 text-teal-800 flex items-center justify-center text-xl mb-2.5">
+                        ⚖️
+                      </div>
+                      <span className="px-2 py-0.5 bg-teal-50 text-teal-800 text-[10px] font-bold rounded-md border border-teal-200 inline-block mb-1.5">
+                        شمسية وقمرية وتاءات
+                      </span>
+                      <h4 className="font-black text-sm text-slate-800 mb-1">فَرْزُ الظَّوَاهِرِ اللُّغَوِيَّةِ</h4>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        صنّف الكلمات المشكولة في سلتين منفصلتين وميّز القواعد الإملائية والظواهر الصوتية بدقة!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startStarterGame('category_sorter')}
+                      className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5" /> العب فرز الظواهر ⚖️
                     </button>
                   </div>
                 </div>

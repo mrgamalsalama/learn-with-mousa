@@ -85,7 +85,14 @@ export interface BookItem {
 export type ActivityType = 'worksheet' | 'story' | 'game';
 
 // حزمة الألعاب التعليمية التفاعلية المولدة بالذكاء الاصطناعي
-export type AIGameType = 'phonics_treasure' | 'sentence_builder' | 'story_quest';
+export type AIGameType = 
+  | 'phonics_treasure' 
+  | 'sentence_builder' 
+  | 'story_quest'
+  | 'vowel_train'        // قطار الحركات والمدود
+  | 'letter_blending'    // معمل دمج الحروف وتكوين الكلمات
+  | 'vocab_detective'    // محقق المفردات (الترادف والتضاد)
+  | 'category_sorter';   // فرز الظواهر اللغوية (شمسية/قمرية، تاء/هاء)
 
 export interface GameLevel {
   id: number;
@@ -94,6 +101,12 @@ export interface GameLevel {
   options: string[];
   feedbackSuccess: string;
   feedbackHint: string;
+  // حقول إضافية ذكية للألعاب التفاعلية المتقدمة
+  segments?: string[];                  // مقاطع صوتية أو حروف للدمج في letter_blending
+  categories?: string[];                // أسماء فئات الفرز في category_sorter (مثل: ["اللام الشمسية ☀️", "اللام القمرية 🌙"])
+  categoryMap?: Record<string, string>; // تصنيف الكلمات الصحيح { "الشَّمْسُ": "اللام الشمسية ☀️" }
+  vowelType?: string;                   // نوع الحركة أو المد في vowel_train
+  wordPuzzle?: string;                  // الكلمة المستهدفة في vocab_detective
 }
 
 export interface GameData {
