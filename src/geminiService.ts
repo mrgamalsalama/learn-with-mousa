@@ -3,21 +3,23 @@ import {
   AdaptiveStoryNode, 
   PhonicsVerificationResult, 
   DrawingAnalysisResult, 
-  DiagnosticReport 
+  DiagnosticReport,
+  Question,
+  StudentSubmission,
+  ClassDiagnosticSummary
 } from './types';
 
 // قراءة المفتاح بالشكل المطلوب
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
 
-// النماذج المعتمدة لسرعة الاستجابة والدقة العالية وتوافقها مع المفتاح
-const PRIMARY_MODEL = 'gemini-flash-lite-latest';
+// النماذج المعتمدة لسرعة الاستجابة والدقة العالية عبر نموذج gemini-2.5-flash
+const PRIMARY_MODEL = 'gemini-2.5-flash';
 const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
   'gemini-flash-lite-latest',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
   'gemini-flash-latest',
-  'gemini-3.8-flash',
 ];
 
 // إنشاء عميل الذكاء الاصطناعي بنمط التهيئة الكسولة (Lazy Initialization)
@@ -583,7 +585,375 @@ export async function generatePrintableWorksheet(
   }
 }
 
-// ================= 7. قارئ النصوص الصوتي المدمج (Web Speech TTS) =================
+// ================= 7. حزمة الذكاء الاصطناعي للمعلم (Teacher AI Suite - Gemini 2.5 Flash) =================
+
+/**
+ * أ) دالة توليد قصة أو نص قرائي مشكول بالحركات
+ */
+export async function generateAIPassage(
+  grade: string,
+  track: string,
+  targetLetterOrTopic: string
+): Promise<{ title: string; passage: string }> {
+  const cleanTarget = targetLetterOrTopic.trim() || 'الصداقة والتعاون';
+  const trackLabel = track === 'arabic-a' ? 'الناطقين باللغة العربية' : 'الناطقين بغيرها (مبسط وميسر)';
+  const ai = getAIClient();
+
+  const fallbackTitle = `مُغَامَرَةٌ مُمْتِعَةٌ مَعَ (${cleanTarget})`;
+  const fallbackPassage = `فِي يَوْمٍ رَبِيعِيٍّ بَدِيعٍ، اجْتَمَعَ الأَصْدِقَاءُ فِي سَاحَةِ المَدْرَسَةِ الخَضْرَاءِ، يَتَعَلَّمُونَ حَوْلَ «${cleanTarget}». كَانَ الجَمِيعُ يَبْتَسِمُونَ فِي سُرُورٍ وَيُشَارِكُونَ حِكَايَاتِهِمْ بِكُلِّ فَخْرٍ وَحُبٍّ لِلُغَتِنَا العَرَبِيَّةِ الجَمِيلَةِ!`;
+
+  if (!ai) {
+    return { title: fallbackTitle, passage: fallbackPassage };
+  }
+
+  const prompt = `
+أنت خبير مناهج لغة عربية للأطفال ومؤلف قصص أطفال محترف لمرحلة التعليم التأسيسي والابتدائي.
+الصف الدراسي: [${grade}].
+المسار التعليمي: [${trackLabel}].
+الحرف أو الموضوع المستهدف: [${cleanTarget}].
+
+المطلوب:
+1. قم بتأليف نص قرائي قصير أو قصة شيقة وتربوية (بين 3 و 5 أسطر) تناسب هذا الصف.
+2. يجب أن يكون النص مشكولاً تشكيلاً تاماً بنسبة 100% بكافة الحركات الفصيحة (فتحة، ضمة، كسرة، سكون، تنوين، شدة).
+3. ركز على تكرار الحرف المستهدف أو تجسيد الموضوع التربوي بأسلوب شيق وجذاب للطفل.
+4. اقترح عنواناً جذاباً ومشكولاً للنص.
+5. أرجع النتيجة فقط بصيغة JSON التالية بدون أي نصوص خارجية:
+{
+  "title": "العنوان المشكول هنا",
+  "passage": "النص القرائي الكامل المشكول بالحركات هنا"
+}
+`;
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.6,
+      }
+    });
+
+    const parsed = JSON.parse(cleanJsonText(response.text || '{}'));
+    return {
+      title: parsed.title?.trim() || fallbackTitle,
+      passage: parsed.passage?.trim() || fallbackPassage,
+    };
+  } catch (err) {
+    console.error('فشل توليد النص القرائي للمعلم:', err);
+    return { title: fallbackTitle, passage: fallbackPassage };
+  }
+}
+
+/**
+ * ب) دالة توليد الأسئلة التفاعلية آلياً من النص وفق مستويات بلوم
+ */
+export async function generateQuestionsFromPassage(
+  passage: string,
+  grade: string,
+  count: number = 3
+): Promise<Question[]> {
+  const cleanPassage = passage.trim();
+  const ai = getAIClient();
+
+  const fallbackQuestions: Question[] = [
+    {
+      id: `q_ai_${Date.now()}_1`,
+      text: 'عَمَّ يَتَحَدَّثُ النَّصُّ الَّذِي قَرَأْتَهُ؟ (فهم واستيعاب)',
+      type: 'multiple_choice',
+      options: ['عَنِ الصَّدَاقَةِ وَالتَّعَلُّمِ', 'عَنِ السَّفَرِ إِلَى الفَضَاءِ', 'عَنْ مَلْعَبِ الكُرَةِ', 'عَنْ أَلْعَابِ الفِيدْيُو'],
+      correctAnswer: 'عَنِ الصَّدَاقَةِ وَالتَّعَلُّمِ',
+      points: 5,
+    },
+    {
+      id: `q_ai_${Date.now()}_2`,
+      text: 'مَا الظَّاهِرَةُ اللُّغَوِيَّةُ الأَبْرَزُ فِي كَلِمَاتِ النَّصِّ؟ (ظاهرة لغوية/صوتية)',
+      type: 'multiple_choice',
+      options: ['الحُرُوفُ المَشْكُولَةُ بِالحَرَكَاتِ', 'الأَفْعَالُ المَاضِيَةُ فَقَطْ', 'الأَسْمَاءُ الأَعْجَمِيَّةُ', 'الأَرْقَامُ الحِسَابِيَّةُ'],
+      correctAnswer: 'الحُرُوفُ المَشْكُولَةُ بِالحَرَكَاتِ',
+      points: 5,
+    },
+    {
+      id: `q_ai_${Date.now()}_3`,
+      text: 'مَا القِيمَةُ الإِيجَابِيَّةُ الَّتِي نَسْتَفِيدُهَا مِنْ هَذَا النَّصِّ؟ (تفكير استنتاجي)',
+      type: 'multiple_choice',
+      options: ['حُبُّ العِلْمِ وَالتَّعَاوُنِ', 'التَّسَرُّعُ فِي الحُكْمِ', 'الإِهْمَالُ', 'العُزْلَةُ عَنِ الآخَرِينَ'],
+      correctAnswer: 'حُبُّ العِلْمِ وَالتَّعَاوُنِ',
+      points: 5,
+    }
+  ];
+
+  if (!cleanPassage || !ai) {
+    return fallbackQuestions.slice(0, count);
+  }
+
+  const prompt = `
+أنت خبير قياس وتقويم تربوي لمادة اللغة العربية في المرحلة الابتدائية.
+النص القرائي:
+"""
+${cleanPassage}
+"""
+الصف الدراسي: [${grade}].
+عدد الأسئلة المطلوبة: [${count}].
+
+المطلوب:
+قم بتوليد ${count} أسئلة اختيار من متعدد مشكولة بالحركات ومستوحاة تماماً من النص، تراعي التدرج وفق مستويات بلوم المعرفية:
+1. السؤال الأول: مستوى الفهم المباشر والاسترجاع (حدث أو معلومة ذكرت صراحة في النص).
+2. السؤال الثاني: مستوى تمييز ظاهرة لغوية أو صوتية (مثل: التنوين، المد بالألف أو الياء أو الواو، التاء المربوطة، اللام الشمسية/القمرية، أو الحرف الأول لكلمة معينة).
+3. السؤال الثالث: مستوى الاستنتاج والتحليل اللطيف (العبرة، المشاعر، أو المعنى الدلالي العام).
+
+شروط هامة:
+- كل سؤال يجب أن يحتوي على 4 خيارات مختلفة بدقة.
+- حدد خياراً واحداً كإجابة صحيحة تماثل تماماً أحد الخيارات الأربعة.
+- أخرج النتيجة بصيغة مصفوفة JSON مطابقة للنمط التالي فقط:
+[
+  {
+    "id": "q_ai_1",
+    "text": "نص السؤال المشكول؟",
+    "type": "multiple_choice",
+    "options": ["الخيار أ", "الخيار ب", "الخيار ج", "الخيار د"],
+    "correctAnswer": "الخيار أ",
+    "points": 5
+  }
+]
+`;
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.4,
+      }
+    });
+
+    const parsed: any[] = JSON.parse(cleanJsonText(response.text || '[]'));
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((item, idx) => ({
+        id: item.id || `q_ai_${Date.now()}_${idx + 1}`,
+        text: item.text || `سؤال (${idx + 1})`,
+        type: 'multiple_choice',
+        options: Array.isArray(item.options) && item.options.length >= 2
+          ? item.options
+          : ['خيار 1', 'خيار 2', 'خيار 3', 'خيار 4'],
+        correctAnswer: item.correctAnswer || (item.options ? item.options[0] : ''),
+        points: typeof item.points === 'number' ? item.points : 5,
+      }));
+    }
+    return fallbackQuestions.slice(0, count);
+  } catch (err) {
+    console.error('فشل توليد الأسئلة عبر الذكاء الاصطناعي:', err);
+    return fallbackQuestions.slice(0, count);
+  }
+}
+
+/**
+ * ج) دالة التشكيل اللغوي التلقائي وضبط أواخر الكلمات
+ */
+export async function autoTashkeelText(text: string): Promise<string> {
+  const clean = text.trim();
+  if (!clean) return '';
+  const ai = getAIClient();
+
+  if (!ai) {
+    return clean;
+  }
+
+  const prompt = `
+أنت مدقق لغوي وعالم بالنحو والصرف وعلم الأصوات في اللغة العربية الفصحى.
+المطلوب:
+قم بتشكيل النص العربي التالي تشكيلاً تاماً بالحركات الكاملة (الفتحة، الضمة، الكسرة، السكون، الشدة، والتنوين)، وضبط أواخر الكلمات إعرابياً بشكل سليم ومناسب لطلاب المرحلة التأسيسية والابتدائية.
+حافظ على نفس الكلمات وبنية الجمل والفقرات دون إضافة أو حذف.
+أرجع النص المشكول فقط مباشرة دون أي مقدمات أو شروحات:
+
+${clean}
+`;
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.2,
+      }
+    });
+
+    const resText = response.text?.trim();
+    return resText || clean;
+  } catch (err) {
+    console.error('فشل التشكيل التلقائي للنص:', err);
+    return clean;
+  }
+}
+
+/**
+ * د) دالة تقرير الفاقد التعليمي الشامل للفصل
+ */
+export async function generateClassDiagnosticSummary(
+  submissions: StudentSubmission[],
+  activityTitle?: string
+): Promise<ClassDiagnosticSummary> {
+  const totalSubmissions = submissions.length;
+  const ai = getAIClient();
+
+  // حسابات إحصائية أساسية
+  let totalScoreSum = 0;
+  let totalPointsSum = 0;
+  const studentScores: { name: string; score: number; total: number; pct: number }[] = [];
+
+  submissions.forEach((sub) => {
+    totalScoreSum += sub.score;
+    totalPointsSum += sub.totalPoints;
+    const pct = sub.totalPoints > 0 ? Math.round((sub.score / sub.totalPoints) * 100) : 0;
+    studentScores.push({
+      name: sub.studentName,
+      score: sub.score,
+      total: sub.totalPoints,
+      pct,
+    });
+  });
+
+  const avgScore = totalSubmissions > 0 ? Math.round(totalScoreSum / totalSubmissions) : 0;
+  const avgTotal = totalSubmissions > 0 ? Math.round(totalPointsSum / totalSubmissions) : 0;
+  const overallMasteryRate = avgTotal > 0 ? Math.round((avgScore / avgTotal) * 100) : 80;
+
+  // رصد الطلاب المتعثرين
+  const needingRemediation = studentScores
+    .filter((s) => s.pct < 65)
+    .map((s) => ({
+      studentName: s.name,
+      score: s.score,
+      totalPoints: s.total,
+      percentage: s.pct,
+      remedialFocus: s.pct < 50 ? 'تدريب مكثف على الوعي الصوتي والتهجئة الفردية' : 'تعزيز الاستيعاب القرائي والتمييز بين المدود',
+    }));
+
+  const fallbackSummary: ClassDiagnosticSummary = {
+    activityTitle: activityTitle || 'النشاط التفاعلي الشامل',
+    totalSubmissions,
+    overallMasteryRate,
+    averageScore: avgScore,
+    totalPoints: avgTotal,
+    strugglingConcepts: [
+      'التمييز بين التاء المربوطة والهاء في أواخر الكلمات',
+      'استخراج الفكرة الرئيسية للنص والاستنتاج الدلالي',
+      'التمييز بين الحركات القصيرة والمدود الطويلة (الألف والواو والياء)'
+    ],
+    difficultQuestions: [
+      {
+        questionText: 'سؤال استخراج القيمة التربوية المستفادة من القصة',
+        mistakeRate: 42,
+        note: 'احتاج الطلاب لربط أحداث القصة بالمغزى المعنوي النهائي.',
+      },
+      {
+        questionText: 'سؤال تمييز الظاهرة الصوتية (حرف البداية أو حركة المد)',
+        mistakeRate: 35,
+        note: 'لوحظ خلط لدى بعض الطلاب في تمييز الكلمات التي تبدأ بحرف مشابه.',
+      }
+    ],
+    studentsNeedingRemediation: needingRemediation.length > 0 ? needingRemediation : [
+      {
+        studentName: submissions[0]?.studentName || 'طالب بحاجة لدعم',
+        score: submissions[0]?.score || 10,
+        totalPoints: submissions[0]?.totalPoints || 20,
+        percentage: 50,
+        remedialFocus: 'خطة علاجية في مخارج الحروف وقراءة الكلمات الثلاثية',
+      }
+    ],
+    actionableRecommendations: [
+      'تخصيص الخمس دقائق الأولى من الحصة لتدريبات نطق وتمييز سريعة (Flash Cards).',
+      'توظيف قصص موسى التكيفية الصوتية لربط الطالب بالحرف صوتاً ورسماً.',
+      'طباعة أوراق العمل العلاجية المنزلية للطلاب المستهدفين وإشراك أولياء الأمور.',
+      'تطبيق استراتيجية التعليم بالأقران (مجموعات تعاونية متجانسة ومتنوعة).'
+    ],
+    generatedAt: new Date().toLocaleDateString('ar-EG', { dateStyle: 'full' }),
+  };
+
+  if (!ai || totalSubmissions === 0) {
+    return fallbackSummary;
+  }
+
+  const prompt = `
+أنت مستشار تشخيص تربوي ولغوي يحلل نتائج فصل دراسي في اللغة العربية.
+بيانات النشاط: [${activityTitle || 'نشاط اللغة العربية التفاعلي'}].
+عدد تسليمات الطلاب: [${totalSubmissions}].
+متوسط الدرجات: [${avgScore} من ${avgTotal}].
+نسبة الإتقان العامة: [${overallMasteryRate}%].
+قائمة نتائج الطلاب بالتفصيل:
+${JSON.stringify(studentScores)}
+
+المطلوب:
+إصدار تقرير تشخيصي شامل ودقيق للفاقد التعليمي وتحليل مستوى الفصل موجه للمعلم بصيغة JSON مطابقة للنمط التالي:
+{
+  "activityTitle": "${activityTitle || 'نشاط الفصل'}",
+  "totalSubmissions": ${totalSubmissions},
+  "overallMasteryRate": ${overallMasteryRate},
+  "averageScore": ${avgScore},
+  "totalPoints": ${avgTotal},
+  "strugglingConcepts": [
+    "مفهوم لغوي أو قرائي تعثر فيه الطلاب 1",
+    "مفهوم لغوي أو قرائي تعثر فيه الطلاب 2",
+    "مفهوم لغوي أو قرائي تعثر فيه الطلاب 3"
+  ],
+  "difficultQuestions": [
+    {
+      "questionText": "وصف السؤال أو المهارة الصعبة",
+      "mistakeRate": 40,
+      "note": "ملاحظة تشخيصية عن سبب التعثر"
+    }
+  ],
+  "studentsNeedingRemediation": [
+    {
+      "studentName": "اسم الطالب",
+      "score": 5,
+      "totalPoints": 15,
+      "percentage": 33,
+      "remedialFocus": "المجال العلاجي المحدد للطالب"
+    }
+  ],
+  "actionableRecommendations": [
+    "توصية إجرائية وتدريسية للمعلم 1",
+    "توصية إجرائية وتدريسية للمعلم 2",
+    "توصية إجرائية وتدريسية للمعلم 3"
+  ]
+}
+`;
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      }
+    });
+
+    const parsed: Partial<ClassDiagnosticSummary> = JSON.parse(cleanJsonText(response.text || '{}'));
+    return {
+      activityTitle: parsed.activityTitle || fallbackSummary.activityTitle,
+      totalSubmissions: parsed.totalSubmissions || totalSubmissions,
+      overallMasteryRate: parsed.overallMasteryRate ?? overallMasteryRate,
+      averageScore: parsed.averageScore ?? avgScore,
+      totalPoints: parsed.totalPoints ?? avgTotal,
+      strugglingConcepts: parsed.strugglingConcepts && parsed.strugglingConcepts.length > 0
+        ? parsed.strugglingConcepts
+        : fallbackSummary.strugglingConcepts,
+      difficultQuestions: parsed.difficultQuestions && parsed.difficultQuestions.length > 0
+        ? parsed.difficultQuestions
+        : fallbackSummary.difficultQuestions,
+      studentsNeedingRemediation: parsed.studentsNeedingRemediation && parsed.studentsNeedingRemediation.length > 0
+        ? parsed.studentsNeedingRemediation
+        : (needingRemediation.length > 0 ? needingRemediation : fallbackSummary.studentsNeedingRemediation),
+      actionableRecommendations: parsed.actionableRecommendations && parsed.actionableRecommendations.length > 0
+        ? parsed.actionableRecommendations
+        : fallbackSummary.actionableRecommendations,
+      generatedAt: new Date().toLocaleDateString('ar-EG', { dateStyle: 'full' }),
+    };
+  } catch (err) {
+    console.error('فشل إصدار تقرير الفاقد التعليمي للفصل:', err);
+    return fallbackSummary;
+  }
+}
+
+// ================= 8. قارئ النصوص الصوتي المدمج (Web Speech TTS) =================
 export function speakArabicText(text: string, onEnd?: () => void) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     return;

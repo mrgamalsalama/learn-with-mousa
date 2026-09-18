@@ -4,7 +4,8 @@ import {
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
   Library, Download, Eye, CheckSquare, X, Search, FileUp,
-  Bot, Palette, Brain, Printer, MessageCircle, Star
+  Bot, Palette, Brain, Printer, MessageCircle, Star,
+  Loader2, Wand2
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -24,6 +25,12 @@ import { PhonicsGateModal } from './components/PhonicsGateModal';
 import { DrawingCanvasModal } from './components/DrawingCanvasModal';
 import { DiagnosticReportModal } from './components/DiagnosticReportModal';
 import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
+import { ClassDiagnosticModal } from './components/ClassDiagnosticModal';
+import { 
+  generateAIPassage, 
+  generateQuestionsFromPassage, 
+  autoTashkeelText 
+} from './geminiService';
 
 // مسار الصورة المرفوعة داخل مجلد public
 const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
@@ -118,6 +125,14 @@ export default function App() {
       points: 5,
     },
   ]);
+
+  // حالات حزمة الذكاء الاصطناعي للمعلم (Teacher AI Suite)
+  const [isAIPassageModalOpen, setIsAIPassageModalOpen] = useState(false);
+  const [aiPassageTopic, setAiPassageTopic] = useState('');
+  const [isGeneratingAIPassage, setIsGeneratingAIPassage] = useState(false);
+  const [isAutoTashkeelLoading, setIsAutoTashkeelLoading] = useState(false);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const [isClassDiagnosticOpen, setIsClassDiagnosticOpen] = useState(false);
 
   // حالة حل النشاط لدى الطالب
   const [selectedActivityToSolve, setSelectedActivityToSolve] = useState<Activity | null>(null);
@@ -246,6 +261,60 @@ export default function App() {
     setActTitle(`نشاط قراءة وفهم: ${book.title}`);
     setActPassage(`📖 القصة المقررة: ${book.title}\nمؤلف القصة: ${book.author || 'مؤسسة هنداوي (بوك تايم)'}\nرابط قراءة القصة المباشر:\n${book.readUrl}\n\nيرجى فتح رابط القصة وقراءتها بعناية ثم الإجابة عن الأسئلة التالية:`);
     setIsBooksModalOpen(false);
+  };
+
+  const handleGenerateAIPassage = async () => {
+    if (!aiPassageTopic.trim()) {
+      alert('يرجى تحديد الحرف المستهدف أو الموضوع التربوي أولاً!');
+      return;
+    }
+    setIsGeneratingAIPassage(true);
+    try {
+      const result = await generateAIPassage(getGradeLabel(actGrade), actTrack, aiPassageTopic);
+      setActTitle(result.title);
+      setActPassage(result.passage);
+      setIsAIPassageModalOpen(false);
+      setAiPassageTopic('');
+    } catch (err) {
+      console.error(err);
+      alert('تعذر توليد النص، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsGeneratingAIPassage(false);
+    }
+  };
+
+  const handleAutoTashkeel = async () => {
+    if (!actPassage.trim()) {
+      alert('يرجى كتابة أو لصق نص في خانة النص القرائي أولاً لتشكيله!');
+      return;
+    }
+    setIsAutoTashkeelLoading(true);
+    try {
+      const vocalized = await autoTashkeelText(actPassage);
+      setActPassage(vocalized);
+    } catch (err) {
+      console.error(err);
+      alert('تعذر ضبط حركات النص، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsAutoTashkeelLoading(false);
+    }
+  };
+
+  const handleGenerateQuestionsFromPassage = async () => {
+    if (!actPassage.trim()) {
+      alert('يرجى كتابة نص قرائي أو توليده أولاً بالذكاء الاصطناعي لاستخراج الأسئلة منه!');
+      return;
+    }
+    setIsGeneratingQuestions(true);
+    try {
+      const aiQuestions = await generateQuestionsFromPassage(actPassage, getGradeLabel(actGrade), 3);
+      setQuestions(aiQuestions);
+    } catch (err) {
+      console.error(err);
+      alert('تعذر توليد الأسئلة، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsGeneratingQuestions(false);
+    }
   };
 
   const handleQtiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -814,6 +883,16 @@ export default function App() {
             studentName={worksheetStudent?.name || activeStudentName}
             grade={worksheetStudent?.grade ? getGradeLabel(worksheetStudent.grade) : 'الصف الأول الابتدائي'}
             weakLetters={['ص', 'ض', 'ط']}
+          />
+        )}
+
+        {isClassDiagnosticOpen && (
+          <ClassDiagnosticModal
+            isOpen={isClassDiagnosticOpen}
+            onClose={() => setIsClassDiagnosticOpen(false)}
+            submissions={submissions}
+            teacherName={currentUser?.name || 'معلم اللغة العربية'}
+            activityTitle="أنشطة القراءة والفهم التفاعلية"
           />
         )}
       </>
@@ -1840,7 +1919,17 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">عنوان النشاط / الدرس</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700">عنوان النشاط / الدرس</label>
+                      <button
+                        type="button"
+                        onClick={() => setIsAIPassageModalOpen(true)}
+                        className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        توليد نص بالذكاء الاصطناعي ✨
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
@@ -1851,8 +1940,104 @@ export default function App() {
                     />
                   </div>
 
+                  {/* نافذة توليد نص وقصة بالذكاء الاصطناعي */}
+                  {isAIPassageModalOpen && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                      <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                              <Sparkles className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h3 className="font-extrabold text-sm text-slate-800">توليد نص وقصة بالذكاء الاصطناعي</h3>
+                              <p className="text-[11px] text-slate-400">Gemini 2.5 Flash | نصوص مشكولة وموجهة للأطفال</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsAIPassageModalOpen(false)}
+                            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 text-[11px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <span className="font-bold text-slate-600">الصف: <b className="text-emerald-700">{getGradeLabel(actGrade)}</b></span>
+                          <span>•</span>
+                          <span className="font-bold text-slate-600">المسار: <b className="text-indigo-700">{actTrack === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}</b></span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            الحرف المستهدف أو الموضوع التربوي:
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="مثال: حرف الصاد (ص)، أو الصدق والأمانة، أو التعاون..."
+                            value={aiPassageTopic}
+                            onChange={(e) => setAiPassageTopic(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <span className="block text-[11px] font-bold text-slate-500 mb-1.5">اقتراحات سريعة:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['حرف الصاد (ص)', 'حرف الراء (ر)', 'حرف الشين (ش)', 'التعاون والصداقة', 'حب القراءة والعلم', 'النظافة والنظام', 'بر الوالدين'].map((item) => (
+                              <button
+                                key={item}
+                                type="button"
+                                onClick={() => setAiPassageTopic(item)}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 rounded-lg text-[10px] font-bold text-slate-600 border border-slate-200/80 transition"
+                              >
+                                {item}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setIsAIPassageModalOpen(false)}
+                            className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl text-xs font-bold transition"
+                          >
+                            إلغاء
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleGenerateAIPassage}
+                            disabled={isGeneratingAIPassage || !aiPassageTopic.trim()}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                          >
+                            {isGeneratingAIPassage ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                جاري توليد القصة المشكولة...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                توليد النص والعنوان الآن 🚀
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">نص قرائي أو قصة (اختياري)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700">نص قرائي أو قصة (اختياري)</label>
+                      {actPassage.trim() && (
+                        <span className="text-[10px] text-emerald-600 font-bold">
+                          {actPassage.length} حرف
+                        </span>
+                      )}
+                    </div>
                     <textarea
                       rows={4}
                       placeholder="نص أو قصة ليقرأها الطالب قبل الأسئلة..."
@@ -1860,12 +2045,57 @@ export default function App() {
                       onChange={(e) => setActPassage(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none leading-relaxed"
                     />
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[11px] text-slate-400">
+                        💡 نصيحة: يمكنك ضبط التشكيل الكامل بالحركات لأي نص مكتوب بنقرة زر واحدة.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAutoTashkeel}
+                        disabled={isAutoTashkeelLoading || !actPassage.trim()}
+                        className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50 shadow-2xs"
+                      >
+                        {isAutoTashkeelLoading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />
+                            جاري ضبط الحركات...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="w-3.5 h-3.5 text-amber-700" />
+                            تشكيل النص وضبط الحركات ✍️
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-4 pt-4 border-t border-slate-100">
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <h3 className="font-bold text-sm text-slate-800">الأسئلة التفاعلية</h3>
-                      <div className="flex items-center gap-2">
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-800">الأسئلة التفاعلية</h3>
+                        <p className="text-[10px] text-slate-400">أسئلة اختيار من متعدد مع التغذية الراجعة الفورية للطالب</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleGenerateQuestionsFromPassage}
+                          disabled={isGeneratingQuestions || !actPassage.trim()}
+                          className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                        >
+                          {isGeneratingQuestions ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-200" />
+                              جاري توليد الأسئلة...
+                            </>
+                          ) : (
+                            <>
+                              <Bot className="w-3.5 h-3.5 text-amber-300" />
+                              توليد أسئلة من النص آلياً 🤖
+                            </>
+                          )}
+                        </button>
+
                         <label className="cursor-pointer px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-xs">
                           <FileUp className="w-3.5 h-3.5" /> استيراد بنك أسئلة (QTI / ZIP)
                           <input
@@ -2004,7 +2234,29 @@ export default function App() {
 
           {teacherTab === 'grades' && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-              <h2 className="font-extrabold text-base mb-4 text-slate-800">قائمة درجات وحلول الطلاب</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+                <div>
+                  <h2 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+                    <Award className="w-5 h-5 text-indigo-600" />
+                    قائمة درجات وحلول الطلاب
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    رصد استجابات المتعلمين ونتائج الاختبارات التفاعلية
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsClassDiagnosticOpen(true)}
+                  disabled={submissions.length === 0}
+                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50"
+                  title="تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"
+                >
+                  <BarChart3 className="w-4 h-4 text-amber-300" />
+                  تقرير الفاقد التعليمي والتحليل التراكمي للفصل 📊
+                </button>
+              </div>
+
               {submissions.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة بعد.</p>
               ) : (

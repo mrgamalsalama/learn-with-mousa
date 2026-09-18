@@ -217,3 +217,26 @@ export interface ChildPhonicsRecord {
   type: 'voice' | 'drawing' | 'quiz';
   timestamp: string;
 }
+
+export interface ClassDiagnosticSummary {
+  activityTitle?: string;
+  totalSubmissions: number;
+  overallMasteryRate: number;
+  averageScore: number;
+  totalPoints: number;
+  strugglingConcepts: string[];
+  difficultQuestions: {
+    questionText: string;
+    mistakeRate: number;
+    note: string;
+  }[];
+  studentsNeedingRemediation: {
+    studentName: string;
+    score: number;
+    totalPoints: number;
+    percentage: number;
+    remedialFocus: string;
+  }[];
+  actionableRecommendations: string[];
+  generatedAt: string;
+}
