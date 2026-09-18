@@ -143,6 +143,7 @@ export default function App() {
 
   useEffect(() => {
     setUser(getCurrentUser());
+    setUsers(getUsers());
     
     // تحميل البيانات التأسيسية محلياً فوراً
     setActivities(getActivities());
@@ -151,7 +152,11 @@ export default function App() {
     setBooks(getBooksRepository());
 
     // مزامنة سحابية كاملة لجميع جداول Supabase (المستخدمين، الأنشطة، التسليمات)
-    syncUsersFromCloud().then(cloudUsers => setUsers(cloudUsers));
+    syncUsersFromCloud().then((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(cloudUsers);
+      }
+    });
     syncActivitiesFromCloud().then(cloudActs => setActivities(cloudActs));
     syncSubmissionsFromCloud().then(cloudSubs => setSubmissions(cloudSubs));
 
@@ -476,13 +481,15 @@ export default function App() {
         : {}),
     };
 
-    await saveUser(newUser);
+    const saveResult = await saveUser(newUser);
     // تحديث واجهة المستخدم فوراً بالبيانات المحفوظة لضمان عدم توقف أو تجميد العملية
     setUsers(getUsers());
     
-    // محاولة مزامنة هادئة مع السحابة في الخلفية
+    // مزامنة سحابية هادئة في الخلفية
     syncUsersFromCloud().then((updatedUsers) => {
-      setUsers(updatedUsers);
+      if (updatedUsers && updatedUsers.length > 0) {
+        setUsers(updatedUsers);
+      }
     }).catch((err) => {
       console.warn('ملاحظة أثناء المزامنة السحابية في الخلفية:', err);
     });
@@ -493,7 +500,10 @@ export default function App() {
     setSelectedGrades([]);
     setSelectedTracks(['arabic-a']);
     setSelectedStudentId('');
-    alert('تم حفظ الحساب بنجاح، ويمكن الدخول به الآن!');
+
+    if (!saveResult.error) {
+      alert('تم حفظ الحساب بنجاح في قاعدة البيانات السحابية والمحلية، ويمكن الدخول به من أي جهاز الآن!');
+    }
   };
 
   const handleDeleteUser = (id: string) => {

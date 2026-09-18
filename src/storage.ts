@@ -70,12 +70,12 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
   try {
     const { data, error } = await supabase.from('users').select('*');
     if (error) {
-      console.error('تعذر جلب المستخدمين من Supabase (سيتم استخدام التخزين المحلي):', error.message, error);
+      console.error("Supabase Sync Error Details:", error.message, error.details, error.hint);
       return getUsers();
     }
-    if (Array.isArray(data) && data.length > 0) {
+    if (Array.isArray(data)) {
       // إعادة تحويل Snake_Case إلى CamelCase
-      const formatted: UserProfile[] = data.map((u: any) => ({
+      const cloudUsers: UserProfile[] = data.map((u: any) => ({
         id: u.id,
         name: u.name,
         username: u.username,
@@ -85,35 +85,28 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
         grade: u.grade || undefined,
         track: u.track || undefined,
         studentId: u.student_id || undefined,
-        allowedGrades: u.allowed_grades || undefined,
-        allowedStages: u.allowed_stages || undefined,
-        allowedTracks: u.allowed_tracks || undefined,
+        allowedGrades: Array.isArray(u.allowed_grades) ? u.allowed_grades : [],
+        allowedStages: Array.isArray(u.allowed_stages) ? u.allowed_stages : (u.stage ? [u.stage] : ['primary']),
+        allowedTracks: Array.isArray(u.allowed_tracks) ? u.allowed_tracks : ['arabic-a'],
         loginCount: u.login_count || 0,
         lastLogin: u.last_login || undefined
       }));
 
-      // الحفاظ على الحسابات الافتراضية والحسابات المحلية الحديثة
-      const localUsers = getUsers();
+      // الحفاظ على الحسابات الافتراضية التجريبية
       const mergedMap = new Map<string, UserProfile>();
-      
       for (const initUser of INITIAL_USERS) {
         mergedMap.set(initUser.username.toLowerCase(), initUser);
       }
-      for (const cloudUser of formatted) {
-        mergedMap.set(cloudUser.username.toLowerCase(), cloudUser);
-      }
-      for (const localUser of localUsers) {
-        if (!mergedMap.has(localUser.username.toLowerCase())) {
-          mergedMap.set(localUser.username.toLowerCase(), localUser);
-        }
+      for (const cu of cloudUsers) {
+        mergedMap.set(cu.username.toLowerCase(), cu);
       }
 
       const merged = Array.from(mergedMap.values());
       localStorage.setItem(USERS_KEY, JSON.stringify(merged));
       return merged;
     }
-  } catch (err) {
-    console.error('خطأ غير متوقع أثناء مزامنة المستخدمين سحابياً:', err);
+  } catch (err: any) {
+    console.error("Supabase Sync Exception:", err);
   }
   return getUsers();
 };
@@ -138,7 +131,7 @@ export const getUsers = (): UserProfile[] => {
   return currentList;
 };
 
-export const saveUser = async (user: UserProfile): Promise<UserProfile> => {
+export const saveUser = async (user: UserProfile): Promise<{ user: UserProfile; error?: any }> => {
   // 1. الحفظ الفوري في التخزين المحلي كنسخة احتياطية سريعة ومضمونة
   const users = getUsers();
   const existingIdx = users.findIndex(u => u.id === user.id);
@@ -149,12 +142,12 @@ export const saveUser = async (user: UserProfile): Promise<UserProfile> => {
   }
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-  // 2. مطابقة أسماء الحقول بدقة (Snake_Case vs CamelCase)
-  const supabasePayload = {
+  // 2. التأكد من تطابق الـ payload تماماً مع أعمدة جدول users في Supabase
+  const payload: any = {
     id: user.id,
     name: user.name,
     username: user.username,
-    password: user.password || null,
+    password: user.password,
     role: user.role,
     login_count: user.loginCount || 0,
     last_login: user.lastLogin || null,
@@ -162,24 +155,38 @@ export const saveUser = async (user: UserProfile): Promise<UserProfile> => {
     grade: user.grade || null,
     track: user.track || null,
     student_id: user.studentId || null,
-    allowed_grades: user.allowedGrades || null,
-    allowed_stages: user.allowedStages || null,
-    allowed_tracks: user.allowedTracks || null
+    allowed_grades: user.allowedGrades || [],
+    allowed_stages: user.allowedStages || [],
+    allowed_tracks: user.allowedTracks || []
   };
 
-  // 3. دعم الحفظ المزدوج الذكي والمرن (Hybrid Fallback)
+  // 3. فحص كائن الخطأ الصادر من Supabase بدقة
   try {
-    const { error } = await supabase.from('users').upsert(supabasePayload);
-    if (error) {
-      console.error('خطأ أثناء حفظ المستخدم في Supabase (تم تأمين الحفظ في localStorage):', error.message, error);
-    } else {
-      console.log('تم حفظ المستخدم سحابياً في Supabase بنجاح:', user.username);
-    }
-  } catch (err) {
-    console.error('استثناء غير متوقع أثناء الاتصال بـ Supabase (تم حفظ المستخدم محلياً بنجاح):', err);
-  }
+    let { data, error } = await supabase.from('users').upsert([payload]);
 
-  return user;
+    // مرونة: إذا كان الخطأ بسبب عدم وجود عمود allowed_stages في جدول users بسحابة العميل
+    if (error && error.message && error.message.includes('allowed_stages')) {
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.allowed_stages;
+      const retryRes = await supabase.from('users').upsert([fallbackPayload]);
+      error = retryRes.error;
+      data = retryRes.data;
+    }
+
+    if (error) {
+      console.error("Supabase Save Error Details:", error.message, error.details, error.hint);
+      // تنبيه المشرف بالخطأ بدلاً من كتمه
+      alert("تعذر الحفظ السحابي: " + error.message);
+      return { user, error };
+    }
+
+    console.log('تم حفظ المستخدم في Supabase بنجاح:', user.username);
+    return { user };
+  } catch (err: any) {
+    console.error("Supabase Save Exception:", err);
+    alert("تعذر الاتصال بـ Supabase: " + (err?.message || 'خطأ في الشبكة'));
+    return { user, error: err };
+  }
 };
 
 export const deleteUser = async (id: string): Promise<void> => {
