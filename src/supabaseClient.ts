@@ -17,3 +17,80 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+/**
+ * دالة حفظ/مزامنة المستخدم في جدول users السحابي في Supabase مع مطابقة الأعمدة والتحقق الصارم من الأخطاء
+ */
+export async function upsertUserInSupabase(user: {
+  id: string;
+  name: string;
+  username: string;
+  password?: string;
+  role: string;
+  stage?: string | null;
+  grade?: string | null;
+  track?: string | null;
+  studentId?: string | null;
+  allowedGrades?: string[];
+  allowedTracks?: string[];
+  loginCount?: number;
+  lastLogin?: string | null;
+}): Promise<{ data: any; error: any }> {
+  // 1. ضمان وجود معرّف سليم (نصي أو UUID)
+  const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
+
+  // 2. تصفية الحقول لتطابق تماماً أعمدة جدول users في قاعدة بيانات Supabase
+  // الأعمدة المعتمدة في الجدول: id, name, username, password, role, stage, grade, track, student_id, allowed_grades, allowed_tracks, login_count, last_login
+  const userData: Record<string, any> = {
+    id: safeId,
+    name: user.name,
+    username: user.username.trim().toLowerCase(),
+    role: user.role,
+  };
+
+  if (user.password !== undefined) {
+    userData.password = user.password;
+  }
+  if (user.stage !== undefined) {
+    userData.stage = user.stage || null;
+  }
+  if (user.grade !== undefined) {
+    userData.grade = user.grade || null;
+  }
+  if (user.track !== undefined) {
+    userData.track = user.track || null;
+  }
+  if (user.studentId !== undefined) {
+    userData.student_id = user.studentId || null;
+  }
+  if (Array.isArray(user.allowedGrades)) {
+    userData.allowed_grades = user.allowedGrades;
+  }
+  if (Array.isArray(user.allowedTracks)) {
+    userData.allowed_tracks = user.allowedTracks;
+  }
+  if (user.loginCount !== undefined) {
+    userData.login_count = user.loginCount;
+  }
+  if (user.lastLogin !== undefined) {
+    userData.last_login = user.lastLogin || null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .upsert(userData, { onConflict: 'id' })
+      .select();
+
+    if (error) {
+      console.error('Supabase users upsert error:', error.message, error.details, error.hint);
+      return { data: null, error };
+    }
+
+    console.log('تم حفظ المستخدم في Supabase بنجاح:', userData.username);
+    return { data, error: null };
+  } catch (err: any) {
+    console.error('Supabase users upsert exception:', err);
+    return { data: null, error: err };
+  }
+}
+

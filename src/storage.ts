@@ -1,6 +1,6 @@
 import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
 import { INITIAL_BOOKS } from './booksData';
-import { supabase } from './supabaseClient';
+import { supabase, upsertUserInSupabase } from './supabaseClient';
 import { 
   cacheMultipleGamesOffline, 
   enqueueOfflineSubmission, 
@@ -148,49 +148,18 @@ export const saveUser = async (user: UserProfile): Promise<{ user: UserProfile; 
   }
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-  // 2. التأكد من تطابق الـ payload تماماً مع أعمدة جدول users في Supabase
-  const payload: any = {
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    password: user.password,
-    role: user.role,
-    login_count: user.loginCount || 0,
-    last_login: user.lastLogin || null,
-    stage: user.stage || null,
-    grade: user.grade || null,
-    track: user.track || null,
-    student_id: user.studentId || null,
-    allowed_grades: user.allowedGrades || [],
-    allowed_stages: user.allowedStages || [],
-    allowed_tracks: user.allowedTracks || []
-  };
-
-  // 3. فحص كائن الخطأ الصادر من Supabase بدقة
+  // 2. الحفظ السحابي عبر upsertUserInSupabase مع مطابقة دقيقة للأعمدة
   try {
-    let { data, error } = await supabase.from('users').upsert([payload]);
-
-    // مرونة: إذا كان الخطأ بسبب عدم وجود عمود allowed_stages في جدول users بسحابة العميل
-    if (error && error.message && error.message.includes('allowed_stages')) {
-      const fallbackPayload = { ...payload };
-      delete fallbackPayload.allowed_stages;
-      const retryRes = await supabase.from('users').upsert([fallbackPayload]);
-      error = retryRes.error;
-      data = retryRes.data;
-    }
+    const { data, error } = await upsertUserInSupabase(user);
 
     if (error) {
       console.error("Supabase Save Error Details:", error.message, error.details, error.hint);
-      // تنبيه المشرف بالخطأ بدلاً من كتمه
-      alert("تعذر الحفظ السحابي: " + error.message);
       return { user, error };
     }
 
-    console.log('تم حفظ المستخدم في Supabase بنجاح:', user.username);
-    return { user };
+    return { user, error: null };
   } catch (err: any) {
     console.error("Supabase Save Exception:", err);
-    alert("تعذر الاتصال بـ Supabase: " + (err?.message || 'خطأ في الشبكة'));
     return { user, error: err };
   }
 };
@@ -752,7 +721,16 @@ export const subscribeToCloudChanges = (callbacks: {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      try {
+        channel.unsubscribe();
+      } catch (unsubErr) {
+        console.warn('Realtime channel.unsubscribe() warning:', unsubErr);
+      }
+      try {
+        supabase.removeChannel(channel);
+      } catch (removeErr) {
+        console.warn('Realtime supabase.removeChannel() warning:', removeErr);
+      }
     };
   } catch (err) {
     console.warn('Realtime subscription error:', err);

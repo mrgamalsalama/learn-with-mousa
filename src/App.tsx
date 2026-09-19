@@ -212,10 +212,23 @@ export default function App() {
     window.addEventListener('offline', checkOfflineStatus);
     checkOfflineStatus();
 
+    // معالجة التنقل السريع والخروج من الصفحة / bfcache
+    const handlePageHide = () => {
+      try {
+        unsubscribe();
+      } catch (e) {
+        console.warn('Realtime cleanup on pagehide:', e);
+      }
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
     return () => {
       unsubscribe();
       window.removeEventListener('online', checkOfflineStatus);
       window.removeEventListener('offline', checkOfflineStatus);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
     };
   }, []);
 
@@ -493,8 +506,19 @@ export default function App() {
       if (hasAny) stagesOfSelectedGrades.push(st);
     });
 
+    const generateUserId = () => {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        try {
+          return crypto.randomUUID();
+        } catch {
+          // fallback
+        }
+      }
+      return 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    };
+
     const newUser: UserProfile = {
-      id: 'usr_' + Date.now(),
+      id: generateUserId(),
       name: formName,
       username: formUsername.trim().toLowerCase(),
       password: formPassword,
@@ -543,6 +567,8 @@ export default function App() {
 
     if (!saveResult.error) {
       alert('تم حفظ الحساب بنجاح في قاعدة البيانات السحابية والمحلية، ويمكن الدخول به من أي جهاز الآن!');
+    } else {
+      alert('تم حفظ الحساب محلياً، ولكن تعذر رفعه للسحابة (' + (saveResult.error.message || 'خطأ 400') + '). يرجى التحقق من الاتصال والمحاولة لاحقاً.');
     }
   };
 
