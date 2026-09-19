@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Sparkles, Volume2, VolumeX, Copy, Check, 
-  Gamepad2, Clock, Award, AlertCircle, RefreshCw, Send, Share2 
+  Gamepad2, Clock, Award, AlertCircle, RefreshCw, Send, Share2, ShieldAlert
 } from 'lucide-react';
 import { StudentSubmission, QuickAIDiagnosticResult } from '../types';
 import { generateStudentDiagnostic, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { MousaSpeakingAvatar } from './AudioInteractionVisualizer';
+import { canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 
 interface QuickAIDiagnosticModalProps {
   isOpen: boolean;
@@ -28,10 +29,22 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
   const [diagnostic, setDiagnostic] = useState<QuickAIDiagnosticResult | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('teacher').allowed 
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed('teacher').reason;
 
   useEffect(() => {
     if (isOpen) {
-      handleGenerate();
+      if (isAIPermitted) {
+        handleGenerate();
+      } else {
+        setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      }
     } else {
       stopMousaVoice();
       setIsSpeaking(false);
@@ -39,10 +52,15 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
   }, [isOpen, studentId]);
 
   const handleGenerate = async () => {
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      return;
+    }
     stopMousaVoice();
     setIsSpeaking(false);
     setIsLoading(true);
     setDiagnostic(null);
+    setErrorMessage(null);
 
     // تصفية تسليمات هذا الطالب
     const studentSubs = submissions.filter(s => s.studentId === studentId || s.studentName === studentName);
@@ -50,8 +68,9 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
     try {
       const res = await generateStudentDiagnostic(studentSubs, studentName);
       setDiagnostic(res);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating quick diagnostic:', err);
+      setErrorMessage(err?.message || 'تعذر استخراج التقرير التشخيصي الفوري.');
     } finally {
       setIsLoading(false);
     }
@@ -145,6 +164,22 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
 
         {/* محتوى التقرير */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && isAIPermitted && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="py-14 text-center space-y-4">
               <div className="relative inline-flex">
@@ -302,7 +337,8 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
               <button
                 type="button"
                 onClick={handleGenerate}
-                className="mt-3 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
+                disabled={!isAIPermitted}
+                className="mt-3 px-4 py-2 bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
               >
                 إعادة المحاولة
               </button>
@@ -315,8 +351,9 @@ export const QuickAIDiagnosticModal: React.FC<QuickAIDiagnosticModalProps> = ({
           <button
             type="button"
             onClick={handleGenerate}
-            disabled={isLoading}
-            className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-bold transition"
+            disabled={isLoading || !isAIPermitted}
+            className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 disabled:opacity-50 font-bold transition"
+            title={!isAIPermitted ? aiBlockReason : "تحديث التقرير"}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             <span>تحديث التقرير</span>

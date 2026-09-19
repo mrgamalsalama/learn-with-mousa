@@ -10,8 +10,10 @@ import {
   AIGameType,
   GameData,
   GameLevel,
-  QuickAIDiagnosticResult
+  QuickAIDiagnosticResult,
+  AIGovernanceTarget
 } from './types';
+import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
 
 // قراءة المفتاح بالشكل المطلوب مع دعم المتغيرات البيئية
 const apiKey = 
@@ -56,14 +58,39 @@ function cleanJsonText(raw: string): string {
   return cleaned.trim();
 }
 
+// فحص حوكمة وسياسات الذكاء الاصطناعي قبل أي استدعاء للنماذج مع مراعاة الاستثناءات الفردية للمستخدم
+export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
+  const currentUser = getCurrentUser();
+  const userCheck = canUserUseAI(currentUser);
+  if (!userCheck.allowed) {
+    const errorMsg = userCheck.reason || 'ميزات الذكاء الاصطناعي معطلة حالياً عن حسابك بقرار إداري.';
+    console.warn(`[AI Governance Blocked User] User: ${currentUser?.username || 'Guest'}, Target: ${target}, Reason: ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  // إذا لم يكن هناك استثناء فردي (inherit)، يتم التأكد من فئة الهدف
+  if (userCheck.overrideStatus === 'inherit') {
+    const roleCheck = isAIFeatureAllowed(target);
+    if (!roleCheck.allowed) {
+      const errorMsg = roleCheck.reason || 'ميزات الذكاء الاصطناعي معطلة حالياً بقرار من إدارة المنصة.';
+      console.warn(`[AI Governance Blocked Role] Target: ${target}, Reason: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+}
+
 // دالة مساعدة لتنفيذ طلبات التوليد مع دعم التبديل التلقائي بين النماذج لضمان أقصى اعتمادية
 async function generateContentWithFallback(
   ai: GoogleGenAI,
   params: {
     contents: any;
     config?: any;
+    targetRole?: AIGovernanceTarget;
   }
 ) {
+  // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
+  assertAIPermitted(params.targetRole || 'student');
+
   let lastError: any = null;
 
   for (const modelName of CANDIDATE_MODELS) {
@@ -118,7 +145,8 @@ export async function chatWithMusa(
       config: {
         systemInstruction,
         temperature: 0.7,
-      }
+      },
+      targetRole: 'student'
     });
 
     const responseText = response.text?.trim();
@@ -195,7 +223,8 @@ ${chosenOption ? `الخيار الذي نقر عليه الطفل في المش
       config: {
         responseMimeType: 'application/json',
         temperature: 0.6,
-      }
+      },
+      targetRole: 'student'
     });
 
     const parsed = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -300,7 +329,8 @@ export async function verifyPhonicsWord(
       config: {
         responseMimeType: 'application/json',
         temperature: 0.3,
-      }
+      },
+      targetRole: 'student'
     });
 
     const result: PhonicsVerificationResult = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -389,7 +419,8 @@ export async function analyzeChildDrawing(
       config: {
         responseMimeType: 'application/json',
         temperature: 0.4,
-      }
+      },
+      targetRole: 'student'
     });
 
     const result: DrawingAnalysisResult = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -474,7 +505,8 @@ export async function generateDiagnosticAnalytics(
       config: {
         responseMimeType: 'application/json',
         temperature: 0.3,
-      }
+      },
+      targetRole: 'parent'
     });
 
     const parsed = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -581,7 +613,8 @@ export async function generatePrintableWorksheet(
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0.5,
-      }
+      },
+      targetRole: 'parent'
     });
 
     return response.text?.trim() || defaultWorksheet;
@@ -636,7 +669,8 @@ export async function generateAIPassage(
       config: {
         responseMimeType: 'application/json',
         temperature: 0.6,
-      }
+      },
+      targetRole: 'teacher'
     });
 
     const parsed = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -729,7 +763,8 @@ ${cleanPassage}
       config: {
         responseMimeType: 'application/json',
         temperature: 0.4,
-      }
+      },
+      targetRole: 'teacher'
     });
 
     const parsed: any[] = JSON.parse(cleanJsonText(response.text || '[]'));
@@ -779,7 +814,8 @@ ${clean}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0.2,
-      }
+      },
+      targetRole: 'teacher'
     });
 
     const resText = response.text?.trim();
@@ -929,7 +965,8 @@ ${JSON.stringify(studentScores)}
       config: {
         responseMimeType: 'application/json',
         temperature: 0.3,
-      }
+      },
+      targetRole: 'teacher'
     });
 
     const parsed: Partial<ClassDiagnosticSummary> = JSON.parse(cleanJsonText(response.text || '{}'));
@@ -1324,6 +1361,7 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
 
   const fetchPromise = (async (): Promise<AudioBuffer | null> => {
     try {
+      assertAIPermitted('student');
       const ai = getAIClient();
       if (!ai) return null;
 
@@ -1385,6 +1423,13 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
  * 3. نظام تعافٍ تلقائي (Fallback) للقارئ المحلي عند انقطاع الإنترنت.
  */
 export async function speakWithMousaVoice(text: string, onEnd?: () => void): Promise<boolean> {
+  const permCheck = isAIFeatureAllowed('student');
+  if (!permCheck.allowed) {
+    console.warn('[AI Governance] الصوت التفاعلي لموسى معطل:', permCheck.reason);
+    if (onEnd) onEnd();
+    return false;
+  }
+
   const clean = cleanTextForSpeech(text);
   if (!clean) {
     if (onEnd) onEnd();
@@ -1882,7 +1927,8 @@ export async function generateAIGame(
         systemInstruction,
         responseMimeType: 'application/json',
         temperature: 0.7,
-      }
+      },
+      targetRole: 'teacher'
     });
 
     const text = cleanJsonText(response.text || '');
@@ -1924,7 +1970,8 @@ export async function generateAIGame(
 // ================= 10. التقرير التشخيصي الفوري بنقرة واحدة (1-Click AI Learning Diagnostic) =================
 export async function generateStudentDiagnostic(
   submissions: StudentSubmission[],
-  studentName: string = 'البطل'
+  studentName: string = 'البطل',
+  targetRole: AIGovernanceTarget = 'teacher'
 ): Promise<QuickAIDiagnosticResult> {
   const ai = getAIClient();
 
@@ -1985,7 +2032,8 @@ ${submissionsSummary || 'الطالب بدأ رحلته التعليمية لل�
         systemInstruction,
         responseMimeType: 'application/json',
         temperature: 0.6,
-      }
+      },
+      targetRole: targetRole
     });
 
     const text = cleanJsonText(response.text || '');

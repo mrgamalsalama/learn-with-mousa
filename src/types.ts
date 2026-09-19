@@ -14,6 +14,9 @@ export type GradeLevel =
   | 'grade-6' | 'grade-7' | 'grade-8'
   | 'grade-9' | 'grade-10' | 'grade-11' | 'grade-12';
 
+// حالات الاستثناء والتحكم الفردي في الذكاء الاصطناعي لكل مستخدم
+export type AIAccessStatus = 'inherit' | 'allowed' | 'blocked';
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
@@ -22,6 +25,9 @@ export interface UserProfile {
   role: UserRole;
   password?: string;
   
+  // التحكم الفردي الدقيق في صلاحيات الذكاء الاصطناعي للمستخدم
+  ai_access_status?: AIAccessStatus;
+
   // تتبع النشاط والزيارات
   loginCount?: number;
   lastLogin?: string;
@@ -310,4 +316,16 @@ export interface OfflineQueueItem {
   queuedAt: string;
   retryCount: number;
 }
+
+// نظام حوكمة وسياسات الذكاء الاصطناعي (Strict Role-Based AI Governance)
+export interface AIGovernanceRules {
+  master_ai_killswitch: boolean; // زر الطوارئ الرئيسي لتعطيل الـ AI كلياً عن كامل المنصة
+  student_ai_enabled: boolean;   // المحادثة الصوتية، توليد التحديات، التلميحات للطلاب
+  teacher_ai_enabled: boolean;   // توليد الألعاب والقصص التكيفية، والتشخيص التلقائي للمعلمين
+  parent_ai_enabled: boolean;    // توليد التقارير الذكية التوليدية لأولياء الأمور
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export type AIGovernanceTarget = 'student' | 'teacher' | 'parent';
 

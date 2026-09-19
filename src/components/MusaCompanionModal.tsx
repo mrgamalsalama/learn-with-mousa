@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Send, Volume2, VolumeX, Sparkles, Bot, 
-  MessageCircle, RefreshCw, Smile, Star, Heart
+  MessageCircle, RefreshCw, Smile, Star, Heart, AlertTriangle
 } from 'lucide-react';
 import { MusaChatMessage } from '../types';
 import { chatWithMusa, speakWithMousaVoice, stopMousaVoice, isMousaVoiceCached } from '../geminiService';
+import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from '../storage';
 import { MousaSpeakingAvatar, ChildMicWaveVisualizer } from './AudioInteractionVisualizer';
 
 // مسار شعار شخصية موسى الرسمي المعتمد في المنصة
@@ -174,6 +175,13 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
     'عَلِّمْنِي كَلِمَةً جَدِيدَةً! 📚',
   ];
 
+  const currentUser = getCurrentUser();
+  const userPermCheck = canUserUseAI(currentUser);
+  const isStudentAIPermitted = userPermCheck.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('student').allowed 
+    : userPermCheck.allowed;
+  const permissionBlockReason = userPermCheck.reason || isAIFeatureAllowed('student').reason || 'محادثة الذكاء الاصطناعي معطلة حالياً بقرار من إدارة المنصة.';
+
   if (!isOpen) return null;
 
   return (
@@ -313,51 +321,60 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
         </div>
 
         {/* خيارات المحادثة السريعة للطفل */}
-        <div className="px-4 py-2 bg-white border-t border-slate-100 overflow-x-auto flex gap-1.5 no-scrollbar">
-          {quickPrompts.map((prompt, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleSend(prompt)}
-              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-semibold whitespace-nowrap transition transform active:scale-95"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
+        {isStudentAIPermitted && (
+          <div className="px-4 py-2 bg-white border-t border-slate-100 overflow-x-auto flex gap-1.5 no-scrollbar">
+            {quickPrompts.map((prompt, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSend(prompt)}
+                className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-semibold whitespace-nowrap transition transform active:scale-95"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* شريط الإدخال الصوتي والكتابي */}
         <div className="p-3 bg-white border-t border-slate-200">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSend();
-            }}
-            className="flex items-center gap-2"
-          >
-            <ChildMicWaveVisualizer
-              isListening={isVoiceActive}
-              onClick={toggleSpeechRecognition}
-              size="md"
-            />
-
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder={isVoiceActive ? 'تحدث الآن، موسى يستمع إليك...' : 'اكتب رسالتك لموسى هنا...'}
-              className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/70"
-            />
-
-            <button
-              type="submit"
-              disabled={!inputText.trim() || isLoading}
-              className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl transition shrink-0 shadow-md shadow-emerald-200"
-              title="إرسال"
+          {!isStudentAIPermitted ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-center gap-2 text-rose-800 text-xs font-bold text-center">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{permissionBlockReason}</span>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              className="flex items-center gap-2"
             >
-              <Send className="w-5 h-5" />
-            </button>
-          </form>
+              <ChildMicWaveVisualizer
+                isListening={isVoiceActive}
+                onClick={toggleSpeechRecognition}
+                size="md"
+              />
+
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={isVoiceActive ? 'تحدث الآن، موسى يستمع إليك...' : 'اكتب رسالتك لموسى هنا...'}
+                className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/70"
+              />
+
+              <button
+                type="submit"
+                disabled={!inputText.trim() || isLoading}
+                className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl transition shrink-0 shadow-md shadow-emerald-200"
+                title="إرسال"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

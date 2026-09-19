@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, BarChart3, Sparkles, CheckCircle2, AlertTriangle, 
   TrendingUp, RefreshCw, Printer, BookOpen, 
-  Users, Target, Award, ArrowUpRight
+  Users, Target, Award, ArrowUpRight, ShieldAlert
 } from 'lucide-react';
 import { StudentSubmission, ClassDiagnosticSummary } from '../types';
 import { generateClassDiagnosticSummary } from '../geminiService';
+import { canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 
 interface ClassDiagnosticModalProps {
   isOpen: boolean;
@@ -24,14 +25,28 @@ export const ClassDiagnosticModal: React.FC<ClassDiagnosticModalProps> = ({
 }) => {
   const [summary, setSummary] = useState<ClassDiagnosticSummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('teacher').allowed 
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed('teacher').reason;
 
   const runClassAnalysis = async () => {
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      return;
+    }
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const result = await generateClassDiagnosticSummary(submissions, activityTitle);
       setSummary(result);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating class diagnostic summary:', err);
+      setErrorMessage(err?.message || 'تعذر استخراج تقرير التحليل التراكمي للفصل.');
     } finally {
       setIsLoading(false);
     }
@@ -39,7 +54,11 @@ export const ClassDiagnosticModal: React.FC<ClassDiagnosticModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      runClassAnalysis();
+      if (isAIPermitted) {
+        runClassAnalysis();
+      } else {
+        setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      }
     }
   }, [isOpen, submissions]);
 
@@ -73,8 +92,8 @@ export const ClassDiagnosticModal: React.FC<ClassDiagnosticModalProps> = ({
             <button
               type="button"
               onClick={() => runClassAnalysis()}
-              disabled={isLoading}
-              title="إعادة التحليل الذكي"
+              disabled={isLoading || !isAIPermitted}
+              title={!isAIPermitted ? aiBlockReason : "إعادة التحليل الذكي"}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -99,6 +118,22 @@ export const ClassDiagnosticModal: React.FC<ClassDiagnosticModalProps> = ({
 
         {/* محتوى التقرير */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-slate-800">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && isAIPermitted && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
               <div className="relative">

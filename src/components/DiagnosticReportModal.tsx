@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Brain, Sparkles, CheckCircle2, AlertTriangle, 
   TrendingUp, Award, Printer, RefreshCw, BookOpen, 
-  Target, ShieldCheck, HeartHandshake, FileText
+  Target, ShieldCheck, HeartHandshake, FileText, ShieldAlert
 } from 'lucide-react';
 import { DiagnosticReport, StudentSubmission, ChildPhonicsRecord } from '../types';
 import { generateDiagnosticAnalytics } from '../geminiService';
-import { getStudentPhonicsRecords } from '../storage';
+import { getStudentPhonicsRecords, canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 import { PrintableWorksheetModal } from './PrintableWorksheetModal';
 
 interface DiagnosticReportModalProps {
@@ -28,9 +28,22 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [phonicsRecords, setPhonicsRecords] = useState<ChildPhonicsRecord[]>([]);
   const [isWorksheetOpen, setIsWorksheetOpen] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? (isAIFeatureAllowed(currentUser?.role === 'parent' ? 'parent' : 'teacher').allowed)
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed(currentUser?.role === 'parent' ? 'parent' : 'teacher').reason;
 
   const loadDataAndAnalyze = async () => {
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      return;
+    }
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const records = getStudentPhonicsRecords(studentId);
       setPhonicsRecords(records);
@@ -41,8 +54,9 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
         records
       );
       setReport(generated);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر استخراج التقرير التشخيصي بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +64,13 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadDataAndAnalyze();
+      if (isAIPermitted) {
+        loadDataAndAnalyze();
+      } else {
+        const records = getStudentPhonicsRecords(studentId);
+        setPhonicsRecords(records);
+        setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      }
     }
   }, [isOpen, studentId]);
 
@@ -87,9 +107,9 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
               <button
                 type="button"
                 onClick={loadDataAndAnalyze}
-                disabled={isLoading}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"
-                title="تحديث التحليل"
+                disabled={isLoading || !isAIPermitted}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition disabled:opacity-50"
+                title={!isAIPermitted ? aiBlockReason : "تحديث التحليل"}
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
@@ -106,6 +126,22 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
 
           {/* محتوى التقرير التشخيصي */}
           <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/60">
+            {!isAIPermitted && (
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+                <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                <div>
+                  <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                  <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+                </div>
+              </div>
+            )}
+
+            {errorMessage && isAIPermitted && (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+                <span>⚠️ {errorMessage}</span>
+              </div>
+            )}
+
             {isLoading && (
               <div className="p-16 text-center bg-white rounded-3xl border border-slate-200 shadow-xs space-y-3">
                 <div className="w-14 h-14 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto animate-spin">

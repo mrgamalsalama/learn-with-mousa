@@ -34,12 +34,13 @@ export async function upsertUserInSupabase(user: {
   allowedTracks?: string[];
   loginCount?: number;
   lastLogin?: string | null;
+  ai_access_status?: 'inherit' | 'allowed' | 'blocked';
 }): Promise<{ data: any; error: any }> {
   // 1. ضمان وجود معرّف سليم (نصي أو UUID)
   const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
 
   // 2. تصفية الحقول لتطابق تماماً أعمدة جدول users في قاعدة بيانات Supabase
-  // الأعمدة المعتمدة في الجدول: id, name, username, password, role, stage, grade, track, student_id, allowed_grades, allowed_tracks, login_count, last_login
+  // الأعمدة المعتمدة في الجدول: id, name, username, password, role, stage, grade, track, student_id, allowed_grades, allowed_tracks, login_count, last_login, ai_access_status
   const userData: Record<string, any> = {
     id: safeId,
     name: user.name,
@@ -49,6 +50,9 @@ export async function upsertUserInSupabase(user: {
 
   if (user.password !== undefined) {
     userData.password = user.password;
+  }
+  if (user.ai_access_status !== undefined) {
+    userData.ai_access_status = user.ai_access_status;
   }
   if (user.stage !== undefined) {
     userData.stage = user.stage || null;

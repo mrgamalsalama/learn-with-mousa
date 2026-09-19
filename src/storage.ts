@@ -1,4 +1,4 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
 import { 
@@ -15,6 +15,17 @@ const CURRENT_USER_KEY = 'lwm_current_user';
 const BOOKS_KEY = 'lwm_books_repository';
 const BADGES_KEY = 'lwm_student_badges';
 const PHONICS_RECORDS_KEY = 'lwm_student_phonics';
+const AI_GOVERNANCE_KEY = 'lwm_ai_governance_rules';
+export const AI_GOVERNANCE_SYNC_ID = 'ai_governance_rules_sync';
+
+export const DEFAULT_AI_GOVERNANCE_RULES: AIGovernanceRules = {
+  master_ai_killswitch: false, // يعمل الذكاء الاصطناعي بشكل طبيعي
+  student_ai_enabled: true,   // شخصية موسى، المحادثات، التحديات للطلاب
+  teacher_ai_enabled: true,   // توليد الألعاب والقصص والتشخيص للمعلمين
+  parent_ai_enabled: true,    // التقارير الذكية التوليدية لأولياء الأمور
+  updated_at: new Date().toISOString(),
+  updated_by: 'super_admin'
+};
 
 export const INITIAL_USERS: UserProfile[] = [
   {
@@ -91,6 +102,7 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
         grade: u.grade || undefined,
         track: u.track || undefined,
         studentId: u.student_id || undefined,
+        ai_access_status: (u.ai_access_status === 'allowed' || u.ai_access_status === 'blocked') ? u.ai_access_status : 'inherit',
         allowedGrades: Array.isArray(u.allowed_grades) ? u.allowed_grades : [],
         allowedStages: Array.isArray(u.allowed_stages) ? u.allowed_stages : (u.stage ? [u.stage] : ['primary']),
         allowedTracks: Array.isArray(u.allowed_tracks) ? u.allowed_tracks : ['arabic-a'],
@@ -208,7 +220,20 @@ export const syncActivitiesFromCloud = async (): Promise<Activity[]> => {
       .order('created_at', { ascending: false });
 
     if (!error && Array.isArray(data) && data.length > 0) {
-      const formatted: Activity[] = data.map((a: any) => {
+      // استخراج ومزامنة إعدادات حوكمة الذكاء الاصطناعي إذا كانت موجودة في السجلات السحابية
+      const govRecord = data.find((a: any) => a.id === AI_GOVERNANCE_SYNC_ID || a.title === 'AI_GOVERNANCE_RULES');
+      if (govRecord && govRecord.passage) {
+        try {
+          const parsedGov = JSON.parse(govRecord.passage);
+          if (typeof parsedGov.master_ai_killswitch === 'boolean') {
+            localStorage.setItem(AI_GOVERNANCE_KEY, JSON.stringify(parsedGov));
+          }
+        } catch (e) {}
+      }
+
+      const formatted: Activity[] = data
+        .filter((a: any) => a.id !== AI_GOVERNANCE_SYNC_ID && a.title !== 'AI_GOVERNANCE_RULES')
+        .map((a: any) => {
         let actType: ActivityType = (a.activity_type as ActivityType) || 'worksheet';
         let gData: GameData | undefined = a.game_data;
 
@@ -702,6 +727,7 @@ export const subscribeToCloudChanges = (callbacks: {
   onActivitiesChange?: () => void;
   onSubmissionsChange?: () => void;
   onBadgesChange?: () => void;
+  onGovernanceChange?: (rules: AIGovernanceRules) => void;
 }) => {
   try {
     const channel = supabase
@@ -709,7 +735,15 @@ export const subscribeToCloudChanges = (callbacks: {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         callbacks.onUsersChange?.();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload: any) => {
+        // فحص هل النشاط المعدل هو سجل حوكمة وسياسات الذكاء الاصطناعي
+        if (payload?.new && (payload.new.id === AI_GOVERNANCE_SYNC_ID || payload.new.title === 'AI_GOVERNANCE_RULES')) {
+          try {
+            const rules = JSON.parse(payload.new.passage);
+            localStorage.setItem(AI_GOVERNANCE_KEY, JSON.stringify(rules));
+            callbacks.onGovernanceChange?.(rules);
+          } catch (e) {}
+        }
         callbacks.onActivitiesChange?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
@@ -736,4 +770,205 @@ export const subscribeToCloudChanges = (callbacks: {
     console.warn('Realtime subscription error:', err);
     return () => {};
   }
+};
+
+// ================= حوكمة وسياسات الذكاء الاصطناعي (Strict Role-Based AI Governance) =================
+
+export const getAIGovernanceRules = (): AIGovernanceRules => {
+  try {
+    const raw = localStorage.getItem(AI_GOVERNANCE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        master_ai_killswitch: Boolean(parsed.master_ai_killswitch),
+        student_ai_enabled: parsed.student_ai_enabled !== false,
+        teacher_ai_enabled: parsed.teacher_ai_enabled !== false,
+        parent_ai_enabled: parsed.parent_ai_enabled !== false,
+        updated_at: parsed.updated_at || new Date().toISOString(),
+        updated_by: parsed.updated_by || 'super_admin'
+      };
+    }
+  } catch (e) {
+    console.warn('Error reading AI governance rules:', e);
+  }
+  return { ...DEFAULT_AI_GOVERNANCE_RULES };
+};
+
+export const syncAIGovernanceRulesFromCloud = async (): Promise<AIGovernanceRules> => {
+  try {
+    const { data, error } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('id', AI_GOVERNANCE_SYNC_ID)
+      .maybeSingle();
+
+    if (!error && data && data.passage) {
+      const rules = JSON.parse(data.passage);
+      if (typeof rules.master_ai_killswitch === 'boolean') {
+        const cleaned: AIGovernanceRules = {
+          master_ai_killswitch: Boolean(rules.master_ai_killswitch),
+          student_ai_enabled: rules.student_ai_enabled !== false,
+          teacher_ai_enabled: rules.teacher_ai_enabled !== false,
+          parent_ai_enabled: rules.parent_ai_enabled !== false,
+          updated_at: rules.updated_at || new Date().toISOString(),
+          updated_by: rules.updated_by || 'super_admin'
+        };
+        localStorage.setItem(AI_GOVERNANCE_KEY, JSON.stringify(cleaned));
+        return cleaned;
+      }
+    }
+  } catch (e) {
+    console.warn('تعذر استرجاع سياسات الذكاء الاصطناعي سحابياً:', e);
+  }
+  return getAIGovernanceRules();
+};
+
+export const saveAIGovernanceRules = async (rules: AIGovernanceRules, updatedBy: string = 'super_admin'): Promise<{ rules: AIGovernanceRules; error?: any }> => {
+  const updatedRules: AIGovernanceRules = {
+    ...rules,
+    updated_at: new Date().toISOString(),
+    updated_by: updatedBy
+  };
+
+  // 1. الحفظ الفوري المحلي
+  localStorage.setItem(AI_GOVERNANCE_KEY, JSON.stringify(updatedRules));
+
+  // 2. المزامنة السحابية وبث التحديث عبر Supabase Realtime
+  try {
+    const { data, error } = await supabase.from('activities').upsert({
+      id: AI_GOVERNANCE_SYNC_ID,
+      title: 'AI_GOVERNANCE_RULES',
+      passage: JSON.stringify(updatedRules),
+      teacher_id: 'super_admin',
+      teacher_name: 'Super Admin',
+      stage: 'primary',
+      grade: 'grade-1',
+      track: 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' }).select();
+
+    if (error) {
+      console.error('Supabase AI Governance rules upsert error:', error.message);
+      return { rules: updatedRules, error };
+    }
+
+    console.log('تم حفظ سياسات الذكاء الاصطناعي سحابياً بنجاح:', updatedRules);
+    return { rules: updatedRules };
+  } catch (err: any) {
+    console.error('Supabase AI Governance rules save exception:', err);
+    return { rules: updatedRules, error: err };
+  }
+};
+
+/**
+ * فحص هل استخدام الذكاء الاصطناعي مسموح لفئة معينة
+ */
+export const isAIFeatureAllowed = (role: 'student' | 'teacher' | 'parent'): { allowed: boolean; reason?: string } => {
+  const rules = getAIGovernanceRules();
+
+  if (rules.master_ai_killswitch) {
+    return {
+      allowed: false,
+      reason: 'جميع ميزات الذكاء الاصطناعي معطلة حالياً بقرار طارئ من المشرف العام على مستوى المنصة ككل.'
+    };
+  }
+
+  if (role === 'student' && !rules.student_ai_enabled) {
+    return {
+      allowed: false,
+      reason: 'ميزات التفاعل الصوتي الذكي وتوليد التحديات للطلاب معطلة حالياً بقرار من المشرف العام.'
+    };
+  }
+
+  if (role === 'teacher' && !rules.teacher_ai_enabled) {
+    return {
+      allowed: false,
+      reason: 'ميزات التوليد الذكي للألعاب والقصص والتشخيص التلقائي للمعلمين معطلة حالياً بقرار من المشرف العام.'
+    };
+  }
+
+  if (role === 'parent' && !rules.parent_ai_enabled) {
+    return {
+      allowed: false,
+      reason: 'ميزات التقارير الذكية التوليدية لأولياء الأمور معطلة حالياً بقرار من المشرف العام.'
+    };
+  }
+
+  return { allowed: true };
+};
+
+/**
+ * دالة مساعدة مركزية لفحص صلاحية استخدام الذكاء الاصطناعي لمستخدم معين مع دعم الاستثناءات الفردية:
+ * 1. زر الطوارئ الشامل Master AI Killswitch يمنع الجميع بلا استثناء.
+ * 2. إذا كان ai_access_status === 'blocked': يُمنع فوراً بغض النظر عن فئته.
+ * 3. إذا كان ai_access_status === 'allowed': يُسمح له حتى لو كانت فئته معطلة.
+ * 4. إذا كان 'inherit' أو غير محدد: يتبع الإعداد العام لفئته (student / teacher / parent).
+ */
+export const canUserUseAI = (
+  user?: UserProfile | null,
+  systemSettings?: AIGovernanceRules
+): { allowed: boolean; reason?: string; overrideStatus: 'inherit' | 'allowed' | 'blocked' } => {
+  const rules = systemSettings || getAIGovernanceRules();
+  const overrideStatus = user?.ai_access_status || 'inherit';
+
+  // 1. إذا كان زر الطوارئ الشامل مفعلًا: يتم منع الجميع دون استثناء
+  if (rules.master_ai_killswitch) {
+    return {
+      allowed: false,
+      reason: 'جميع ميزات الذكاء الاصطناعي معطلة حالياً بقرار طوارئ من المشرف العام على كامل المنصة.',
+      overrideStatus
+    };
+  }
+
+  // 2. إذا كان حظر فردي محدد
+  if (overrideStatus === 'blocked') {
+    return {
+      allowed: false,
+      reason: 'تم حظر ميزات الذكاء الاصطناعي عن حسابك بشكل خاص بقرار إداري من المشرف العام.',
+      overrideStatus: 'blocked'
+    };
+  }
+
+  // 3. إذا كان تفعيل استثنائي فردي
+  if (overrideStatus === 'allowed') {
+    return {
+      allowed: true,
+      reason: 'تم منحك صلاحية استثنائية فردية لاستخدام الذكاء الاصطناعي من الإدارة.',
+      overrideStatus: 'allowed'
+    };
+  }
+
+  // 4. 'inherit': يتبع القرار العام لفئته
+  const role = user?.role;
+  if (role === 'student') {
+    if (!rules.student_ai_enabled) {
+      return {
+        allowed: false,
+        reason: 'ميزات الذكاء الاصطناعي للطلاب معطلة حالياً في الإعدادات العامة للمنصة.',
+        overrideStatus: 'inherit'
+      };
+    }
+  } else if (role === 'teacher' || role === 'hod') {
+    if (!rules.teacher_ai_enabled) {
+      return {
+        allowed: false,
+        reason: 'ميزات الذكاء الاصطناعي للمعلمين معطلة حالياً في الإعدادات العامة للمنصة.',
+        overrideStatus: 'inherit'
+      };
+    }
+  } else if (role === 'parent') {
+    if (!rules.parent_ai_enabled) {
+      return {
+        allowed: false,
+        reason: 'ميزات التقارير الذكية لأولياء الأمور معطلة حالياً في الإعدادات العامة للمنصة.',
+        overrideStatus: 'inherit'
+      };
+    }
+  }
+
+  return {
+    allowed: true,
+    overrideStatus: 'inherit'
+  };
 };

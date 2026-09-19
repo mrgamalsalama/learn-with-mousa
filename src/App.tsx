@@ -5,13 +5,14 @@ import {
   Activity as ActivityIcon, UserCheck, HeartHandshake, BarChart3, Clock, 
   Library, Download, Eye, CheckSquare, X, Search, FileUp,
   Bot, Palette, Brain, Printer, MessageCircle, Star,
-  Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2
+  Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
+  ShieldAlert, Sliders, AlertTriangle
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
-  ChildBadge, AIGameType
+  ChildBadge, AIGameType, AIGovernanceRules
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -19,7 +20,8 @@ import {
   getStoryBank, getBooksRepository, updateBookAssignment,
   syncUsersFromCloud, syncActivitiesFromCloud, syncSubmissionsFromCloud,
   getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges,
-  getOfflineSubmissionsQueue, drainOfflineQueue
+  getOfflineSubmissionsQueue, drainOfflineQueue,
+  getAIGovernanceRules, syncAIGovernanceRulesFromCloud, isAIFeatureAllowed, canUserUseAI
 } from './storage';
 import { getCachedGamesOffline } from './db/offlineCache';
 import { MusaCompanionModal } from './components/MusaCompanionModal';
@@ -33,6 +35,7 @@ import { AIGamesTeacherSection } from './components/AIGamesTeacherSection';
 import { AIGamePlayerModal } from './components/AIGamePlayerModal';
 import { QuickAIDiagnosticModal } from './components/QuickAIDiagnosticModal';
 import { ShareableBadgeModal } from './components/ShareableBadgeModal';
+import { AdminAIGovernancePanel } from './components/AdminAIGovernancePanel';
 import { 
   generateAIPassage, 
   generateQuestionsFromPassage, 
@@ -66,9 +69,10 @@ export default function App() {
   const [selectedBadgeForShare, setSelectedBadgeForShare] = useState<ChildBadge | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
+  const [aiGovernanceRules, setAiGovernanceRules] = useState<AIGovernanceRules>(getAIGovernanceRules());
 
   // تبويبات لوحة المشرف العام
-  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank'>('teachers');
+  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance'>('teachers');
 
   // تبويبات لوحة رئيس القسم
   const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library'>('overview');
@@ -166,7 +170,7 @@ export default function App() {
     setStoryBank(getStoryBank());
     setBooks(getBooksRepository());
 
-    // مزامنة سحابية كاملة لجميع جداول Supabase (المستخدمين، الأنشطة، التسليمات)
+    // مزامنة سحابية كاملة لجميع جداول Supabase (المستخدمين، الأنشطة، التسليمات) وسياسات الذكاء الاصطناعي
     syncUsersFromCloud().then((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
         setUsers(cloudUsers);
@@ -174,12 +178,16 @@ export default function App() {
     });
     syncActivitiesFromCloud().then(cloudActs => setActivities(cloudActs));
     syncSubmissionsFromCloud().then(cloudSubs => setSubmissions(cloudSubs));
+    syncAIGovernanceRulesFromCloud().then(rules => setAiGovernanceRules(rules));
 
     // الاشتراك اللحظي في تحديثات Supabase Realtime
     const unsubscribe = subscribeToCloudChanges({
       onUsersChange: () => syncUsersFromCloud().then(u => setUsers(u)),
       onActivitiesChange: () => syncActivitiesFromCloud().then(a => setActivities(a)),
       onSubmissionsChange: () => syncSubmissionsFromCloud().then(s => setSubmissions(s)),
+      onGovernanceChange: () => {
+        syncAIGovernanceRulesFromCloud().then(r => setAiGovernanceRules(r));
+      },
       onBadgesChange: () => {
         const curr = getCurrentUser();
         const activeStId = curr?.role === 'student' ? curr.id : (curr?.role === 'parent' ? (curr.studentId || '') : '');
@@ -1528,7 +1536,38 @@ export default function App() {
                 >
                   <Library className="w-3.5 h-3.5" /> بنك القصص الإسلامية ({storyBank.length})
                 </button>
+                <button
+                  onClick={() => setAdminTab('ai_governance')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                    adminTab === 'ai_governance'
+                      ? 'bg-rose-700 text-white'
+                      : aiGovernanceRules.master_ai_killswitch
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>التحكم في الذكاء الاصطناعي</span>
+                  {aiGovernanceRules.master_ai_killswitch && (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                  )}
+                </button>
               </div>
+
+              {adminTab === 'ai_governance' && (
+                <AdminAIGovernancePanel
+                  rules={aiGovernanceRules}
+                  onRulesUpdated={(newRules) => setAiGovernanceRules(newRules)}
+                  adminName={currentUser?.name || 'المشرف العام'}
+                  users={users}
+                  onUserUpdated={(updatedUser) => {
+                    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+                    if (currentUser && currentUser.id === updatedUser.id) {
+                      setUser(updatedUser);
+                    }
+                  }}
+                />
+              )}
 
               {adminTab === 'bank' && (
                 <div className="space-y-3">
@@ -2450,52 +2489,78 @@ export default function App() {
             </div>
           )}
 
-          {teacherTab === 'grades' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
-                <div>
-                  <h2 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
-                    <Award className="w-5 h-5 text-indigo-600" />
-                    قائمة درجات وحلول الطلاب
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    رصد استجابات المتعلمين ونتائج الاختبارات التفاعلية
-                  </p>
-                </div>
+          {teacherTab === 'grades' && (() => {
+            const userPerm = canUserUseAI(currentUser, aiGovernanceRules);
+            const isTeacherAIPermitted = userPerm.overrideStatus === 'inherit' 
+              ? isAIFeatureAllowed('teacher').allowed 
+              : userPerm.allowed;
+            const teacherAIReason = userPerm.reason || isAIFeatureAllowed('teacher').reason;
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstStudent = users.find(u => u.role === 'student');
-                      if (firstStudent) {
-                        setQuickDiagnosticStudent({ id: firstStudent.id, name: firstStudent.name });
-                        setIsQuickDiagnosticOpen(true);
-                      } else if (submissions.length > 0) {
-                        setQuickDiagnosticStudent({ id: submissions[0].studentId, name: submissions[0].studentName });
-                        setIsQuickDiagnosticOpen(true);
-                      }
-                    }}
-                    disabled={submissions.length === 0}
-                    className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50"
-                    title="توليد التقرير الذكي الفوري للطالب بنقرة واحدة"
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>توليد التقرير الذكي الفوري للطالب ⚡</span>
-                  </button>
+            return (
+              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+                {!isTeacherAIPermitted && (
+                  <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+                    <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                    <div>
+                      <span className="font-bold block">ميزات الذكاء الاصطناعي للمعلم معطلة</span>
+                      <span className="text-[11px] text-rose-600">{teacherAIReason}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+                      <Award className="w-5 h-5 text-indigo-600" />
+                      قائمة درجات وحلول الطلاب
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      رصد استجابات المتعلمين ونتائج الاختبارات التفاعلية
+                    </p>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsClassDiagnosticOpen(true)}
-                    disabled={submissions.length === 0}
-                    className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50"
-                    title="تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"
-                  >
-                    <BarChart3 className="w-4 h-4 text-amber-300" />
-                    تقرير الفاقد التعليمي للفصل 📊
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isTeacherAIPermitted) {
+                          alert(`عذراً، توليد التقارير الذكية معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
+                          return;
+                        }
+                        const firstStudent = users.find(u => u.role === 'student');
+                        if (firstStudent) {
+                          setQuickDiagnosticStudent({ id: firstStudent.id, name: firstStudent.name });
+                          setIsQuickDiagnosticOpen(true);
+                        } else if (submissions.length > 0) {
+                          setQuickDiagnosticStudent({ id: submissions[0].studentId, name: submissions[0].studentName });
+                          setIsQuickDiagnosticOpen(true);
+                        }
+                      }}
+                      disabled={submissions.length === 0 || !isTeacherAIPermitted}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                      title={!isTeacherAIPermitted ? teacherAIReason : "توليد التقرير الذكي الفوري للطالب بنقرة واحدة"}
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <span>توليد التقرير الذكي الفوري للطالب ⚡</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isTeacherAIPermitted) {
+                          alert(`عذراً، تقرير الفاقد التعليمي الذكي معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
+                          return;
+                        }
+                        setIsClassDiagnosticOpen(true);
+                      }}
+                      disabled={submissions.length === 0 || !isTeacherAIPermitted}
+                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                      title={!isTeacherAIPermitted ? teacherAIReason : "تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"}
+                    >
+                      <BarChart3 className="w-4 h-4 text-amber-300" />
+                      تقرير الفاقد التعليمي للفصل 📊
+                    </button>
+                  </div>
                 </div>
-              </div>
 
               {submissions.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة بعد.</p>
@@ -2544,33 +2609,48 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    if (!isTeacherAIPermitted) {
+                                      alert(`عذراً، التشخيص الفوري معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
+                                      return;
+                                    }
                                     setQuickDiagnosticStudent({ id: sub.studentId, name: sub.studentName });
                                     setIsQuickDiagnosticOpen(true);
                                   }}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1"
-                                  title="توليد التقرير التشخيصي الفوري لهذا الطالب بنقرة واحدة"
+                                  disabled={!isTeacherAIPermitted}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                                  title={!isTeacherAIPermitted ? teacherAIReason : "توليد التقرير التشخيصي الفوري لهذا الطالب بنقرة واحدة"}
                                 >
                                   <Zap className="w-3 h-3 text-amber-600" /> تشخيص فوري ⚡
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    if (!isTeacherAIPermitted) {
+                                      alert(`عذراً، التقرير التشخيصي معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
+                                      return;
+                                    }
                                     setDiagnosticStudent(targetStudent);
                                     setIsDiagnosticModalOpen(true);
                                   }}
-                                  className="px-2.5 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-lg text-[10px] font-bold border border-cyan-200 transition flex items-center gap-1"
-                                  title="التقرير التشخيصي للطفل بالذكاء الاصطناعي"
+                                  disabled={!isTeacherAIPermitted}
+                                  className="px-2.5 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-lg text-[10px] font-bold border border-cyan-200 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                                  title={!isTeacherAIPermitted ? teacherAIReason : "التقرير التشخيصي للطفل بالذكاء الاصطناعي"}
                                 >
                                   <Brain className="w-3 h-3 text-cyan-600" /> تقرير تشخيصي
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    if (!isTeacherAIPermitted) {
+                                      alert(`عذراً، توليد ورقة العمل العلاجية معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
+                                      return;
+                                    }
                                     setWorksheetStudent(targetStudent);
                                     setIsPrintableWorksheetOpen(true);
                                   }}
-                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition flex items-center gap-1"
-                                  title="توليد ورقة عمل علاجية للطباعة"
+                                  disabled={!isTeacherAIPermitted}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                                  title={!isTeacherAIPermitted ? teacherAIReason : "توليد ورقة عمل علاجية للطباعة"}
                                 >
                                   <Printer className="w-3 h-3 text-emerald-600" /> ورقة علاجية
                                 </button>
@@ -2584,7 +2664,8 @@ export default function App() {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {teacherTab === 'games' && (
             <AIGamesTeacherSection
@@ -3827,8 +3908,24 @@ export default function App() {
                 </button>
               </div>
 
-              {parentTab === 'progress' && (
+              {parentTab === 'progress' && (() => {
+                const userPerm = canUserUseAI(currentUser, aiGovernanceRules);
+                const isParentAIPermitted = userPerm.overrideStatus === 'inherit'
+                  ? isAIFeatureAllowed('parent').allowed
+                  : userPerm.allowed;
+                const parentAIReason = userPerm.reason || isAIFeatureAllowed('parent').reason;
+
+                return (
                 <>
+                  {!isParentAIPermitted && (
+                    <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+                      <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                      <div>
+                        <span className="font-bold block">تقارير الذكاء الاصطناعي التشخيصية لولي الأمر معطلة</span>
+                        <span className="text-[11px] text-rose-600">{parentAIReason}</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
                       <div>
@@ -3843,11 +3940,16 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (!isParentAIPermitted) {
+                              alert(`عذراً، التقارير الذكية معطلة بأمر الإدارة العليا:\n${parentAIReason}`);
+                              return;
+                            }
                             setQuickDiagnosticStudent({ id: student.id, name: student.name });
                             setIsQuickDiagnosticOpen(true);
                           }}
-                          className="px-3 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
-                          title="توليد التقرير الذكي الفوري للطالب بنقرة واحدة"
+                          disabled={!isParentAIPermitted}
+                          className="px-3 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                          title={!isParentAIPermitted ? parentAIReason : "توليد التقرير الذكي الفوري للطالب بنقرة واحدة"}
                         >
                           <Sparkles className="w-4 h-4 text-amber-300" />
                           <span>التقرير الفوري ⚡</span>
@@ -3855,22 +3957,32 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (!isParentAIPermitted) {
+                              alert(`عذراً، التقرير التشخيصي الذكي معطل بأمر الإدارة العليا:\n${parentAIReason}`);
+                              return;
+                            }
                             setDiagnosticStudent(student);
                             setIsDiagnosticModalOpen(true);
                           }}
-                          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
-                          title="استخراج تقرير تشخيصي ذكي بالذكاء الاصطناعي"
+                          disabled={!isParentAIPermitted}
+                          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                          title={!isParentAIPermitted ? parentAIReason : "استخراج تقرير تشخيصي ذكي بالذكاء الاصطناعي"}
                         >
                           <Brain className="w-4 h-4" /> التقرير التشخيصي الذكي
                         </button>
                         <button
                           type="button"
                           onClick={() => {
+                            if (!isParentAIPermitted) {
+                              alert(`عذراً، توليد ورقة العمل العلاجية معطل بأمر الإدارة العليا:\n${parentAIReason}`);
+                              return;
+                            }
                             setWorksheetStudent(student);
                             setIsPrintableWorksheetOpen(true);
                           }}
-                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
-                          title="توليد وطباعة أوراق عمل علاجية"
+                          disabled={!isParentAIPermitted}
+                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+                          title={!isParentAIPermitted ? parentAIReason : "توليد وطباعة أوراق عمل علاجية"}
                         >
                           <Printer className="w-4 h-4" /> ورقة عمل علاجية
                         </button>
@@ -3933,7 +4045,8 @@ export default function App() {
                     )}
                   </div>
                 </>
-              )}
+                );
+              })()}
 
               {parentTab === 'library' && (
                 <div>

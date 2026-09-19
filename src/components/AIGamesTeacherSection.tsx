@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { 
   Sparkles, Gamepad2, Award, Wand2, Loader2, CheckCircle2, 
-  Trash2, Eye, Send, Play, Star, BookOpen, Layers
+  Trash2, Eye, Send, Play, Star, BookOpen, Layers, AlertTriangle
 } from 'lucide-react';
 import { 
   Activity, AIGameType, GameData, UserProfile, SchoolStage, 
   GradeLevel, ArabicTrack, STAGES_CONFIG 
 } from '../types';
 import { generateAIGame } from '../geminiService';
-import { saveActivity, deleteActivity, syncActivitiesFromCloud } from '../storage';
+import { saveActivity, deleteActivity, syncActivitiesFromCloud, isAIFeatureAllowed, canUserUseAI } from '../storage';
 import { AIGamePlayerModal } from './AIGamePlayerModal';
 
 interface AIGamesTeacherSectionProps {
@@ -229,25 +229,50 @@ export const AIGamesTeacherSection: React.FC<AIGamesTeacherSectionProps> = ({
           />
         </div>
 
+        {(() => {
+          const userPerm = canUserUseAI(currentUser);
+          const aiCheck = userPerm.overrideStatus === 'inherit' ? isAIFeatureAllowed('teacher') : userPerm;
+          if (!aiCheck.allowed) {
+            return (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-rose-800 text-xs font-bold">
+                <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+                <span>{aiCheck.reason || 'ميزة توليد الألعاب بالذكاء الاصطناعي معطلة حالياً بقرار من إدارة المنصة.'}</span>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* زر التوليد */}
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={isGenerating}
-          className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-sm rounded-2xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 disabled:opacity-60"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin text-white" />
-              <span>جاري صياغة مراحل اللعبة وتشكيل كلماتها بالذكاء الاصطناعي...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-5 h-5 text-amber-200" />
-              <span>توليد اللعبة بالذكاء الاصطناعي الآن ✨</span>
-            </>
-          )}
-        </button>
+        {(() => {
+          const userPerm = canUserUseAI(currentUser);
+          const isAllowed = userPerm.overrideStatus === 'inherit' ? isAIFeatureAllowed('teacher').allowed : userPerm.allowed;
+          return (
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={isGenerating || !isAllowed}
+              className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-sm rounded-2xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                  <span>جاري صياغة مراحل اللعبة وتشكيل كلماتها بالذكاء الاصطناعي...</span>
+                </>
+              ) : !isAllowed ? (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-rose-300" />
+                  <span>التوليد معطل من الإدارة العليا</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 text-amber-200" />
+                  <span>توليد اللعبة بالذكاء الاصطناعي الآن ✨</span>
+                </>
+              )}
+            </button>
+          );
+        })()}
       </div>
 
       {/* شاشة المعاينة التفاعلية بعد التوليد */}

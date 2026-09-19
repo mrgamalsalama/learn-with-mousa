@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, BookOpen, Volume2, Sparkles, Award, ArrowLeft, 
-  CheckCircle2, RefreshCw, Compass, BookmarkCheck
+  CheckCircle2, RefreshCw, Compass, BookmarkCheck, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AdaptiveStoryNode, ChildBadge } from '../types';
 import { generateAdaptiveStoryScene, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
-import { saveStudentBadge } from '../storage';
+import { saveStudentBadge, canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 
 interface AdaptiveStoryModalProps {
   isOpen: boolean;
@@ -30,6 +30,14 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [earnedBadge, setEarnedBadge] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('student').allowed 
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed('student').reason;
 
   useEffect(() => {
     return () => {
@@ -38,11 +46,16 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
   }, []);
 
   const startNewStory = async (letterToUse = selectedLetter) => {
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة حالياً.');
+      return;
+    }
     stopMousaVoice();
     setIsSpeaking(false);
     setIsLoading(true);
     setEarnedBadge(null);
     setStoryHistory([]);
+    setErrorMessage(null);
 
     try {
       const firstScene = await generateAdaptiveStoryScene({
@@ -56,8 +69,9 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
       setIsSpeaking(true);
       speakWithMousaVoice(firstScene.passage, () => setIsSpeaking(false));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر توليد القصة التكيفية بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
     }
@@ -65,10 +79,15 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
   const handleChooseOption = async (chosenOption: string) => {
     if (!currentNode || isLoading) return;
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة حالياً.');
+      return;
+    }
 
     stopMousaVoice();
     setIsSpeaking(false);
     setIsLoading(true);
+    setErrorMessage(null);
 
     const nextStep = currentNode.step + 1;
 
@@ -107,8 +126,9 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
         };
         saveStudentBadge(studentId, newBadge);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر استكمال أحداث القصة.');
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +187,22 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
         {/* محتوى النافذة */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {/* شريط اختيار الحرف والبدء */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between mb-3">
@@ -317,9 +353,11 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
               <button
                 type="button"
                 onClick={() => startNewStory()}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-sm transition shadow-lg shadow-emerald-200"
+                disabled={!isAIPermitted}
+                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-sm transition shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                title={!isAIPermitted ? aiBlockReason : 'ابدأ القصة الآن'}
               >
-                اِبْدَأِ القِصَّةَ الآن 🚀
+                {!isAIPermitted ? 'الذكاء الاصطناعي معطل' : 'اِبْدَأِ القِصَّةَ الآن 🚀'}
               </button>
             </div>
           )}

@@ -1,12 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, Palette, Eraser, Trash2, Sparkles, Star, Award, 
-  RefreshCw, CheckCircle2, Volume2, HelpCircle
+  RefreshCw, CheckCircle2, Volume2, HelpCircle, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DrawingAnalysisResult, ChildBadge } from '../types';
 import { analyzeChildDrawing, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
-import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
+import { saveStudentBadge, saveStudentPhonicsRecord, canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 
 interface DrawingCanvasModalProps {
   isOpen: boolean;
@@ -48,6 +48,14 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
   const [hasDrawn, setHasDrawn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<DrawingAnalysisResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('student').allowed 
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed('student').reason;
 
   const currentItem = DRAWING_LETTERS[selectedLetterIndex];
 
@@ -141,9 +149,15 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
     const canvas = canvasRef.current;
     if (!canvas || !hasDrawn || isLoading) return;
 
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة حالياً.');
+      return;
+    }
+
     stopMousaVoice();
     setIsLoading(true);
     setResult(null);
+    setErrorMessage(null);
 
     try {
       const base64Image = canvas.toDataURL('image/png');
@@ -179,8 +193,9 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
       });
 
       speakWithMousaVoice(res.feedback);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر تحليل الرسمة بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
     }
@@ -228,6 +243,22 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
 
         {/* جسم النافذة */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 bg-slate-50/50">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {/* شريط اختيار الحرف التحدي */}
           <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between mb-2">
@@ -325,8 +356,9 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
             <button
               type="button"
               onClick={handleAnalyzeDrawing}
-              disabled={!hasDrawn || isLoading}
-              className="px-8 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-black rounded-2xl text-sm transition shadow-lg shadow-purple-200 flex items-center gap-2 transform active:scale-98"
+              disabled={!hasDrawn || isLoading || !isAIPermitted}
+              className="px-8 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed text-white font-black rounded-2xl text-sm transition shadow-lg shadow-purple-200 flex items-center gap-2 transform active:scale-98"
+              title={!isAIPermitted ? aiBlockReason : 'تحليل الرسمة'}
             >
               {isLoading ? (
                 <>
@@ -336,7 +368,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 text-amber-300" />
-                  <span>تَحْلِيلُ الرَّسْمَةِ بِالذَّكَاءِ الاصْطِنَاعِيّ 🚀</span>
+                  <span>{!isAIPermitted ? 'الذكاء الاصطناعي معطل' : 'تَحْلِيلُ الرَّسْمَةِ بِالذَّكَاءِ الاصْطِنَاعِيّ 🚀'}</span>
                 </>
               )}
             </button>

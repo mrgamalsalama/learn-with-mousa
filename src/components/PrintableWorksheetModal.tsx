@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
   X, Printer, Download, Sparkles, RefreshCw, FileText, 
-  CheckCircle2, Share2, BookOpen
+  CheckCircle2, Share2, BookOpen, ShieldAlert
 } from 'lucide-react';
 import { generatePrintableWorksheet } from '../geminiService';
+import { canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 
 interface PrintableWorksheetModalProps {
   isOpen: boolean;
@@ -22,15 +23,29 @@ export const PrintableWorksheetModal: React.FC<PrintableWorksheetModalProps> = (
 }) => {
   const [worksheetContent, setWorksheetContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? (isAIFeatureAllowed(currentUser?.role === 'parent' ? 'parent' : 'teacher').allowed)
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed(currentUser?.role === 'parent' ? 'parent' : 'teacher').reason;
 
   // توليد ورقة العمل عند طلبها
   const handleGenerate = async () => {
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      return;
+    }
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const content = await generatePrintableWorksheet(studentName, grade, weakLetters);
       setWorksheetContent(content);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر توليد ورقة العمل بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
     }
@@ -38,7 +53,11 @@ export const PrintableWorksheetModal: React.FC<PrintableWorksheetModalProps> = (
 
   React.useEffect(() => {
     if (isOpen && !worksheetContent) {
-      handleGenerate();
+      if (isAIPermitted) {
+        handleGenerate();
+      } else {
+        setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة عن حسابك.');
+      }
     }
   }, [isOpen]);
 
@@ -118,6 +137,22 @@ export const PrintableWorksheetModal: React.FC<PrintableWorksheetModalProps> = (
 
         {/* مساحة المعاينة */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 bg-slate-100/70">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && isAIPermitted && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {/* معلومات الحروف المستهدفة */}
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -134,8 +169,9 @@ export const PrintableWorksheetModal: React.FC<PrintableWorksheetModalProps> = (
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={isLoading}
-              className="text-xs text-emerald-700 font-bold flex items-center gap-1 hover:underline"
+              disabled={isLoading || !isAIPermitted}
+              className="text-xs text-emerald-700 font-bold flex items-center gap-1 hover:underline disabled:opacity-50 disabled:no-underline"
+              title={!isAIPermitted ? aiBlockReason : "إعادة التوليد"}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>إعادة التوليد بنموذج جديد</span>

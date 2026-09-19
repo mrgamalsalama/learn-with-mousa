@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, Volume2, Sparkles, CheckCircle2, 
-  AlertCircle, Unlock, Lock, Award, RefreshCw, Star, ChevronLeft
+  AlertCircle, Unlock, Lock, Award, RefreshCw, Star, ChevronLeft, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PhonicsVerificationResult, ChildBadge } from '../types';
 import { verifyPhonicsWord, speakWithMousaVoice, stopMousaVoice, prebufferMousaAudio } from '../geminiService';
-import { saveStudentBadge, saveStudentPhonicsRecord } from '../storage';
+import { saveStudentBadge, saveStudentPhonicsRecord, canUserUseAI, getCurrentUser, isAIFeatureAllowed } from '../storage';
 import { ChildMicWaveVisualizer, MousaSpeakingAvatar } from './AudioInteractionVisualizer';
 
 interface PhonicsGateModalProps {
@@ -43,6 +43,14 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<PhonicsVerificationResult | null>(null);
   const [gateUnlocked, setGateUnlocked] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const userPerm = canUserUseAI(currentUser);
+  const isAIPermitted = userPerm.overrideStatus === 'inherit' 
+    ? isAIFeatureAllowed('student').allowed 
+    : userPerm.allowed;
+  const aiBlockReason = userPerm.reason || isAIFeatureAllowed('student').reason;
 
   const recognitionRef = useRef<any>(null);
   const currentConfig = LETTERS_CONFIG[currentLetterIndex];
@@ -98,9 +106,15 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
     const word = (wordToVerify ?? inputWord).trim();
     if (!word || isLoading) return;
 
+    if (!isAIPermitted) {
+      setErrorMessage(aiBlockReason || 'ميزات الذكاء الاصطناعي معطلة حالياً.');
+      return;
+    }
+
     stopMousaVoice();
     setIsLoading(true);
     setResult(null);
+    setErrorMessage(null);
 
     try {
       const res = await verifyPhonicsWord(currentConfig.letter, word);
@@ -145,8 +159,9 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
         });
         speakWithMousaVoice(res.encouragement);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'تعذر التحقق الصوتي بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
     }
@@ -206,6 +221,22 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
 
         {/* جسم البوابة التفاعلية */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
+          {!isAIPermitted && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <span className="font-bold block">ميزات الذكاء الاصطناعي معطلة عن حسابك</span>
+                <span className="text-[11px] text-rose-600">{aiBlockReason}</span>
+              </div>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+              <span>⚠️ {errorMessage}</span>
+            </div>
+          )}
+
           {/* بطاقة الحرف المستهدف والبوابة */}
           <div className={`p-6 rounded-3xl text-center border-2 transition duration-300 relative overflow-hidden ${
             gateUnlocked
@@ -271,15 +302,16 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleVerify()}
-                disabled={!inputWord.trim() || isLoading}
-                className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black rounded-2xl transition flex items-center gap-1.5 shadow-md shadow-emerald-200 shrink-0"
+                disabled={!inputWord.trim() || isLoading || !isAIPermitted}
+                className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed text-white font-black rounded-2xl transition flex items-center gap-1.5 shadow-md shadow-emerald-200 shrink-0"
+                title={!isAIPermitted ? aiBlockReason : 'تحقق'}
               >
                 {isLoading ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>تَحَقَّق</span>
+                    <span>{!isAIPermitted ? 'معطل' : 'تَحَقَّق'}</span>
                   </>
                 )}
               </button>
