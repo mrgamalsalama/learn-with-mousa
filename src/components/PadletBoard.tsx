@@ -138,6 +138,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const [isEditBoardModalOpen, setIsEditBoardModalOpen] = useState<boolean>(false);
   const [isCreatePostModalOpen, setIsCreatePostModalOpen] = useState<boolean>(false);
   const [expandedCommentsPostId, setExpandedCommentsPostId] = useState<string | null>(null);
+  const [isSubmittingPost, setIsSubmittingPost] = useState<boolean>(false);
 
   // استمارة إنشاء / تعديل اللوحة
   const [boardFormTitle, setBoardFormTitle] = useState<string>('');
@@ -355,15 +356,59 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     setHasDrawnSomething(false);
   };
 
+  // ضغط وتصغير الصورة لضمان سلامة التخزين السحابي
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const image = new Image();
+        image.onload = () => {
+          const maxDim = 800;
+          let width = image.width;
+          let height = image.height;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(image, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          } else {
+            resolve(readerEvent.target?.result as string);
+          }
+        };
+        image.src = readerEvent.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   // رفع صورة
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setUploadedImageUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setUploadedImageUrl(compressed);
+    } catch (err) {
+      console.warn('Image compression fallback:', err);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedImageUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // تشكيل النص تلقائياً عبر الذكاء الاصطناعي
@@ -428,26 +473,46 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       pinned: false
     };
 
-    await savePadletPost(newPost);
-
-    // تفجير قصاصات الاحتفال للأطفال
+    setIsSubmittingPost(true);
     try {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 }
-      });
-    } catch (e) {}
+      const { post: savedPost, error } = await savePadletPost(newPost);
 
-    // إعادة تعيين الاستمارة
-    setPostContent('');
-    setAudioUrl(null);
-    setUploadedImageUrl(null);
-    clearCanvas();
-    setIsCreatePostModalOpen(false);
+      if (error) {
+        console.error('Padlet post insert failed:', error);
+        alert('تنبيه: حدثت مشكلة أثناء الحفظ السحابي للبطاقة. تم حفظها مؤقتاً على جهازك ولكن قد لا تظهر للآخرين حتى يتم التحقق من الاتصال بالشبكة.');
+      } else {
+        // تفجير قصاصات الاحتفال للأطفال
+        try {
+          confetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.7 }
+          });
+        } catch (e) {}
 
-    if (needsApproval) {
-      alert('تم إرسال بطاقتك بنجاح! ستظهر على الجدار بمجرد اعتماد معلمك لها 🌟');
+        if (needsApproval) {
+          alert('تم إرسال بطاقتك بنجاح! ستظهر على الجدار بمجرد اعتماد معلمك لها 🌟');
+        }
+      }
+
+      // إعادة تعيين الاستمارة
+      setPostContent('');
+      setAudioUrl(null);
+      setUploadedImageUrl(null);
+      clearCanvas();
+      setIsCreatePostModalOpen(false);
+
+      // إعادة تحميل فوري من السحابة لضمان التزامن
+      if (activeBoard) {
+        syncPadletPostsFromCloud(activeBoard.id).then(cloudPosts => {
+          if (cloudPosts) setPosts(cloudPosts);
+        });
+      }
+    } catch (submitErr) {
+      console.error('Unexpected error creating padlet post:', submitErr);
+      alert('حدث خطأ غير متوقع أثناء نشر البطاقة. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsSubmittingPost(false);
     }
   };
 
@@ -632,6 +697,24 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
               ))}
             </select>
           )}
+
+          {/* زر التحديث اللحظي للجميع */}
+          <button
+            onClick={() => {
+              if (activeBoard) {
+                setIsLoading(true);
+                syncPadletPostsFromCloud(activeBoard.id)
+                  .then(p => { if (p) setPosts(p); })
+                  .finally(() => setIsLoading(false));
+              }
+            }}
+            disabled={isLoading}
+            className="px-2.5 py-1.5 rounded-xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1 shadow-xs"
+            title="تحديث المنشورات من السحابة"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">تحديث</span>
+          </button>
 
           {/* زر المراجعة السريعة للمعلم إذا وُجدت منشورات معلقة */}
           {isTeacher && pendingPostsCount > 0 && (
@@ -1209,10 +1292,18 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isSubmittingPost}
                 onClick={handleCreatePost}
-                className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl transition shadow-md shadow-emerald-600/20"
+                className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl transition shadow-md shadow-emerald-600/20 flex items-center gap-1.5"
               >
-                نشر البطاقة على الجدار 📌
+                {isSubmittingPost ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>جارٍ الحفظ السحابي...</span>
+                  </>
+                ) : (
+                  <span>نشر البطاقة على الجدار 📌</span>
+                )}
               </button>
             </div>
           </div>

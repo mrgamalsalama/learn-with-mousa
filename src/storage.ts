@@ -1897,7 +1897,8 @@ export const getPadletPosts = (boardId?: string): PadletPost[] => {
   });
 };
 
-export const savePadletPost = async (post: PadletPost): Promise<PadletPost> => {
+export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPost; error?: any }> => {
+  // تحديث التخزين المحلي فوراً كنسخة احتياطية سريعة
   const posts = getPadletPosts();
   const index = posts.findIndex(p => p.id === post.id);
   if (index >= 0) {
@@ -1908,32 +1909,37 @@ export const savePadletPost = async (post: PadletPost): Promise<PadletPost> => {
   localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
   window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
 
-  (async () => {
-    try {
-      await supabase.from('padlet_posts').upsert({
-        id: post.id,
-        board_id: post.board_id,
-        author_id: post.author_id,
-        author_name: post.author_name,
-        author_role: post.author_role || 'student',
-        content: post.content,
-        color: post.color || 'yellow',
-        audio_url: post.audio_url || null,
-        image_url: post.image_url || null,
-        content_type: post.content_type || 'text',
-        status: post.status || 'approved',
-        likes_count: post.likes_count || 0,
-        liked_by: post.liked_by || [],
-        comments: post.comments || [],
-        pinned: post.pinned || false,
-        created_at: post.created_at || new Date().toISOString()
-      }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('ملاحظة في مزامنة بطاقة الحائط سحابياً:', err);
-    }
-  })();
+  // إدراج ومزامنة مباشرة مع Supabase جدول padlet_posts
+  const postData = {
+    id: post.id,
+    board_id: post.board_id,
+    author_id: post.author_id,
+    author_name: post.author_name,
+    author_role: post.author_role || 'student',
+    content: post.content,
+    color: post.color || 'yellow',
+    audio_url: post.audio_url || null,
+    image_url: post.image_url || null,
+    content_type: post.content_type || 'text',
+    status: post.status || 'approved',
+    likes_count: post.likes_count || 0,
+    liked_by: post.liked_by || [],
+    comments: post.comments || [],
+    pinned: post.pinned || false,
+    created_at: post.created_at || new Date().toISOString()
+  };
 
-  return post;
+  try {
+    const { data, error } = await supabase.from('padlet_posts').upsert(postData, { onConflict: 'id' });
+    if (error) {
+      console.error('Padlet post insert failed:', error);
+      return { post, error };
+    }
+    return { post, error: null };
+  } catch (err) {
+    console.error('Padlet post insert exception:', err);
+    return { post, error: err };
+  }
 };
 
 export const updatePadletPostStatus = async (postId: string, status: 'approved' | 'pending'): Promise<PadletPost | null> => {
