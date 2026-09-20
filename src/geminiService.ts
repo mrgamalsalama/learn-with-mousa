@@ -16,12 +16,19 @@ import {
 } from './types';
 import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
 
-// النماذج المعتمدة لسرعة الاستجابة والدقة العالية
-const PRIMARY_MODEL = 'gemini-3.8-flash';
-const CANDIDATE_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
+// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Fallback Waterfall)
+export const TEXT_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.5-pro'
+];
+
+// 2. نماذج الصوت المعتمدة لـ TTS
+export const AUDIO_MODELS = [
+  'gemini-3.1-flash-tts-preview',
+  'gemini-2.5-flash'
 ];
 
 // دالة الحصول على مفتاح Gemini من المتغيرات البيئية (دعم Vercel و Vite و Node)
@@ -86,7 +93,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد عبر SDK مباشرة مع دعم التبديل التلقائي بين النماذج
+// دالة مساعدة لتنفيذ طلبات التوليد عبر SDK مباشرة مع دعم التبديل التلقائي المتتالي بين النماذج (Waterfall Fallback)
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -101,11 +108,11 @@ async function generateContentWithFallback(
   const ai = getAIClient();
   let lastError: any = null;
 
-  for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
-    const modelName = CANDIDATE_MODELS[i];
+  for (let i = 0; i < TEXT_MODELS.length; i++) {
+    const model = TEXT_MODELS[i];
     try {
       const response = await ai.models.generateContent({
-        model: modelName,
+        model: model,
         contents: params.contents,
         config: params.config,
       });
@@ -114,21 +121,22 @@ async function generateContentWithFallback(
         text: response.text || '',
         candidates: response.candidates,
         usageMetadata: response.usageMetadata,
-        modelUsed: modelName,
+        modelUsed: model,
       };
     } catch (err: any) {
       lastError = err;
       const errMsg = err?.message || String(err || '');
-      console.warn(`[Gemini Direct] تعذر الاستدعاء بالنموذج ${modelName}:`, errMsg);
+      console.warn(`[Gemini Cascade] تعذر ${model}، جاري الانتقال للنموذج التالي... التفاصيل:`, errMsg);
 
-      // في حال وجود نموذج تالٍ، ننتظر مهلة قصيرة عند الضغط ثم نجرب النموذج التالي
-      if (i < CANDIDATE_MODELS.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+      // في حال وجود نموذج تالٍ، ننتظر مهلة بسيطة (Jitter بين 300ms إلى 500ms) قبل الانتقال
+      if (i < TEXT_MODELS.length - 1) {
+        const jitterMs = 300 + Math.floor(Math.random() * 200);
+        await new Promise((resolve) => setTimeout(resolve, jitterMs));
       }
     }
   }
 
-  console.error('[Gemini Direct] فشل الاستدعاء بكافة النماذج:', lastError);
+  console.error('[Gemini Cascade] فشل الاستدعاء بكافة النماذج المعتمدة للنصوص:', lastError);
   throw lastError || new Error('فشل الاتصال بنماذج الذكاء الاصطناعي');
 }
 
@@ -1398,39 +1406,59 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
       // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
       const promptText = `Read the following Arabic text naturally: ${cleanText}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-tts-preview',
-        contents: [{ parts: [{ text: promptText }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Puck', // نبرة صوت دافئة واضحة ومرحة تناسب شخصية موسى
+      let lastAudioError: any = null;
+
+      for (let i = 0; i < AUDIO_MODELS.length; i++) {
+        const audioModel = AUDIO_MODELS[i];
+        try {
+          const response = await ai.models.generateContent({
+            model: audioModel,
+            contents: [{ parts: [{ text: promptText }] }],
+            config: {
+              responseModalities: [Modality.AUDIO],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: 'Puck', // نبرة صوت دافئة واضحة ومرحة تناسب شخصية موسى
+                  },
+                },
               },
             },
-          },
-        },
-      });
+          });
 
-      const candidate = response.candidates?.[0];
-      const part = candidate?.content?.parts?.[0];
-      const base64Data = part?.inlineData?.data;
+          const candidate = response.candidates?.[0];
+          const part = candidate?.content?.parts?.[0];
+          const base64Data = part?.inlineData?.data;
 
-      if (base64Data) {
-        const pcmBytes = base64ToUint8Array(base64Data);
-        const audioCtx = getAudioContext();
-        const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
+          if (base64Data) {
+            const pcmBytes = base64ToUint8Array(base64Data);
+            const audioCtx = getAudioContext();
+            const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
 
-        // حفظ دائم في كل من ذاكرة الرام وIndexedDB
-        mousaAudioCache.set(cleanText, {
-          buffer,
-          pcm: pcmBytes,
-          timestamp: Date.now()
-        });
-        saveToIndexedDBCache(cleanText, pcmBytes);
+            // حفظ دائم في كل من ذاكرة الرام وIndexedDB
+            mousaAudioCache.set(cleanText, {
+              buffer,
+              pcm: pcmBytes,
+              timestamp: Date.now()
+            });
+            saveToIndexedDBCache(cleanText, pcmBytes);
 
-        return buffer;
+            return buffer;
+          }
+        } catch (err: any) {
+          lastAudioError = err;
+          const errMsg = err?.message || String(err || '');
+          console.warn(`[Gemini Cascade Audio] تعذر ${audioModel}، جاري الانتقال لنموذج الصوت التالي... التفاصيل:`, errMsg);
+
+          if (i < AUDIO_MODELS.length - 1) {
+            const jitterMs = 300 + Math.floor(Math.random() * 200);
+            await new Promise((resolve) => setTimeout(resolve, jitterMs));
+          }
+        }
+      }
+
+      if (lastAudioError) {
+        console.warn('تعذر توليد مقطع صوتي عبر كافة نماذج الصوت المعتمدة لـ TTS:', lastAudioError?.message || lastAudioError);
       }
       return null;
     } catch (err: any) {
