@@ -139,10 +139,19 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
       setMessages(prev => [...prev, musaMsg]);
     } catch (err: any) {
       console.error('خطأ في استلام رد موسى من النموذج:', err);
+      const rawMsg = err?.message || String(err || '');
+      let friendlyText = 'عُذْرًا يَا صَدِيقِي، حَدَثَ ضَغْطٌ بَسِيطٌ فِي الاِتِّصَالِ. جَرِّبْ إِرْسَالَ رِسَالَتِكَ مَرَّةً أُخْرَى الآن! 🌟';
+      
+      if (rawMsg.includes('حوكمة') || rawMsg.includes('صلاحية') || rawMsg.includes('معطلة')) {
+        friendlyText = rawMsg;
+      } else if (rawMsg.length > 0 && !rawMsg.includes('{') && !rawMsg.includes('code') && !rawMsg.includes('status')) {
+        friendlyText = `عُذْرًا يَا صَدِيقِي، ${rawMsg}`;
+      }
+
       const errorMsg: MusaChatMessage = {
         id: 'msg_err_' + Date.now(),
         sender: 'musa',
-        text: `عُذْرًا يَا صَدِيقِي، حَدَثَ خَطَأٌ فِي الاتِّصَالِ: ${err?.message || String(err)}. يُمْكِنُكَ التَّحَقُّقُ مِنْ وَحْدَةِ التَّحَكُّمِ (Console).`,
+        text: friendlyText,
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         hasAudio: false,
       };

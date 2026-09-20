@@ -34,28 +34,53 @@ async function startServer() {
     res.json({ status: 'ok', serverTime: new Date().toISOString() });
   });
 
-  // Gemini API Proxy
-  app.post('/api/gemini/generate', async (req, res) => {
-    try {
-      const { model = 'gemini-3.8-flash', contents, config } = req.body;
-      const ai = getAIClient();
-      const response = await ai.models.generateContent({
-        model,
-        contents,
-        config,
-      });
+  // Gemini API Proxy with intelligent fallback across modern models
+  const FALLBACK_MODELS = [
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
+  ];
 
-      res.json({
-        text: response.text || '',
-        candidates: response.candidates,
-        usageMetadata: response.usageMetadata,
-      });
-    } catch (err: any) {
-      console.error('Server Gemini Error:', err?.message || err);
-      res.status(err?.status || 500).json({
-        error: err?.message || 'Gemini processing failed',
-      });
+  app.post('/api/gemini/generate', async (req, res) => {
+    const { model = 'gemini-3.8-flash', contents, config } = req.body;
+    const ai = getAIClient();
+
+    // استبعاد النماذج الملغاة مثل gemini-2.5-flash تلقائياً واستبدالها بنماذج مدعومة
+    const targetModel = model.includes('2.5') ? 'gemini-3.6-flash' : model;
+    const candidateModels = Array.from(new Set([targetModel, ...FALLBACK_MODELS]));
+
+    let lastError: any = null;
+
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i];
+      try {
+        const response = await ai.models.generateContent({
+          model: currentModel,
+          contents,
+          config,
+        });
+
+        return res.json({
+          text: response.text || '',
+          candidates: response.candidates,
+          usageMetadata: response.usageMetadata,
+          modelUsed: currentModel,
+        });
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Gemini Server] فشل التوليد بالنموذج ${currentModel}:`, err?.message || err);
+        // إذا كان الخطأ 503 (ضغط مؤقت) أو 404 (نموذج غير موجود) أو 429، نجرب النموذج التالي بعد انتظار وجيز
+        if (i < candidateModels.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      }
     }
+
+    console.error('Server Gemini Error (all models failed):', lastError?.message || lastError);
+    res.status(lastError?.status || 500).json({
+      error: lastError?.message || 'Gemini processing failed across all available models',
+    });
   });
 
   // Vite middleware in development vs static serving in production

@@ -73,6 +73,7 @@ export default function App() {
 
   // حالات أدوات الذكاء الاصطناعي (Gemini AI Suite)
   const [isMusaChatOpen, setIsMusaChatOpen] = useState<boolean>(false);
+  const [isMusaDismissed, setIsMusaDismissed] = useState<boolean>(false);
   const [isAdaptiveStoryOpen, setIsAdaptiveStoryOpen] = useState<boolean>(false);
   const [isPhonicsGateOpen, setIsPhonicsGateOpen] = useState<boolean>(false);
   const [isDrawingCanvasOpen, setIsDrawingCanvasOpen] = useState<boolean>(false);
@@ -993,30 +994,72 @@ export default function App() {
     }
   };
 
-  // زر موسى العائم مع الصورة الجديدة
-  const renderFloatingMusaButton = () => (
-    <div className="fixed bottom-6 left-6 z-40">
-      <button
-        type="button"
-        onClick={() => setIsMusaChatOpen(true)}
-        className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-700 text-white rounded-2xl shadow-xl shadow-emerald-700/30 border-2 border-amber-300 hover:scale-105 transition transform active:scale-95 cursor-pointer"
-        title="تحدث مع موسى الرفيق الذكي 🤖💬"
-      >
-        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-white/40 bg-white flex-shrink-0">
-          <img 
-            src={MOUSA_AVATAR_SRC} 
-            alt="موسى" 
-            className="w-full h-full object-cover" 
-            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
-          />
+  // زر الرفيق الصوتي بالذكاء الاصطناعي (Floating AI Companion Widget)
+  const renderFloatingMusaButton = () => {
+    // 1. حصر الظهور في بوابة الطالب فقط (Student Portal Only)
+    if (!currentUser || currentUser.role !== 'student') return null;
+
+    // 2. التحقق من حوكمة الذكاء الاصطناعي وسماحية ميزة الرفيق للطالب
+    if (!canUserUseAI(currentUser, aiGovernanceRules).allowed || !isAIFeatureAllowed('student').allowed) {
+      return null;
+    }
+
+    // 3. إذا أغلق الطالب الكرة العائمة مؤقتاً عبر زر الإغلاق الطائر
+    if (isMusaDismissed) return null;
+
+    return (
+      <div className="fixed bottom-6 left-6 z-40 animate-in fade-in zoom-in-95 duration-300">
+        <div className="relative group">
+          {/* زر إغلاق عائم صغير طاير بأعلى حافة الدائرة (Floating Close Badge) */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMusaDismissed(true);
+            }}
+            className="absolute -top-1.5 -left-1.5 z-20 w-6 h-6 rounded-full bg-slate-900/85 hover:bg-rose-600 text-white flex items-center justify-center shadow-md border-2 border-white transition-all duration-200 transform hover:scale-115 active:scale-90 cursor-pointer"
+            title="إخفاء موسى مؤقتاً (يمكنك استعادته في أي وقت)"
+            aria-label="إخفاء رفيق موسى"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+
+          {/* التلميح الطائر الناعم (Tooltip) عند التحويم */}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 transform group-hover:-translate-y-1 z-30 whitespace-nowrap">
+            <div className="bg-slate-900/95 text-white text-[11px] font-black px-3 py-1.5 rounded-xl shadow-xl flex items-center gap-1.5 border border-slate-700 backdrop-blur-xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span>تَحَدَّثْ مَعَ مُوسَى 💬</span>
+            </div>
+            <div className="w-2 h-2 bg-slate-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-slate-700" />
+          </div>
+
+          {/* الكبسولة الدائرية العائمة (Circular Floating Bubble) */}
+          <button
+            type="button"
+            onClick={() => setIsMusaChatOpen(true)}
+            className="relative w-16 h-16 rounded-full p-1 bg-gradient-to-tr from-emerald-600 via-teal-500 to-amber-300 shadow-xl shadow-emerald-950/20 border-2 border-white hover:shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 flex items-center justify-center cursor-pointer overflow-hidden focus:outline-hidden focus:ring-4 focus:ring-emerald-400/50"
+            title="تحدث مع موسى الرفيق الذكي 🤖💬"
+            aria-label="تحدث مع موسى الرفيق الذكي"
+          >
+            {/* الدائرة الحاوية لصورة شخصية موسى بشكل كامل وواضح */}
+            <div className="w-full h-full rounded-full overflow-hidden bg-white shadow-inner">
+              <img 
+                src={MOUSA_AVATAR_SRC} 
+                alt="موسى" 
+                className="w-full h-full object-cover rounded-full select-none transform group-hover:scale-105 transition-transform duration-300" 
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+            </div>
+
+            {/* نقطة حالة تفاعلية ناعمة في الزاوية */}
+            <div className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+            </div>
+          </button>
         </div>
-        <div className="text-right">
-          <span className="block text-xs font-black">تَحَدَّثْ مَعَ مُوسَى</span>
-          <span className="block text-[10px] text-amber-200 font-bold">الرفيق الصوتي بالذكاء الاصطناعي 🌟</span>
-        </div>
-      </button>
-    </div>
-  );
+      </div>
+    );
+  };
 
   const renderAIModals = () => {
     const activeStudentId = currentUser?.role === 'student' ? currentUser.id : (diagnosticStudent?.id || 'usr_student_mousa');
@@ -1351,19 +1394,8 @@ export default function App() {
               </button>
             </div>
           </div>
-
-          <div className="mt-4 pt-3 text-center">
-            <button
-              type="button"
-              onClick={() => setIsMusaChatOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs text-emerald-700 hover:text-emerald-800 font-extrabold bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-full border border-emerald-200 transition"
-            >
-              <Bot className="w-4 h-4 text-emerald-600" /> تحدث مع موسى الآن قبل تسجيل الدخول 🤖
-            </button>
-          </div>
         </div>
 
-        {renderFloatingMusaButton()}
         {renderAIModals()}
       </div>
     );
@@ -3104,7 +3136,6 @@ export default function App() {
         )}
 
         {renderSharedReader()}
-        {renderFloatingMusaButton()}
         {renderAIModals()}
       </div>
     );
@@ -3482,6 +3513,21 @@ export default function App() {
             >
               <Library className="w-4 h-4 text-emerald-400" /> رف القراءة ومكتبتي المصورة ({studentAssignedBooks.length})
             </button>
+
+            {/* زر استعادة رفيق موسى في شريط التبويبات عند الإخفاء */}
+            {isMusaDismissed && canUserUseAI(currentUser, aiGovernanceRules).allowed && isAIFeatureAllowed('student').allowed && (
+              <button
+                type="button"
+                onClick={() => setIsMusaDismissed(false)}
+                className="px-3.5 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 border border-emerald-200 shadow-xs animate-in fade-in duration-200 cursor-pointer"
+                title="إعادة إظهار رفيق موسى الصوتي العائم"
+              >
+                <span className="w-4 h-4 rounded-full overflow-hidden border border-emerald-300 flex-shrink-0">
+                  <img src={MOUSA_AVATAR_SRC} alt="موسى" className="w-full h-full object-cover" />
+                </span>
+                <span>إظهار رفيق موسى 💬</span>
+              </button>
+            )}
           </div>
 
           {studentTab === 'ai_studio' && (
@@ -4407,6 +4453,29 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* خيار استعادة رفيق موسى الصوتي في أسفل الصفحة إن رغب الطالب في الحديث معه */}
+          {isMusaDismissed && canUserUseAI(currentUser, aiGovernanceRules).allowed && isAIFeatureAllowed('student').allowed && (
+            <div className="mt-8 pt-4 border-t border-emerald-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100/90 animate-in fade-in duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-300 shadow-xs flex-shrink-0 bg-white p-0.5">
+                  <img src={MOUSA_AVATAR_SRC} alt="موسى" className="w-full h-full object-cover rounded-full" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800">هل ترغب في التحدث مع رفيقك الذكي موسى؟</h4>
+                  <p className="text-[11px] text-slate-500 font-medium">رفيقك الصوتي موسى جاهز دائماً لمساعدتك في فهم الدروس ومرافقتك في رحلتك التعليمية.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMusaDismissed(false)}
+                className="inline-flex items-center gap-1.5 font-black text-xs text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 px-4 py-2.5 rounded-xl shadow-md shadow-emerald-600/20 transition cursor-pointer flex-shrink-0"
+              >
+                <Bot className="w-4 h-4" />
+                إظهار رفيق موسى الصوتي 💬
+              </button>
+            </div>
+          )}
         </main>
         {renderSharedReader()}
         {renderFloatingMusaButton()}
@@ -4642,7 +4711,6 @@ export default function App() {
           )}
         </main>
         {renderSharedReader()}
-        {renderFloatingMusaButton()}
         {renderAIModals()}
       </div>
     );
@@ -4651,7 +4719,6 @@ export default function App() {
   return (
     <>
       {renderSharedReader()}
-      {renderFloatingMusaButton()}
       {renderAIModals()}
     </>
   );

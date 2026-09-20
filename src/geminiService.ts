@@ -20,8 +20,9 @@ import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
 const PRIMARY_MODEL = 'gemini-3.8-flash';
 const CANDIDATE_MODELS = [
   'gemini-3.8-flash',
+  'gemini-3.6-flash',
   'gemini-flash-latest',
-  'gemini-2.5-flash',
+  'gemini-3.1-flash-lite',
 ];
 
 const getAIClient = (): any => {
