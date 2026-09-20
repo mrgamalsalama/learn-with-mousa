@@ -24,35 +24,35 @@ const CANDIDATE_MODELS = [
   'gemini-3.1-flash-lite',
 ];
 
-const getAIClient = (): any => {
-  return { isAvailable: true };
-};
+// دالة الحصول على مفتاح Gemini من المتغيرات البيئية (دعم Vercel و Vite و Node)
+export function getGeminiApiKey(): string {
+  try {
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
+    const viteKey = metaEnv?.VITE_GEMINI_API_KEY;
+    if (viteKey && typeof viteKey === 'string' && viteKey.trim().length > 0) {
+      return viteKey.trim();
+    }
+  } catch {}
 
-// دالة الاتصال بالخادم الآمن لاستدعاء نماذج Gemini وحماية المفاتيح البرمجية
-async function callServerGenerateContent(params: {
-  model: string;
-  contents: any;
-  config?: any;
-}): Promise<any> {
-  const res = await fetch('/api/gemini/generate', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(params),
-  });
+  try {
+    const procKey = typeof process !== 'undefined' ? (process.env?.GEMINI_API_KEY || (process.env as any)?.VITE_GEMINI_API_KEY) : null;
+    if (procKey && typeof procKey === 'string' && procKey.trim().length > 0) {
+      return procKey.trim();
+    }
+  } catch {}
 
-  if (!res.ok) {
-    let errorMsg = `Server generation error (${res.status})`;
-    try {
-      const errJson = await res.json();
-      if (errJson?.error) errorMsg = errJson.error;
-    } catch {}
-    throw new Error(errorMsg);
-  }
-
-  return await res.json();
+  return '';
 }
+
+// إنشاء عميل GoogleGenAI المباشر
+let directAIClient: GoogleGenAI | null = null;
+export const getAIClient = (): GoogleGenAI => {
+  if (!directAIClient) {
+    const apiKey = getGeminiApiKey();
+    directAIClient = new GoogleGenAI({ apiKey });
+  }
+  return directAIClient;
+};
 
 // دالة مساعدة لتنظيف كتل JSON المستلمة
 function cleanJsonText(raw: string): string {
@@ -86,7 +86,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد مع دعم التبديل التلقائي بين النماذج لضمان أقصى اعتمادية
+// دالة مساعدة لتنفيذ طلبات التوليد عبر SDK مباشرة مع دعم التبديل التلقائي بين النماذج
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -98,23 +98,38 @@ async function generateContentWithFallback(
   // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
   assertAIPermitted(params.targetRole || 'student');
 
-  try {
-    // المحاولة الأولى عبر الخادم الذي يتولى التبديل الذكي بين النماذج الحديثة
-    return await callServerGenerateContent({
-      model: PRIMARY_MODEL,
-      contents: params.contents,
-      config: params.config,
-    });
-  } catch (err: any) {
-    console.warn('[Gemini Client] المحاولة الأولى واجهت صعوبة، جاري المحاولة بنموذج فلاش الخفيف:', err?.message || err);
-    // انتظار مهلة وجيزة عند الضغط المؤقت ثم المحاولة بالنموذج الخفيف عالي السعة
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    return await callServerGenerateContent({
-      model: 'gemini-3.1-flash-lite',
-      contents: params.contents,
-      config: params.config,
-    });
+  const ai = getAIClient();
+  let lastError: any = null;
+
+  for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
+    const modelName = CANDIDATE_MODELS[i];
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: params.contents,
+        config: params.config,
+      });
+
+      return {
+        text: response.text || '',
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata,
+        modelUsed: modelName,
+      };
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err || '');
+      console.warn(`[Gemini Direct] تعذر الاستدعاء بالنموذج ${modelName}:`, errMsg);
+
+      // في حال وجود نموذج تالٍ، ننتظر مهلة قصيرة عند الضغط ثم نجرب النموذج التالي
+      if (i < CANDIDATE_MODELS.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    }
   }
+
+  console.error('[Gemini Direct] فشل الاستدعاء بكافة النماذج:', lastError);
+  throw lastError || new Error('فشل الاتصال بنماذج الذكاء الاصطناعي');
 }
 
 // ================= 1. الرفيق الصوتي/المحادثة مع موسى =================
@@ -1383,7 +1398,7 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
       // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
       const promptText = `Read the following Arabic text naturally: ${cleanText}`;
 
-      const response = await callServerGenerateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-3.1-flash-tts-preview',
         contents: [{ parts: [{ text: promptText }] }],
         config: {
