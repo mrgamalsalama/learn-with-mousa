@@ -35,10 +35,9 @@ async function startServer() {
   });
 
   // Gemini API Proxy with intelligent fallback across modern models
-  const FALLBACK_MODELS = [
+  const TEXT_FALLBACK_MODELS = [
     'gemini-3.8-flash',
     'gemini-3.6-flash',
-    'gemini-flash-latest',
     'gemini-3.1-flash-lite',
   ];
 
@@ -46,40 +45,75 @@ async function startServer() {
     const { model = 'gemini-3.8-flash', contents, config } = req.body;
     const ai = getAIClient();
 
-    // استبعاد النماذج الملغاة مثل gemini-2.5-flash تلقائياً واستبدالها بنماذج مدعومة
-    const targetModel = model.includes('2.5') ? 'gemini-3.6-flash' : model;
-    const candidateModels = Array.from(new Set([targetModel, ...FALLBACK_MODELS]));
+    // التحقق مما إذا كان الطلب مخصصاً للصوت أو تحويل النص لكلام (TTS)
+    const isAudioRequest =
+      model.includes('tts') ||
+      (Array.isArray(config?.responseModalities) && config.responseModalities.includes('AUDIO'));
+
+    // تحديد قائمة النماذج المناسبة لنوع الطلب
+    let candidateModels: string[];
+    if (isAudioRequest) {
+      candidateModels = ['gemini-3.1-flash-tts-preview'];
+    } else {
+      // استبعاد أي نماذج ملغاة أو غير مستقرة مثل gemini-2.5 أو gemini-flash-latest
+      const cleanModel = model.includes('2.5') || model.includes('flash-latest')
+        ? 'gemini-3.8-flash'
+        : model;
+      candidateModels = Array.from(new Set([cleanModel, ...TEXT_FALLBACK_MODELS]));
+    }
 
     let lastError: any = null;
 
     for (let i = 0; i < candidateModels.length; i++) {
       const currentModel = candidateModels[i];
-      try {
-        const response = await ai.models.generateContent({
-          model: currentModel,
-          contents,
-          config,
-        });
+      // محاولة تنفيذ الطلب حتى مرتين للنموذج عند وجود ضغط لحظي
+      for (let attempt = 1; attempt <= (isAudioRequest ? 2 : 1); attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model: currentModel,
+            contents,
+            config,
+          });
 
-        return res.json({
-          text: response.text || '',
-          candidates: response.candidates,
-          usageMetadata: response.usageMetadata,
-          modelUsed: currentModel,
-        });
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[Gemini Server] فشل التوليد بالنموذج ${currentModel}:`, err?.message || err);
-        // إذا كان الخطأ 503 (ضغط مؤقت) أو 404 (نموذج غير موجود) أو 429، نجرب النموذج التالي بعد انتظار وجيز
-        if (i < candidateModels.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          return res.json({
+            text: response.text || '',
+            candidates: response.candidates,
+            usageMetadata: response.usageMetadata,
+            modelUsed: currentModel,
+          });
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err?.message || String(err || '');
+          const isDemandSpike =
+            err?.status === 503 ||
+            err?.status === 429 ||
+            errMsg.includes('503') ||
+            errMsg.includes('high demand') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('RESOURCE_EXHAUSTED');
+
+          console.warn(`[Gemini Server] محاولة ${attempt} بالنموذج ${currentModel} فشلت:`, errMsg);
+
+          // عند حدوث ضغط مؤقت، ننتظر مهلة زمنية قصيرة قبل إعادة المحاولة أو الانتقال للنموذج البديل
+          if (isDemandSpike) {
+            const backoffMs = 500 + Math.floor(Math.random() * 400);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          } else {
+            // خطأ بنيوي لا يتعلق بالضغط، ننتقل فوراً للنموذج التالي
+            break;
+          }
         }
       }
     }
 
-    console.error('Server Gemini Error (all models failed):', lastError?.message || lastError);
-    res.status(lastError?.status || 500).json({
-      error: lastError?.message || 'Gemini processing failed across all available models',
+    console.error('Server Gemini Error (all models/attempts failed):', lastError?.message || lastError);
+    const is503 = lastError?.status === 503 || String(lastError?.message || '').includes('503') || String(lastError?.message || '').includes('high demand');
+    const userFriendlyError = is503
+      ? 'خوادم الذكاء الاصطناعي تشهد ضغطاً مؤقتاً في هذه اللحظة، يرجى إعادة المحاولة بعد ثوانٍ قليلة.'
+      : (lastError?.message || 'Gemini processing failed');
+
+    res.status(lastError?.status || (is503 ? 503 : 500)).json({
+      error: userFriendlyError,
     });
   });
 

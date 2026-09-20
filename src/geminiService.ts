@@ -21,7 +21,6 @@ const PRIMARY_MODEL = 'gemini-3.8-flash';
 const CANDIDATE_MODELS = [
   'gemini-3.8-flash',
   'gemini-3.6-flash',
-  'gemini-flash-latest',
   'gemini-3.1-flash-lite',
 ];
 
@@ -99,23 +98,23 @@ async function generateContentWithFallback(
   // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
   assertAIPermitted(params.targetRole || 'student');
 
-  let lastError: any = null;
-
-  for (const modelName of CANDIDATE_MODELS) {
-    try {
-      return await callServerGenerateContent({
-        model: modelName,
-        contents: params.contents,
-        config: params.config,
-      });
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`تعذر استدعاء النموذج ${modelName}، جاري المحاولة بنموذج بديل:`, err?.status || err?.message || err);
-    }
+  try {
+    // المحاولة الأولى عبر الخادم الذي يتولى التبديل الذكي بين النماذج الحديثة
+    return await callServerGenerateContent({
+      model: PRIMARY_MODEL,
+      contents: params.contents,
+      config: params.config,
+    });
+  } catch (err: any) {
+    console.warn('[Gemini Client] المحاولة الأولى واجهت صعوبة، جاري المحاولة بنموذج فلاش الخفيف:', err?.message || err);
+    // انتظار مهلة وجيزة عند الضغط المؤقت ثم المحاولة بالنموذج الخفيف عالي السعة
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return await callServerGenerateContent({
+      model: 'gemini-3.1-flash-lite',
+      contents: params.contents,
+      config: params.config,
+    });
   }
-
-  console.error('فشل الاستدعاء بكافة النماذج المتاحة:', lastError);
-  throw lastError;
 }
 
 // ================= 1. الرفيق الصوتي/المحادثة مع موسى =================
