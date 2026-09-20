@@ -42,8 +42,16 @@ async function startServer() {
   ];
 
   app.post('/api/gemini/generate', async (req, res) => {
-    const { model = 'gemini-3.8-flash', contents, config } = req.body;
-    const ai = getAIClient();
+    try {
+      const { model = 'gemini-3.8-flash', contents, config } = req.body;
+      let ai: GoogleGenAI;
+      try {
+        ai = getAIClient();
+      } catch (err: any) {
+        return res.status(503).json({
+          error: 'GEMINI_API_KEY is not configured on the server. Please provide it in environment settings.',
+        });
+      }
 
     // التحقق مما إذا كان الطلب مخصصاً للصوت أو تحويل النص لكلام (TTS)
     const isAudioRequest =
@@ -115,6 +123,10 @@ async function startServer() {
     res.status(lastError?.status || (is503 ? 503 : 500)).json({
       error: userFriendlyError,
     });
+    } catch (topErr: any) {
+      console.error('Unhandled Gemini endpoint error:', topErr);
+      res.status(500).json({ error: topErr?.message || 'Server error' });
+    }
   });
 
   // Vite middleware in development vs static serving in production

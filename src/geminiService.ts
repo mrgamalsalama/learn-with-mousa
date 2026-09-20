@@ -98,7 +98,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد عبر SDK مباشرة مع دعم التبديل التلقائي المتتالي بين النماذج (Waterfall Fallback)
+// دالة مساعدة لتنفيذ طلبات التوليد عبر خادم التطبيق الآمن (Server-Side Proxy) مع دعم التبديل التلقائي
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -109,6 +109,43 @@ async function generateContentWithFallback(
 ) {
   // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
   assertAIPermitted(params.targetRole || 'student');
+
+  // المحاولة الأولى: عبر خادم التطبيق الداخلي Server Proxy (/api/gemini/generate)
+  try {
+    const serverRes = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.8-flash',
+        contents: params.contents,
+        config: params.config,
+      }),
+    });
+
+    if (serverRes.ok) {
+      const data = await serverRes.json();
+      return {
+        text: data.text || '',
+        candidates: data.candidates,
+        usageMetadata: data.usageMetadata,
+        modelUsed: data.modelUsed || 'gemini-3.8-flash',
+      };
+    } else {
+      const errorJson = await serverRes.json().catch(() => ({}));
+      console.warn('[Gemini Server Proxy] استجاب الخادم بحالة غير ناجحة:', serverRes.status, errorJson);
+      const apiKey = getGeminiApiKey();
+      if (!apiKey) {
+        throw new Error(errorJson?.error || 'خادم الذكاء الاصطناعي غير متصل حالياً. يرجى التأكد من إعداد GEMINI_API_KEY.');
+      }
+    }
+  } catch (proxyErr: any) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      console.error('[Gemini Cascade] تعذر الاتصال عبر خادم التطبيق ولا يوجد مفتاح محلي:', proxyErr);
+      throw proxyErr;
+    }
+    console.warn('[Gemini Cascade] فشل الاستدعاء عبر الخادم، جاري المحاولة عبر مفتاح العميل المباشر...');
+  }
 
   const ai = getAIClient();
   let lastError: any = null;
@@ -1405,11 +1442,58 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
   const fetchPromise = (async (): Promise<AudioBuffer | null> => {
     try {
       assertAIPermitted('student');
-      const ai = getAIClient();
-      if (!ai) return null;
 
       // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
       const promptText = `Read the following Arabic text naturally: ${cleanText}`;
+
+      // 1. المحاولة عبر خادم التطبيق الآمن (Server-Side Proxy)
+      try {
+        const serverRes = await fetch('/api/gemini/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gemini-3.1-flash-tts-preview',
+            contents: [{ parts: [{ text: promptText }] }],
+            config: {
+              responseModalities: [Modality.AUDIO],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: 'Puck',
+                  },
+                },
+              },
+            },
+          }),
+        });
+
+        if (serverRes.ok) {
+          const data = await serverRes.json();
+          const candidate = data.candidates?.[0];
+          const part = candidate?.content?.parts?.[0];
+          const base64Data = part?.inlineData?.data;
+
+          if (base64Data) {
+            const pcmBytes = base64ToUint8Array(base64Data);
+            const audioCtx = getAudioContext();
+            const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
+
+            mousaAudioCache.set(cleanText, {
+              buffer,
+              pcm: pcmBytes,
+              timestamp: Date.now(),
+            });
+            saveToIndexedDBCache(cleanText, pcmBytes);
+
+            return buffer;
+          }
+        }
+      } catch (proxyAudioErr) {
+        console.warn('[Gemini TTS Proxy] تعذر جلب الصوت عبر خادم التطبيق، جاري فحص البدائل...', proxyAudioErr);
+      }
+
+      const ai = getAIClient();
+      if (!ai) return null;
 
       let lastAudioError: any = null;
 
