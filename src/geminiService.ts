@@ -18,6 +18,10 @@ import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
 
 // 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Fallback Waterfall)
 export const TEXT_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-latest',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-1.5-flash',
@@ -28,6 +32,7 @@ export const TEXT_MODELS = [
 // 2. نماذج الصوت المعتمدة لـ TTS
 export const AUDIO_MODELS = [
   'gemini-3.1-flash-tts-preview',
+  'gemini-3.6-flash',
   'gemini-2.5-flash'
 ];
 
