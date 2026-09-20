@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Pin, Heart, MessageCircle, Send, Plus, Trash2, CheckCircle2, 
   X, Image as ImageIcon, Mic, Square, Play, Pause, Sparkles, 
   Settings, Lock, Unlock, ShieldAlert, Check, RefreshCw, AlertCircle,
-  Eye, Edit3, Volume2, Wand2, Palette, Eraser, RotateCcw, Share2, Layers
+  Eye, Edit3, Volume2, Wand2, Palette, Eraser, RotateCcw, Share2, Layers, Globe
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, PadletBoard, PadletPost, 
@@ -13,7 +13,8 @@ import {
   getPadletBoards, savePadletBoard, deletePadletBoard, 
   getPadletPosts, savePadletPost, updatePadletPostStatus, 
   togglePadletPostLike, addPadletComment, deletePadletPost, 
-  togglePadletPostPin, syncPadletBoardsFromCloud, syncPadletPostsFromCloud
+  togglePadletPostPin, syncPadletBoardsFromCloud, syncPadletPostsFromCloud,
+  normalizeGrade, isGradeMatching
 } from '../storage';
 import { supabase } from '../supabaseClient';
 import { autoTashkeelText } from '../geminiService';
@@ -77,42 +78,74 @@ const THEME_STYLES: Record<PadletTheme, {
 };
 
 const COLOR_STYLES: Record<PadletCardColor, {
+  name: string;
   bg: string;
   border: string;
   header: string;
   badge: string;
+  dot: string;
+  bgClass: string;
+  textClass: string;
+  badgeBg: string;
 }> = {
   yellow: {
+    name: 'أصفر كلاسيكي',
     bg: 'bg-amber-100',
     border: 'border-amber-300',
     header: 'text-amber-950',
-    badge: 'bg-amber-200 text-amber-900'
+    badge: 'bg-amber-200 text-amber-900',
+    dot: 'bg-amber-500',
+    bgClass: 'bg-amber-100',
+    textClass: 'text-amber-950',
+    badgeBg: 'bg-amber-500'
   },
   pink: {
+    name: 'وردي لطيف',
     bg: 'bg-rose-100',
     border: 'border-rose-300',
     header: 'text-rose-950',
-    badge: 'bg-rose-200 text-rose-900'
+    badge: 'bg-rose-200 text-rose-900',
+    dot: 'bg-rose-500',
+    bgClass: 'bg-rose-100',
+    textClass: 'text-rose-950',
+    badgeBg: 'bg-rose-500'
   },
   mint: {
+    name: 'نعناعي منعش',
     bg: 'bg-emerald-100',
     border: 'border-emerald-300',
     header: 'text-emerald-950',
-    badge: 'bg-emerald-200 text-emerald-900'
+    badge: 'bg-emerald-200 text-emerald-900',
+    dot: 'bg-emerald-500',
+    bgClass: 'bg-emerald-100',
+    textClass: 'text-emerald-950',
+    badgeBg: 'bg-emerald-500'
   },
   blue: {
+    name: 'أزرق سماوي',
     bg: 'bg-sky-100',
     border: 'border-sky-300',
     header: 'text-sky-950',
-    badge: 'bg-sky-200 text-sky-900'
+    badge: 'bg-sky-200 text-sky-900',
+    dot: 'bg-sky-500',
+    bgClass: 'bg-sky-100',
+    textClass: 'text-sky-950',
+    badgeBg: 'bg-sky-500'
   },
   purple: {
+    name: 'بنفسجي هادئ',
     bg: 'bg-purple-100',
     border: 'border-purple-300',
     header: 'text-purple-950',
-    badge: 'bg-purple-200 text-purple-900'
+    badge: 'bg-purple-200 text-purple-900',
+    dot: 'bg-purple-500',
+    bgClass: 'bg-purple-100',
+    textClass: 'text-purple-950',
+    badgeBg: 'bg-purple-500'
   }
 };
+
+const CARD_COLOR_MAP = COLOR_STYLES;
 
 export const PadletBoardView: React.FC<PadletBoardProps> = ({
   currentUser,
@@ -130,8 +163,9 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const [posts, setPosts] = useState<PadletPost[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // مرشحات العرض
+  // مرشحات وخيارات العرض
   const [filterPendingOnly, setFilterPendingOnly] = useState<boolean>(false);
+  const [showAllBoards, setShowAllBoards] = useState<boolean>(false);
 
   // نوافذ التحكم
   const [isCreateBoardModalOpen, setIsCreateBoardModalOpen] = useState<boolean>(false);
@@ -139,13 +173,15 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const [isCreatePostModalOpen, setIsCreatePostModalOpen] = useState<boolean>(false);
   const [expandedCommentsPostId, setExpandedCommentsPostId] = useState<string | null>(null);
   const [isSubmittingPost, setIsSubmittingPost] = useState<boolean>(false);
+  const [isSubmittingBoard, setIsSubmittingBoard] = useState<boolean>(false);
 
   // استمارة إنشاء / تعديل اللوحة
   const [boardFormTitle, setBoardFormTitle] = useState<string>('');
   const [boardFormDescription, setBoardFormDescription] = useState<string>('');
-  const [boardFormGrade, setBoardFormGrade] = useState<GradeLevel>(targetGrade);
+  const [boardFormGrade, setBoardFormGrade] = useState<GradeLevel | string>(targetGrade);
   const [boardFormTrack, setBoardFormTrack] = useState<ArabicTrack>(targetTrack);
   const [boardFormTheme, setBoardFormTheme] = useState<PadletTheme>('corkboard');
+  const [boardFormColor, setBoardFormColor] = useState<string>('yellow');
   const [boardFormAllowComments, setBoardFormAllowComments] = useState<boolean>(true);
   const [boardFormRequireApproval, setBoardFormRequireApproval] = useState<boolean>(false);
   const [boardFormIsLocked, setBoardFormIsLocked] = useState<boolean>(false);
@@ -181,17 +217,58 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const [playingAudioPostId, setPlayingAudioPostId] = useState<string | null>(null);
   const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
-  // اللوحة الحالية
-  const activeBoard = boards.find(b => b.id === selectedBoardId) || boards[0] || null;
+  // تحويل معرف الصف الدراسي إلى نص عربي واضح ومفهوم
+  const getGradeDisplayLabel = (g?: string | null): string => {
+    if (!g) return 'عام لجميع الصفوف 🌟';
+    const norm = normalizeGrade(g);
+    if (norm === 'all') return 'عام لجميع الصفوف 🌟';
+    if (norm === 'kg') return 'الروضة والتمهيدي';
+    if (norm === 'grade-1') return 'الصف الأول';
+    if (norm === 'grade-2') return 'الصف الثاني';
+    if (norm === 'grade-3') return 'الصف الثالث';
+    if (norm === 'grade-4') return 'الصف الرابع';
+    if (norm === 'grade-5') return 'الصف الخامس';
+    if (norm === 'grade-6') return 'الصف السادس';
+    if (norm === 'grade-7') return 'الصف السابع';
+    if (norm === 'grade-8') return 'الصف الثامن';
+    if (norm === 'grade-9') return 'الصف التاسع';
+    if (norm === 'grade-10') return 'الصف العاشر';
+    if (norm === 'grade-11') return 'الصف الحادي عشر';
+    if (norm === 'grade-12') return 'الصف الثاني عشر';
+    return g;
+  };
 
-  // تهيئة وتحديد اللوحة الملائمة حسب الصف
+  // مطابقة الحوائط المتوافقة مع صف الطالب أو الحوائط العامة
+  const matchingBoards = useMemo(() => {
+    return boards.filter(b => isGradeMatching(b.grade || b.target_grade, targetGrade));
+  }, [boards, targetGrade]);
+
+  // الحوائط الظاهرة بالقائمة: إما المخصصة للصف أو كل الحوائط إذا رغب الطالب بذلك أو كان معلماً
+  const visibleBoards = useMemo(() => {
+    if (isTeacher || showAllBoards || matchingBoards.length === 0) {
+      return boards;
+    }
+    return matchingBoards;
+  }, [boards, matchingBoards, isTeacher, showAllBoards]);
+
+  // اللوحة الحالية النشطة
+  const activeBoard = useMemo(() => {
+    if (selectedBoardId) {
+      const found = boards.find(b => b.id === selectedBoardId);
+      if (found) return found;
+    }
+    if (matchingBoards.length > 0) return matchingBoards[0];
+    if (visibleBoards.length > 0) return visibleBoards[0];
+    return boards[0] || null;
+  }, [boards, selectedBoardId, matchingBoards, visibleBoards]);
+
+  // تهيئة وتحديد اللوحة الملائمة حسب الصف فور التحميل
   useEffect(() => {
     const loadedBoards = getPadletBoards();
     setBoards(loadedBoards);
 
     if (loadedBoards.length > 0) {
-      // محاولة اختيار لوحة الصف المناسب
-      const matched = loadedBoards.find(b => b.grade === targetGrade);
+      const matched = loadedBoards.find(b => isGradeMatching(b.grade || b.target_grade, targetGrade));
       if (matched) {
         setSelectedBoardId(matched.id);
       } else {
@@ -199,13 +276,23 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       }
     }
 
-    // مزامنة سحابية خلفية
+    // مزامنة سحابية خلفية وتحديث قائمة الحوائط فوراً
     syncPadletBoardsFromCloud().then(cloudBoards => {
       if (cloudBoards && cloudBoards.length > 0) {
         setBoards(cloudBoards);
+        setSelectedBoardId(prevId => {
+          if (prevId && cloudBoards.some(b => b.id === prevId)) {
+            const current = cloudBoards.find(b => b.id === prevId);
+            if (current && (isGradeMatching(current.grade || current.target_grade, targetGrade) || isTeacher)) {
+              return prevId;
+            }
+          }
+          const matched = cloudBoards.find(b => isGradeMatching(b.grade || b.target_grade, targetGrade));
+          return matched ? matched.id : cloudBoards[0].id;
+        });
       }
     });
-  }, [targetGrade]);
+  }, [targetGrade, isTeacher]);
 
   // تحميل منشورات اللوحة النشطة
   const refreshPosts = () => {
@@ -581,7 +668,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     setCommentInputs(prev => ({ ...prev, [postId]: '' }));
   };
 
-  // إنشاء حائط جديد للمعلم
+  // إنشاء حائط جديد للمعلم مع دعم اللون الافتراضي ومطابقة الصفوف
   const handleSaveNewBoard = async () => {
     if (!boardFormTitle.trim()) {
       alert('يرجى كتابة عنوان للحائط التفاعلي.');
@@ -595,6 +682,8 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       teacher_id: currentUser.id,
       teacher_name: currentUser.name,
       grade: boardFormGrade,
+      target_grade: boardFormGrade,
+      color: boardFormColor || 'yellow',
       track: boardFormTrack,
       theme: boardFormTheme,
       allow_comments: boardFormAllowComments,
@@ -603,13 +692,35 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       created_at: new Date().toISOString()
     };
 
-    await savePadletBoard(newBoard);
-    setSelectedBoardId(newBoard.id);
-    setIsCreateBoardModalOpen(false);
+    setIsSubmittingBoard(true);
+    try {
+      // حفظ محلي وسحابي مع إعادة المحاولة التلقائية
+      const res = await savePadletBoard(newBoard);
+      if (res?.error) {
+        console.warn('تنبيه أثناء حفظ الحائط في السحابة:', res.error);
+      }
 
-    // تصفير الاستمارة
-    setBoardFormTitle('');
-    setBoardFormDescription('');
+      // تحديث فوري فوري للقائمة واختيار الحائط الجديد مباشرة
+      setBoards(prev => [newBoard, ...prev.filter(b => b.id !== newBoard.id)]);
+      setSelectedBoardId(newBoard.id);
+      setIsCreateBoardModalOpen(false);
+
+      // مزامنة سحابية للتأكيد
+      syncPadletBoardsFromCloud().then(b => {
+        if (b && b.length > 0) setBoards(b);
+      });
+
+      try {
+        confetti({ particleCount: 40, spread: 60, origin: { y: 0.6 } });
+      } catch (e) {}
+
+      // تصفير الاستمارة
+      setBoardFormTitle('');
+      setBoardFormDescription('');
+      setBoardFormColor('yellow');
+    } finally {
+      setIsSubmittingBoard(false);
+    }
   };
 
   // تعديل إعدادات الحائط الحالي
@@ -620,6 +731,9 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       ...activeBoard,
       title: boardFormTitle.trim() || activeBoard.title,
       description: boardFormDescription.trim(),
+      grade: boardFormGrade,
+      target_grade: boardFormGrade,
+      color: boardFormColor || activeBoard.color || 'yellow',
       theme: boardFormTheme,
       allow_comments: boardFormAllowComments,
       require_approval: boardFormRequireApproval,
@@ -627,6 +741,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     };
 
     await savePadletBoard(updated);
+    setBoards(prev => prev.map(b => b.id === updated.id ? updated : b));
     setIsEditBoardModalOpen(false);
   };
 
@@ -635,7 +750,9 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     if (!activeBoard) return;
     setBoardFormTitle(activeBoard.title);
     setBoardFormDescription(activeBoard.description || '');
+    setBoardFormGrade(activeBoard.grade || activeBoard.target_grade || targetGrade);
     setBoardFormTheme(activeBoard.theme);
+    setBoardFormColor(activeBoard.color || 'yellow');
     setBoardFormAllowComments(activeBoard.allow_comments);
     setBoardFormRequireApproval(activeBoard.require_approval);
     setBoardFormIsLocked(activeBoard.is_locked);
@@ -703,20 +820,46 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
 
         {/* أدوات التحكم باللوحات */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* اختيار اللوحة للصفوف المختلفة */}
-          {boards.length > 1 && (
-            <select
-              value={selectedBoardId}
-              onChange={(e) => setSelectedBoardId(e.target.value)}
-              className="bg-white/90 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+          {/* زر التبديل بين حوائط الصف وعرض كل الحوائط للطلاب */}
+          {!isTeacher && (
+            <button
+              onClick={() => setShowAllBoards(!showAllBoards)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs border ${
+                showAllBoards
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-amber-500/20'
+                  : 'bg-white/90 hover:bg-white text-slate-700 border-slate-200'
+              }`}
+              title={showAllBoards ? 'الرجوع لحوائط صفي فقط' : 'عرض كل الحوائط التفاعلية للمدرسة'}
             >
-              {boards.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.title} ({b.grade})
-                </option>
-              ))}
-            </select>
+              <Globe className="w-3.5 h-3.5" />
+              <span>{showAllBoards ? 'حوائط صفي 🎯' : 'عرض كل الحوائط 🌐'}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${showAllBoards ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {showAllBoards ? boards.length : matchingBoards.length}
+              </span>
+            </button>
           )}
+
+          {/* اختيار اللوحة التفاعلية من اللوحات المتاحة */}
+          {visibleBoards.length > 1 ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-600 hidden md:inline">الحائط:</span>
+              <select
+                value={activeBoard?.id || ''}
+                onChange={(e) => setSelectedBoardId(e.target.value)}
+                className="bg-white/95 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500 max-w-[220px] sm:max-w-xs truncate"
+              >
+                {visibleBoards.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.title} ({getGradeDisplayLabel(b.grade || b.target_grade)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : visibleBoards.length === 1 ? (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/70 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-700">
+              <span>🏷️ {getGradeDisplayLabel(visibleBoards[0].grade || visibleBoards[0].target_grade)}</span>
+            </div>
+          ) : null}
 
           {/* زر التحديث اللحظي للجميع */}
           <button
@@ -785,6 +928,27 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
 
       {/* مساحة الحائط التفاعلية (Canvas / Wall Body) */}
       <div className={`flex-1 p-6 relative overflow-y-auto ${activeTheme.bgClass} min-h-[580px]`}>
+        {/* تنبيه ذكي إذا لم تكن هناك حوائط مخصصة للصف تحديداً */}
+        {!isTeacher && matchingBoards.length === 0 && (
+          <div className="mb-6 p-3.5 rounded-2xl bg-white/90 backdrop-blur-md border border-amber-300 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs text-amber-950 animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">🌟</span>
+              <div>
+                <span className="font-black block text-amber-900">يتم حالياً عرض الحوائط العامة المتاحة لكافة الطلاب</span>
+                <span className="text-[11px] text-amber-800/80">لم ينشئ المعلم بعد حائطاً خاصاً بصفك ({getGradeDisplayLabel(targetGrade)}) تحديداً.</span>
+              </div>
+            </div>
+            {!showAllBoards && (
+              <button
+                onClick={() => setShowAllBoards(true)}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition flex-shrink-0 shadow-xs"
+              >
+                عرض كل جدران المدرسة 🌐
+              </button>
+            )}
+          </div>
+        )}
+
         {/* شريط تنبيه إذا كان الحائط مقفلاً */}
         {activeBoard?.is_locked && (
           <div className="mb-6 p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between shadow-xs">
@@ -1050,7 +1214,14 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
         {(!activeBoard?.is_locked || isTeacher) && (
           <div className="fixed bottom-8 left-8 z-40">
             <button
-              onClick={() => setIsCreatePostModalOpen(true)}
+              onClick={() => {
+                if (activeBoard?.color && ['yellow', 'pink', 'mint', 'blue', 'purple'].includes(activeBoard.color)) {
+                  setPostColor(activeBoard.color as PadletCardColor);
+                } else {
+                  setPostColor('yellow');
+                }
+                setIsCreatePostModalOpen(true);
+              }}
               className="group flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white font-black text-sm shadow-xl shadow-orange-500/30 hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200"
             >
               <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
@@ -1368,6 +1539,59 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">الصف الدراسي المستهدف:</label>
+                <select
+                  value={boardFormGrade}
+                  onChange={(e) => setBoardFormGrade(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                >
+                  <option value="all">جميع الصفوف (حائط عام لجميع طلاب المدرسة 🌟)</option>
+                  <option value="grade-1">الصف الأول الابتدائي</option>
+                  <option value="grade-2">الصف الثاني الابتدائي</option>
+                  <option value="grade-3">الصف الثالث الابتدائي</option>
+                  <option value="grade-4">الصف الرابع الابتدائي</option>
+                  <option value="grade-5">الصف الخامس الابتدائي</option>
+                  <option value="grade-6">الصف السادس الابتدائي</option>
+                  <option value="grade-7">الصف السابع</option>
+                  <option value="grade-8">الصف الثامن</option>
+                  <option value="grade-9">الصف التاسع</option>
+                  <option value="grade-10">الصف العاشر</option>
+                  <option value="grade-11">الصف الحادي عشر</option>
+                  <option value="grade-12">الصف الثاني عشر</option>
+                  <option value="kg">مرحلة الروضة والتمهيدي</option>
+                </select>
+              </div>
+
+              {/* اختيار اللون الافتراضي للحائط */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>اللون الافتراضي للحائط والبطاقات:</span>
+                  <span className="text-[10px] text-slate-500 font-normal">الافتراضي: أصفر (yellow)</span>
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(Object.keys(CARD_COLOR_MAP) as PadletCardColor[]).map((cKey) => {
+                    const isSel = (boardFormColor || 'yellow') === cKey;
+                    return (
+                      <button
+                        key={cKey}
+                        type="button"
+                        onClick={() => setBoardFormColor(cKey)}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 ${
+                          CARD_COLOR_MAP[cKey].bgClass
+                        } ${CARD_COLOR_MAP[cKey].textClass} ${
+                          isSel ? 'ring-2 ring-amber-500 font-black shadow-xs' : 'opacity-80 hover:opacity-100'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full ${CARD_COLOR_MAP[cKey].badgeBg}`} />
+                        <span>{CARD_COLOR_MAP[cKey].name}</span>
+                        {isSel && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* اختيار الثيم والخلفية */}
               <div>
                 <label className="block font-bold text-slate-700 mb-2">ثيم وخلفية الحائط:</label>
@@ -1497,14 +1721,23 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={boardFormGrade}
-                    onChange={(e) => setBoardFormGrade(e.target.value as GradeLevel)}
+                    onChange={(e) => setBoardFormGrade(e.target.value)}
                     className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-slate-50"
                   >
+                    <option value="all">جميع الصفوف (حائط عام لكل المدرسة 🌟)</option>
                     <option value="grade-1">الصف الأول الابتدائي</option>
                     <option value="grade-2">الصف الثاني الابتدائي</option>
                     <option value="grade-3">الصف الثالث الابتدائي</option>
                     <option value="grade-4">الصف الرابع الابتدائي</option>
                     <option value="grade-5">الصف الخامس الابتدائي</option>
+                    <option value="grade-6">الصف السادس الابتدائي</option>
+                    <option value="grade-7">الصف السابع</option>
+                    <option value="grade-8">الصف الثامن</option>
+                    <option value="grade-9">الصف التاسع</option>
+                    <option value="grade-10">الصف العاشر</option>
+                    <option value="grade-11">الصف الحادي عشر</option>
+                    <option value="grade-12">الصف الثاني عشر</option>
+                    <option value="kg">مرحلة الروضة والتمهيدي</option>
                   </select>
 
                   <select
@@ -1515,6 +1748,35 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
                     <option value="arabic-a">مسار الناطقين (A)</option>
                     <option value="arabic-b">مسار غير الناطقين (B)</option>
                   </select>
+                </div>
+              </div>
+
+              {/* اختيار اللون الافتراضي للحائط */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>اللون الافتراضي للحائط والبطاقات:</span>
+                  <span className="text-[10px] text-slate-500 font-normal">الافتراضي: أصفر كلاسيكي (yellow)</span>
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(Object.keys(CARD_COLOR_MAP) as PadletCardColor[]).map((cKey) => {
+                    const isSel = (boardFormColor || 'yellow') === cKey;
+                    return (
+                      <button
+                        key={cKey}
+                        type="button"
+                        onClick={() => setBoardFormColor(cKey)}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 ${
+                          CARD_COLOR_MAP[cKey].bgClass
+                        } ${CARD_COLOR_MAP[cKey].textClass} ${
+                          isSel ? 'ring-2 ring-emerald-600 font-black shadow-xs' : 'opacity-80 hover:opacity-100'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full ${CARD_COLOR_MAP[cKey].badgeBg}`} />
+                        <span>{CARD_COLOR_MAP[cKey].name}</span>
+                        {isSel && <Check className="w-3.5 h-3.5 text-emerald-700" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1584,9 +1846,17 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveNewBoard}
-                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition shadow-xs"
+                  disabled={isSubmittingBoard}
+                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black rounded-xl transition shadow-xs flex items-center gap-2"
                 >
-                  إنشاء الحائط الآن 🚀
+                  {isSubmittingBoard ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>جارٍ إنشاء الحائط...</span>
+                    </>
+                  ) : (
+                    <span>إنشاء الحائط الآن 🚀</span>
+                  )}
                 </button>
               </div>
             </div>

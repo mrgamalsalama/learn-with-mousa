@@ -436,7 +436,9 @@ export interface PadletBoard {
   description?: string;
   teacher_id: string;
   teacher_name?: string;
-  grade: GradeLevel;
+  grade: GradeLevel | string;
+  target_grade?: GradeLevel | string;
+  color?: string;
   track?: ArabicTrack;
   theme: PadletTheme;
   allow_comments: boolean;

@@ -1736,6 +1736,8 @@ export const INITIAL_PADLET_BOARDS: PadletBoard[] = [
     teacher_id: 'usr_teacher',
     teacher_name: 'الأستاذة فاطمة الزهراء',
     grade: 'grade-1',
+    target_grade: 'grade-1',
+    color: 'yellow',
     track: 'arabic-a',
     theme: 'corkboard',
     allow_comments: true,
@@ -1817,7 +1819,71 @@ export const getPadletBoardById = (boardId: string): PadletBoard | null => {
   return boards.find(b => b.id === boardId) || null;
 };
 
-export const savePadletBoard = async (board: PadletBoard): Promise<PadletBoard> => {
+/**
+ * توحيد صيغة الصف الدراسي لمطابقة مختلف التسميات
+ * مثل: "1"، "grade-1"، "الصف الأول"، "الاول"، "أول" -> "grade-1"
+ * و "all"، "عام"، "الكل"، "جميع الصفوف" -> "all"
+ */
+export const normalizeGrade = (raw?: string | null): string => {
+  if (!raw) return '';
+  let str = String(raw).trim().toLowerCase();
+  // تحويل الأرقام المشرقية / الهندية إلى أرقام لاتينية
+  str = str
+    .replace(/٠/g, '0')
+    .replace(/١/g, '1')
+    .replace(/٢/g, '2')
+    .replace(/٣/g, '3')
+    .replace(/٤/g, '4')
+    .replace(/٥/g, '5')
+    .replace(/٦/g, '6')
+    .replace(/٧/g, '7')
+    .replace(/٨/g, '8')
+    .replace(/٩/g, '9');
+
+  if (
+    str.includes('all') || 
+    str.includes('عام') || 
+    str.includes('الكل') || 
+    str.includes('جميع') ||
+    str === '*'
+  ) {
+    return 'all';
+  }
+
+  if (str.includes('kg') || str.includes('روض') || str.includes('تمهيد')) {
+    return 'kg';
+  }
+
+  if (str.includes('12') || str.includes('ثاني عشر') || str.includes('ثاني-عشر')) return 'grade-12';
+  if (str.includes('11') || str.includes('حادي عشر') || str.includes('حادي-عشر')) return 'grade-11';
+  if (str.includes('10') || str.includes('عاشر')) return 'grade-10';
+  if (str.includes('9') || str.includes('تاسع')) return 'grade-9';
+  if (str.includes('8') || str.includes('ثامن')) return 'grade-8';
+  if (str.includes('7') || str.includes('سابع')) return 'grade-7';
+  if (str.includes('6') || str.includes('سادس')) return 'grade-6';
+  if (str.includes('5') || str.includes('خامس')) return 'grade-5';
+  if (str.includes('4') || str.includes('رابع')) return 'grade-4';
+  if (str.includes('3') || str.includes('ثالث')) return 'grade-3';
+  if (str.includes('2') || str.includes('ثاني')) return 'grade-2';
+  if (str.includes('1') || str.includes('أول') || str.includes('اول')) return 'grade-1';
+
+  return str;
+};
+
+/**
+ * التحقق من مطابقة الحائط التفاعلي لصف الطالب
+ * يضمن ظهور الحوائط المتوافقة مع صف الطالب أو الحوائط العامة للجميع
+ */
+export const isGradeMatching = (boardGrade?: string | null, studentGrade?: string | null): boolean => {
+  const normBoard = normalizeGrade(boardGrade);
+  const normStudent = normalizeGrade(studentGrade);
+  // الحوائط العامة لجميع الصفوف تظهر لجميع الطلاب
+  if (!normBoard || normBoard === 'all' || normBoard === 'general') return true;
+  if (!normStudent) return true;
+  return normBoard === normStudent;
+};
+
+export const savePadletBoard = async (board: PadletBoard): Promise<{ board: PadletBoard; error?: any }> => {
   const boards = getPadletBoards();
   const index = boards.findIndex(b => b.id === board.id);
   if (index >= 0) {
@@ -1828,29 +1894,41 @@ export const savePadletBoard = async (board: PadletBoard): Promise<PadletBoard> 
   localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(boards));
   window.dispatchEvent(new CustomEvent('padlet_boards_updated'));
 
-  // محاولة المزامنة السحابية غير المعطلة
-  (async () => {
-    try {
-      await supabase.from('padlet_boards').upsert({
-        id: board.id,
-        title: board.title,
-        description: board.description || null,
-        teacher_id: board.teacher_id,
-        teacher_name: board.teacher_name || null,
-        grade: board.grade,
-        track: board.track || 'arabic-a',
-        theme: board.theme || 'corkboard',
-        allow_comments: board.allow_comments ?? true,
-        require_approval: board.require_approval ?? false,
-        is_locked: board.is_locked ?? false,
-        created_at: board.created_at || new Date().toISOString()
-      }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('ملاحظة في مزامنة لوحة الحائط سحابياً:', err);
-    }
-  })();
+  // إعداد حقول الحفظ مع إرسال اللون الافتراضي والصف المستهدف
+  const boardData: any = {
+    id: board.id,
+    title: board.title,
+    description: board.description || null,
+    teacher_id: board.teacher_id,
+    teacher_name: board.teacher_name || null,
+    grade: board.grade,
+    target_grade: board.target_grade || board.grade,
+    color: board.color || 'yellow',
+    track: board.track || 'arabic-a',
+    theme: board.theme || 'corkboard',
+    allow_comments: board.allow_comments ?? true,
+    require_approval: board.require_approval ?? false,
+    is_locked: board.is_locked ?? false,
+    created_at: board.created_at || new Date().toISOString()
+  };
 
-  return board;
+  try {
+    const { error } = await supabase.from('padlet_boards').upsert(boardData, { onConflict: 'id' });
+    if (error) {
+      console.warn('ملاحظة أثناء مزامنة لوحة الحائط مع Supabase:', error);
+      // في حال عدم وجود عمود target_grade في جدول Supabase القديم، نحاول الإرسال بدونه
+      if (error.message && error.message.includes('target_grade')) {
+        delete boardData.target_grade;
+        const retry = await supabase.from('padlet_boards').upsert(boardData, { onConflict: 'id' });
+        return { board, error: retry.error };
+      }
+      return { board, error };
+    }
+    return { board, error: null };
+  } catch (err) {
+    console.warn('استثناء في مزامنة لوحة الحائط سحابياً:', err);
+    return { board, error: err };
+  }
 };
 
 export const deletePadletBoard = async (boardId: string): Promise<void> => {
@@ -2057,7 +2135,9 @@ export const syncPadletBoardsFromCloud = async (): Promise<PadletBoard[]> => {
         description: b.description || '',
         teacher_id: b.teacher_id,
         teacher_name: b.teacher_name || '',
-        grade: b.grade,
+        grade: b.grade || b.target_grade || 'grade-1',
+        target_grade: b.target_grade || b.grade || 'grade-1',
+        color: b.color || 'yellow',
         track: b.track || 'arabic-a',
         theme: b.theme || 'corkboard',
         allow_comments: b.allow_comments ?? true,
@@ -2066,8 +2146,17 @@ export const syncPadletBoardsFromCloud = async (): Promise<PadletBoard[]> => {
         created_at: b.created_at || new Date().toISOString()
       }));
 
-      localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(formatted));
-      return formatted;
+      // دمج اللوحات السحابية مع اللوحات المحلية لتجنب فقدان أي حائط تم إنشاؤه محلياً
+      const local = getPadletBoards();
+      const map = new Map<string, PadletBoard>();
+      formatted.forEach(b => map.set(b.id, b));
+      local.forEach(b => {
+        if (!map.has(b.id)) map.set(b.id, b);
+      });
+      const combined = Array.from(map.values());
+
+      localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(combined));
+      return combined;
     }
   } catch (err) {
     console.warn('فشل جلب لوحات الحائط سحابياً، سيتم استخدام التخزين المحلي:', err);
