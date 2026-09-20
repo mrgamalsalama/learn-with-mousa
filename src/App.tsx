@@ -7,7 +7,7 @@ import {
   Bot, Palette, Brain, Printer, MessageCircle, Star,
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
-  ListTodo, KeyRound, Edit3, CalendarClock, Calendar
+  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -53,6 +53,7 @@ import { AdminDelegationModal } from './components/AdminDelegationModal';
 import { EditTeacherGradesModal } from './components/EditTeacherGradesModal';
 import { TeacherTasksManager } from './components/TeacherTasksManager';
 import { TeacherTasksReadOnlyView } from './components/TeacherTasksReadOnlyView';
+import { PadletBoardView } from './components/PadletBoard';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
   generateAIPassage, 
@@ -94,10 +95,10 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>('teachers');
 
   // تبويبات لوحة رئيس القسم
-  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks'>('overview');
+  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet'>('overview');
 
   // تبويبات لوحة المعلم
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks'>('activities');
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet'>('activities');
 
   // قائمة مهام وتكليفات المعلمين
   const [teacherTasks, setTeacherTasks] = useState<TeacherTask[]>(getTeacherTasks());
@@ -109,7 +110,7 @@ export default function App() {
   const [selectedTeacherForGrades, setSelectedTeacherForGrades] = useState<UserProfile | null>(null);
 
   // تبويبات لوحة الطالب
-  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams'>('ai_studio');
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet'>('ai_studio');
 
   // قائمة الاختبارات والجلسات وحالة الاختبار النشط للطالب
   const [examsList, setExamsList] = useState<Exam[]>(getExams());
@@ -2034,6 +2035,16 @@ export default function App() {
             >
               <Library className="w-4 h-4 text-emerald-400" /> المستودع القرائي وإسناد الكتب ({filteredBooks.length})
             </button>
+            <button
+              onClick={() => setHodTab('padlet')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'padlet'
+                  ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md shadow-amber-600/20'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Pin className="w-4 h-4 text-amber-500" /> حائط الأنشطة التفاعلي 📌
+            </button>
             {canControlAIGovernance(currentUser) && (
               <button
                 onClick={() => setHodTab('ai_governance' as any)}
@@ -2220,6 +2231,14 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {hodTab === 'padlet' && (
+            <PadletBoardView
+              currentUser={currentUser}
+              initialGrade={hodGrades[0] || 'grade-1'}
+              initialTrack={currentUser.allowedTracks?.[0] || 'arabic-a'}
+            />
+          )}
         </main>
         {renderSharedReader()}
       </div>
@@ -2320,6 +2339,16 @@ export default function App() {
                   {teacherTasks.filter(t => t.teacherId === currentUser.id && !t.completed).length} مطلوبة
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setTeacherTab('padlet')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'padlet'
+                  ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md shadow-amber-600/20'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Pin className="w-4 h-4 text-amber-500" /> حائط الأنشطة التفاعلي 📌
             </button>
           </div>
 
@@ -3048,6 +3077,14 @@ export default function App() {
               onTaskStatusToggled={() => setTeacherTasks(getTeacherTasks())}
             />
           )}
+
+          {teacherTab === 'padlet' && (
+            <PadletBoardView
+              currentUser={currentUser}
+              initialGrade={teacherAllowedGrades[0] || 'grade-1'}
+              initialTrack={teacherAllowedTracks[0] || 'arabic-a'}
+            />
+          )}
         </main>
 
         {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
@@ -3512,6 +3549,16 @@ export default function App() {
               }`}
             >
               <Library className="w-4 h-4 text-emerald-400" /> رف القراءة ومكتبتي المصورة ({studentAssignedBooks.length})
+            </button>
+            <button
+              onClick={() => setStudentTab('padlet')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'padlet' 
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white shadow-md shadow-amber-500/20' 
+                  : 'bg-white border border-amber-200 text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <Pin className="w-4 h-4 text-amber-500" /> جدار الإبداع والمشاركة 🎨
             </button>
 
             {/* زر استعادة رفيق موسى في شريط التبويبات عند الإخفاء */}
@@ -4452,6 +4499,14 @@ export default function App() {
                 </div>
               )}
             </div>
+          )}
+
+          {studentTab === 'padlet' && (
+            <PadletBoardView
+              currentUser={currentUser}
+              initialGrade={currentUser.grade || 'grade-1'}
+              initialTrack={currentUser.track || 'arabic-a'}
+            />
           )}
 
           {/* خيار استعادة رفيق موسى الصوتي في أسفل الصفحة إن رغب الطالب في الحديث معه */}

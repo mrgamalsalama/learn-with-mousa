@@ -1,4 +1,4 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
 import { canManageTeacherTasks, sanitizeDelegatedPermissions } from './utils/permissions';
@@ -23,6 +23,8 @@ export const AI_GOVERNANCE_SYNC_ID = 'ai_governance_rules_sync';
 export const TEACHER_TASKS_KEY = 'lwm_teacher_tasks';
 export const TEACHER_TASKS_SYNC_ID = 'teacher_tasks_sync';
 export const DELEGATED_PERMISSIONS_SYNC_ID = 'delegated_permissions_sync';
+export const PADLET_BOARDS_KEY = 'lwm_padlet_boards';
+export const PADLET_POSTS_KEY = 'lwm_padlet_posts';
 
 export const INITIAL_EXAMS: Exam[] = [
   {
@@ -1133,6 +1135,8 @@ export const subscribeToCloudChanges = (callbacks: {
   onExamSessionsChange?: (payload?: any) => void;
   onTeacherTasksChange?: (tasks: TeacherTask[]) => void;
   onDelegatedPermissionsChange?: (map: Record<string, DelegatedAdminPermissions>) => void;
+  onPadletBoardsChange?: () => void;
+  onPadletPostsChange?: (payload?: any) => void;
 }) => {
   try {
     const channel = supabase
@@ -1196,6 +1200,12 @@ export const subscribeToCloudChanges = (callbacks: {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_sessions' }, (payload: any) => {
         callbacks.onExamSessionsChange?.(payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'padlet_boards' }, () => {
+        callbacks.onPadletBoardsChange?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'padlet_posts' }, (payload: any) => {
+        callbacks.onPadletPostsChange?.(payload);
       })
       .subscribe();
 
@@ -1711,5 +1721,389 @@ export const incrementTabSwitchCount = async (sessionId: string): Promise<number
   });
 
   return newCount;
+};
+
+// ================= نظام الجدار التعاوني التفاعلي (Interactive Padlet-like Wall) =================
+
+export const INITIAL_PADLET_BOARDS: PadletBoard[] = [
+  {
+    id: 'board_grade1_demo',
+    title: 'جِدَارُ أَبْطَالِ الصَّفِّ الأَوَّلِ: رِحْلَةُ الإِبْدَاعِ وَالحُرُوفِ 🌟',
+    description: 'شاركونا أحبائي الصغار كلماتكم الجميلة، تسجيلاتكم الصوتية، ورسوماتكم الرائعة مع حرف الباء وحروفنا الساحرة!',
+    teacher_id: 'usr_teacher',
+    teacher_name: 'الأستاذة فاطمة الزهراء',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    theme: 'corkboard',
+    allow_comments: true,
+    require_approval: false,
+    is_locked: false,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  }
+];
+
+export const INITIAL_PADLET_POSTS: PadletPost[] = [
+  {
+    id: 'post_teacher_welcome',
+    board_id: 'board_grade1_demo',
+    author_id: 'usr_teacher',
+    author_name: 'الأستاذة فاطمة الزهراء 👩‍🏫',
+    author_role: 'teacher',
+    content: 'أَهْلاً وَمَرْحَباً بِكُمْ يَا عَبَاقِرَةَ الغَدِ فِي جِدَارِنَا التَّفَاعُلِيِّ! 🎈 انْقُرُوا عَلَى زِرِّ (+) لِمُشَارَكَةِ أَفْكَارِكُمْ أَوْ تَسْجِيلِ أَصْوَاتِكُمْ العَذْبَةِ.',
+    color: 'yellow',
+    content_type: 'text',
+    status: 'approved',
+    likes_count: 5,
+    liked_by: ['usr_student_mousa', 'usr_student_haroon'],
+    comments: [
+      {
+        id: 'c_demo_1',
+        authorId: 'usr_student_mousa',
+        authorName: 'مُوسَى البَطَل',
+        authorRole: 'student',
+        text: 'شُكْراً يَا مُعَلِّمَتِي الحَبِيبَةَ! أَنَا مُتَحَمِّسٌ جِدّاً لِلْمُشَارَكَةِ! 🌟',
+        createdAt: 'منذ قليل'
+      }
+    ],
+    created_at: new Date(Date.now() - 7200000).toISOString(),
+    pinned: true,
+  },
+  {
+    id: 'post_mousa_sample',
+    board_id: 'board_grade1_demo',
+    author_id: 'usr_student_mousa',
+    author_name: 'مُوسَى البَطَل 🌟',
+    author_role: 'student',
+    content: 'كَتَبْتُ كَلِمَةَ: (بَابٌ نَظِيفٌ) مَعَ الحَرَكَاتِ وَالتَّنْوِينِ! 🚪✨',
+    color: 'mint',
+    content_type: 'text',
+    status: 'approved',
+    likes_count: 4,
+    liked_by: ['usr_teacher', 'usr_student_haroon'],
+    comments: [
+      {
+        id: 'c_demo_2',
+        authorId: 'usr_teacher',
+        authorName: 'الأستاذة فاطمة الزهراء',
+        authorRole: 'teacher',
+        text: 'أَحْسَنْتَ يَا مُوسَى! خَطٌّ وَإِمْلَاءٌ فِي غَايَةِ الجَمَالِ 👏',
+        createdAt: 'منذ قليل'
+      }
+    ],
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    pinned: false,
+  }
+];
+
+export const getPadletBoards = (): PadletBoard[] => {
+  const data = localStorage.getItem(PADLET_BOARDS_KEY);
+  if (!data) {
+    localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(INITIAL_PADLET_BOARDS));
+    return INITIAL_PADLET_BOARDS;
+  }
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : INITIAL_PADLET_BOARDS;
+  } catch {
+    return INITIAL_PADLET_BOARDS;
+  }
+};
+
+export const getPadletBoardById = (boardId: string): PadletBoard | null => {
+  const boards = getPadletBoards();
+  return boards.find(b => b.id === boardId) || null;
+};
+
+export const savePadletBoard = async (board: PadletBoard): Promise<PadletBoard> => {
+  const boards = getPadletBoards();
+  const index = boards.findIndex(b => b.id === board.id);
+  if (index >= 0) {
+    boards[index] = board;
+  } else {
+    boards.unshift(board);
+  }
+  localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(boards));
+  window.dispatchEvent(new CustomEvent('padlet_boards_updated'));
+
+  // محاولة المزامنة السحابية غير المعطلة
+  (async () => {
+    try {
+      await supabase.from('padlet_boards').upsert({
+        id: board.id,
+        title: board.title,
+        description: board.description || null,
+        teacher_id: board.teacher_id,
+        teacher_name: board.teacher_name || null,
+        grade: board.grade,
+        track: board.track || 'arabic-a',
+        theme: board.theme || 'corkboard',
+        allow_comments: board.allow_comments ?? true,
+        require_approval: board.require_approval ?? false,
+        is_locked: board.is_locked ?? false,
+        created_at: board.created_at || new Date().toISOString()
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('ملاحظة في مزامنة لوحة الحائط سحابياً:', err);
+    }
+  })();
+
+  return board;
+};
+
+export const deletePadletBoard = async (boardId: string): Promise<void> => {
+  const boards = getPadletBoards().filter(b => b.id !== boardId);
+  localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(boards));
+
+  const posts = getPadletPosts().filter(p => p.board_id !== boardId);
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+
+  window.dispatchEvent(new CustomEvent('padlet_boards_updated'));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').delete().eq('board_id', boardId);
+      await supabase.from('padlet_boards').delete().eq('id', boardId);
+    } catch (err) {
+      console.warn('ملاحظة في حذف لوحة الحائط سحابياً:', err);
+    }
+  })();
+};
+
+export const getPadletPosts = (boardId?: string): PadletPost[] => {
+  const data = localStorage.getItem(PADLET_POSTS_KEY);
+  let posts: PadletPost[] = [];
+  if (!data) {
+    posts = INITIAL_PADLET_POSTS;
+    localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(INITIAL_PADLET_POSTS));
+  } else {
+    try {
+      posts = JSON.parse(data);
+      if (!Array.isArray(posts)) posts = INITIAL_PADLET_POSTS;
+    } catch {
+      posts = INITIAL_PADLET_POSTS;
+    }
+  }
+
+  let filtered = boardId ? posts.filter(p => p.board_id === boardId) : posts;
+  // الترتيب: المثبت أولاً، ثم الأحدث
+  return filtered.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+};
+
+export const savePadletPost = async (post: PadletPost): Promise<PadletPost> => {
+  const posts = getPadletPosts();
+  const index = posts.findIndex(p => p.id === post.id);
+  if (index >= 0) {
+    posts[index] = post;
+  } else {
+    posts.unshift(post);
+  }
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').upsert({
+        id: post.id,
+        board_id: post.board_id,
+        author_id: post.author_id,
+        author_name: post.author_name,
+        author_role: post.author_role || 'student',
+        content: post.content,
+        color: post.color || 'yellow',
+        audio_url: post.audio_url || null,
+        image_url: post.image_url || null,
+        content_type: post.content_type || 'text',
+        status: post.status || 'approved',
+        likes_count: post.likes_count || 0,
+        liked_by: post.liked_by || [],
+        comments: post.comments || [],
+        pinned: post.pinned || false,
+        created_at: post.created_at || new Date().toISOString()
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('ملاحظة في مزامنة بطاقة الحائط سحابياً:', err);
+    }
+  })();
+
+  return post;
+};
+
+export const updatePadletPostStatus = async (postId: string, status: 'approved' | 'pending'): Promise<PadletPost | null> => {
+  const posts = getPadletPosts();
+  const post = posts.find(p => p.id === postId);
+  if (!post) return null;
+
+  post.status = status;
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').update({ status }).eq('id', postId);
+    } catch (e) {}
+  })();
+
+  return post;
+};
+
+export const togglePadletPostLike = async (postId: string, userId: string): Promise<PadletPost | null> => {
+  const posts = getPadletPosts();
+  const post = posts.find(p => p.id === postId);
+  if (!post) return null;
+
+  const alreadyLiked = post.liked_by.includes(userId);
+  if (alreadyLiked) {
+    post.liked_by = post.liked_by.filter(id => id !== userId);
+    post.likes_count = Math.max(0, post.likes_count - 1);
+  } else {
+    post.liked_by.push(userId);
+    post.likes_count += 1;
+  }
+
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').update({
+        likes_count: post.likes_count,
+        liked_by: post.liked_by
+      }).eq('id', postId);
+    } catch (e) {}
+  })();
+
+  return post;
+};
+
+export const addPadletComment = async (postId: string, comment: PadletComment): Promise<PadletPost | null> => {
+  const posts = getPadletPosts();
+  const post = posts.find(p => p.id === postId);
+  if (!post) return null;
+
+  if (!Array.isArray(post.comments)) {
+    post.comments = [];
+  }
+  post.comments.push(comment);
+
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').update({
+        comments: post.comments
+      }).eq('id', postId);
+    } catch (e) {}
+  })();
+
+  return post;
+};
+
+export const deletePadletPost = async (postId: string): Promise<void> => {
+  const posts = getPadletPosts().filter(p => p.id !== postId);
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').delete().eq('id', postId);
+    } catch (e) {}
+  })();
+};
+
+export const togglePadletPostPin = async (postId: string): Promise<PadletPost | null> => {
+  const posts = getPadletPosts();
+  const post = posts.find(p => p.id === postId);
+  if (!post) return null;
+
+  post.pinned = !post.pinned;
+  localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
+  window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
+
+  (async () => {
+    try {
+      await supabase.from('padlet_posts').update({ pinned: post.pinned }).eq('id', postId);
+    } catch (e) {}
+  })();
+
+  return post;
+};
+
+export const syncPadletBoardsFromCloud = async (): Promise<PadletBoard[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('padlet_boards')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const formatted: PadletBoard[] = data.map((b: any) => ({
+        id: b.id,
+        title: b.title,
+        description: b.description || '',
+        teacher_id: b.teacher_id,
+        teacher_name: b.teacher_name || '',
+        grade: b.grade,
+        track: b.track || 'arabic-a',
+        theme: b.theme || 'corkboard',
+        allow_comments: b.allow_comments ?? true,
+        require_approval: b.require_approval ?? false,
+        is_locked: b.is_locked ?? false,
+        created_at: b.created_at || new Date().toISOString()
+      }));
+
+      localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(formatted));
+      return formatted;
+    }
+  } catch (err) {
+    console.warn('فشل جلب لوحات الحائط سحابياً، سيتم استخدام التخزين المحلي:', err);
+  }
+  return getPadletBoards();
+};
+
+export const syncPadletPostsFromCloud = async (boardId?: string): Promise<PadletPost[]> => {
+  try {
+    let query = supabase.from('padlet_posts').select('*');
+    if (boardId) {
+      query = query.eq('board_id', boardId);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      const formatted: PadletPost[] = data.map((p: any) => ({
+        id: p.id,
+        board_id: p.board_id,
+        author_id: p.author_id,
+        author_name: p.author_name,
+        author_role: p.author_role || 'student',
+        content: p.content || '',
+        color: p.color || 'yellow',
+        audio_url: p.audio_url || undefined,
+        image_url: p.image_url || undefined,
+        content_type: p.content_type || 'text',
+        status: p.status || 'approved',
+        likes_count: p.likes_count || 0,
+        liked_by: Array.isArray(p.liked_by) ? p.liked_by : [],
+        comments: Array.isArray(p.comments) ? p.comments : [],
+        pinned: p.pinned || false,
+        created_at: p.created_at || new Date().toISOString()
+      }));
+
+      // دمج مع المشاركات المحلية الحالية لتجنب فقدان المنشورات الحديثة غير المتزامنة
+      const local = getPadletPosts();
+      const localOther = boardId ? local.filter(l => l.board_id !== boardId) : [];
+      const merged = [...formatted, ...localOther];
+      localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(merged));
+      return formatted;
+    }
+  } catch (err) {
+    console.warn('فشل جلب منشورات الحائط سحابياً، سيتم استخدام التخزين المحلي:', err);
+  }
+  return getPadletPosts(boardId);
 };
 

@@ -152,12 +152,62 @@ DROP POLICY IF EXISTS "Enable all for anon on exam_sessions" ON public.exam_sess
 CREATE POLICY "Enable all for anon on exam_sessions" ON public.exam_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
--- 6. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
+-- 6. جدول الجدار التفاعلي والمنشورات (Padlet Boards & Posts)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.padlet_boards (
+   id TEXT PRIMARY KEY,
+   title TEXT NOT NULL,
+   description TEXT,
+   teacher_id TEXT NOT NULL,
+   teacher_name TEXT,
+   grade TEXT NOT NULL,
+   track TEXT DEFAULT 'arabic-a',
+   theme TEXT DEFAULT 'corkboard',
+   allow_comments BOOLEAN NOT NULL DEFAULT true,
+   require_approval BOOLEAN NOT NULL DEFAULT false,
+   is_locked BOOLEAN NOT NULL DEFAULT false,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.padlet_posts (
+   id TEXT PRIMARY KEY,
+   board_id TEXT NOT NULL,
+   author_id TEXT NOT NULL,
+   author_name TEXT NOT NULL,
+   author_role TEXT NOT NULL DEFAULT 'student',
+   content TEXT NOT NULL,
+   color TEXT DEFAULT 'yellow',
+   audio_url TEXT,
+   image_url TEXT,
+   content_type TEXT DEFAULT 'text',
+   status TEXT NOT NULL DEFAULT 'approved',
+   likes_count INTEGER NOT NULL DEFAULT 0,
+   liked_by JSONB NOT NULL DEFAULT '[]'::jsonb,
+   comments JSONB NOT NULL DEFAULT '[]'::jsonb,
+   pinned BOOLEAN NOT NULL DEFAULT false,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_padlet_posts_board ON public.padlet_posts(board_id);
+CREATE INDEX IF NOT EXISTS idx_padlet_boards_grade ON public.padlet_boards(grade);
+
+ALTER TABLE public.padlet_boards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.padlet_posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for anon on padlet_boards" ON public.padlet_boards;
+CREATE POLICY "Enable all for anon on padlet_boards" ON public.padlet_boards FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for anon on padlet_posts" ON public.padlet_posts;
+CREATE POLICY "Enable all for anon on padlet_posts" ON public.padlet_posts FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 7. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
 -- ==============================================================================
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts;
   EXCEPTION
     WHEN duplicate_object THEN NULL;
     WHEN undefined_object THEN NULL;

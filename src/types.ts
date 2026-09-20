@@ -415,3 +415,52 @@ export interface AIGovernanceRules {
 
 export type AIGovernanceTarget = 'student' | 'teacher' | 'parent';
 
+// ================= نظام الجدار التعاوني التفاعلي (Interactive Padlet-like Wall) =================
+
+export type PadletTheme = 'corkboard' | 'chalkboard' | 'playful' | 'notebook' | 'sky';
+export type PadletCardColor = 'yellow' | 'pink' | 'mint' | 'blue' | 'purple';
+export type PadletContentType = 'text' | 'audio' | 'image' | 'drawing' | 'mixed';
+
+export interface PadletComment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  text: string;
+  createdAt: string;
+}
+
+export interface PadletBoard {
+  id: string;
+  title: string;
+  description?: string;
+  teacher_id: string;
+  teacher_name?: string;
+  grade: GradeLevel;
+  track?: ArabicTrack;
+  theme: PadletTheme;
+  allow_comments: boolean;
+  require_approval: boolean;
+  is_locked: boolean;
+  created_at: string;
+}
+
+export interface PadletPost {
+  id: string;
+  board_id: string;
+  author_id: string;
+  author_name: string;
+  author_role: UserRole;
+  content: string;
+  color?: PadletCardColor;
+  audio_url?: string;
+  image_url?: string;
+  content_type?: PadletContentType;
+  status: 'approved' | 'pending';
+  likes_count: number;
+  liked_by: string[];
+  comments: PadletComment[];
+  created_at: string;
+  pinned?: boolean;
+}
+
