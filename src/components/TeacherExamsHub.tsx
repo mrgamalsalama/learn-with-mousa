@@ -3,7 +3,7 @@ import {
   FileCheck2, Plus, Sparkles, Upload, Clock, Eye, EyeOff, CheckCircle2, 
   AlertTriangle, ShieldAlert, XCircle, Trash2, Edit3, Volume2, VolumeX,
   HelpCircle, RefreshCw, BarChart3, Users, Play, StopCircle, ArrowRight,
-  Check, FileText, Award, Search, Info
+  Check, FileText, Award, Search, Info, Calendar, CalendarClock
 } from 'lucide-react';
 import { Exam, ExamQuestion, ExamQuestionType, ExamSession, GradeLevel, ArabicTrack, STAGES_CONFIG } from '../types';
 import { 
@@ -13,18 +13,24 @@ import {
 } from '../storage';
 import { generateAIExamQuestions, autoTashkeelText, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { parseQTIFile } from '../utils/qtiParser';
+import { 
+  toDatetimeLocalString, fromDatetimeLocalString, 
+  formatArabicDateTime, getExamScheduleStatus 
+} from '../utils/examSchedule';
 
 interface TeacherExamsHubProps {
   teacherId: string;
   teacherName: string;
   allowedGrades?: GradeLevel[];
   onOpenLiveProctoring?: (examId: string) => void;
+  onExamsUpdated?: (exams: Exam[]) => void;
 }
 
 export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
   teacherId,
   teacherName,
-  allowedGrades = ['grade-1', 'grade-2']
+  allowedGrades = ['grade-1', 'grade-2'],
+  onExamsUpdated
 }) => {
   const [exams, setExams] = useState<Exam[]>([]);
   const [sessions, setSessions] = useState<ExamSession[]>([]);
@@ -45,6 +51,18 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
   const [description, setDescription] = useState('');
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
+
+  // حالة جدولة الاختبار والنوافذ الزمنية (Scheduled Exam Windows)
+  const [isScheduled, setIsScheduled] = useState<boolean>(false);
+  const [scheduledStart, setScheduledStart] = useState<string>('');
+  const [scheduledEnd, setScheduledEnd] = useState<string>('');
+
+  // نافذة التعديل السريع للجدولة والموعد (Quick Schedule Modal)
+  const [quickScheduleExam, setQuickScheduleExam] = useState<Exam | null>(null);
+  const [quickIsScheduled, setQuickIsScheduled] = useState<boolean>(false);
+  const [quickScheduledStart, setQuickScheduledStart] = useState<string>('');
+  const [quickScheduledEnd, setQuickScheduledEnd] = useState<string>('');
+  const [isSavingQuickSchedule, setIsSavingQuickSchedule] = useState<boolean>(false);
 
   // حالة التوليد الذكي بالـ AI
   const [aiSkillTopic, setAiSkillTopic] = useState('القواعد والظواهر النحوية والإملاء');
@@ -113,6 +131,9 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
     setShowResultsImmediately(true);
     setIsActive(true);
     setDescription('');
+    setIsScheduled(false);
+    setScheduledStart('');
+    setScheduledEnd('');
     setQuestions([
       {
         id: `q_${Date.now()}_1`,
@@ -137,6 +158,9 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
     setShowResultsImmediately(exam.show_results_immediately);
     setIsActive(exam.is_active);
     setDescription(exam.description || '');
+    setIsScheduled(exam.is_scheduled === true);
+    setScheduledStart(toDatetimeLocalString(exam.scheduled_start));
+    setScheduledEnd(toDatetimeLocalString(exam.scheduled_end));
     setQuestions([...exam.questions]);
     setActiveTab('create');
   };
@@ -263,6 +287,87 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
     }
   };
 
+  // تطبيق خيارات التوقيت السريعة (Presets)
+  const applySchedulePreset = (preset: 'now_2h' | 'tomorrow_morning' | 'weekend', isQuickModal = false) => {
+    const now = new Date();
+    let startStr = '';
+    let endStr = '';
+
+    if (preset === 'now_2h') {
+      const start = new Date(now.getTime() + 2 * 60 * 1000); // بعد دقيقتين
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000); // نافذة لمدة ساعتين
+      startStr = toDatetimeLocalString(start);
+      endStr = toDatetimeLocalString(end);
+    } else if (preset === 'tomorrow_morning') {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(8, 0, 0, 0);
+      const tomorrowEnd = new Date(tomorrow);
+      tomorrowEnd.setHours(14, 0, 0, 0);
+      startStr = toDatetimeLocalString(tomorrow);
+      endStr = toDatetimeLocalString(tomorrowEnd);
+    } else if (preset === 'weekend') {
+      const start = new Date(now);
+      start.setHours(9, 0, 0, 0);
+      const end = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+      startStr = toDatetimeLocalString(start);
+      endStr = toDatetimeLocalString(end);
+    }
+
+    if (isQuickModal) {
+      setQuickIsScheduled(true);
+      setQuickScheduledStart(startStr);
+      setQuickScheduledEnd(endStr);
+    } else {
+      setIsScheduled(true);
+      setScheduledStart(startStr);
+      setScheduledEnd(endStr);
+    }
+  };
+
+  // فتح نافذة الجدولة السريعة لاختبار
+  const handleOpenQuickSchedule = (exam: Exam) => {
+    setQuickScheduleExam(exam);
+    setQuickIsScheduled(exam.is_scheduled === true);
+    setQuickScheduledStart(toDatetimeLocalString(exam.scheduled_start));
+    setQuickScheduledEnd(toDatetimeLocalString(exam.scheduled_end));
+  };
+
+  // حفظ الجدولة السريعة للاختبار
+  const handleSaveQuickSchedule = async () => {
+    if (!quickScheduleExam) return;
+    if (quickIsScheduled) {
+      if (!quickScheduledStart || !quickScheduledEnd) {
+        alert('يرجى تحديد تاريخ وساعة بدء وانتهاء الاختبار عند تفعيل الجدولة.');
+        return;
+      }
+      if (new Date(quickScheduledEnd) <= new Date(quickScheduledStart)) {
+        alert('موعد إغلاق الاختبار يجب أن يكون بعد موعد البدء.');
+        return;
+      }
+    }
+
+    setIsSavingQuickSchedule(true);
+    try {
+      const updatedExam: Exam = {
+        ...quickScheduleExam,
+        is_scheduled: quickIsScheduled,
+        scheduled_start: quickIsScheduled ? fromDatetimeLocalString(quickScheduledStart) : null,
+        scheduled_end: quickIsScheduled ? fromDatetimeLocalString(quickScheduledEnd) : null
+      };
+
+      await saveExam(updatedExam);
+      const fresh = getExams();
+      setExams(fresh);
+      onExamsUpdated?.(fresh);
+      setQuickScheduleExam(null);
+    } catch (err: any) {
+      alert(`حدث خطأ أثناء حفظ الجدولة: ${err.message || err}`);
+    } finally {
+      setIsSavingQuickSchedule(false);
+    }
+  };
+
   // حفظ الاختبار النهائي
   const handleSaveExam = async () => {
     if (!examTitle.trim()) {
@@ -272,6 +377,17 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
     if (questions.length === 0) {
       alert('يرجى إضافة سؤال واحد على الأقل للاختبار');
       return;
+    }
+
+    if (isScheduled) {
+      if (!scheduledStart || !scheduledEnd) {
+        alert('يرجى تحديد موعد بدء وموعد إغلاق الاختبار عند تفعيل خيار الجدولة الزمنية.');
+        return;
+      }
+      if (new Date(scheduledEnd) <= new Date(scheduledStart)) {
+        alert('موعد إغلاق الاختبار يجب أن يكون بعد موعد بدء الاختبار.');
+        return;
+      }
     }
 
     const examData: Exam = {
@@ -286,11 +402,16 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
       is_active: isActive,
       questions,
       description: description.trim(),
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      is_scheduled: isScheduled,
+      scheduled_start: isScheduled ? fromDatetimeLocalString(scheduledStart) : null,
+      scheduled_end: isScheduled ? fromDatetimeLocalString(scheduledEnd) : null
     };
 
     await saveExam(examData);
-    setExams(getExams());
+    const fresh = getExams();
+    setExams(fresh);
+    onExamsUpdated?.(fresh);
     setActiveTab('list');
     alert('تم حفظ الاختبار وتفعيله بنجاح! 🌟');
   };
@@ -492,6 +613,7 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                 const activeSessionCount = examSessions.filter(s => s.status === 'in_progress').length;
                 const submittedSessionCount = examSessions.filter(s => s.status === 'submitted').length;
                 const totalMarks = exam.questions.reduce((sum, q) => sum + (q.points || 5), 0);
+                const scheduleInfo = getExamScheduleStatus(exam);
 
                 return (
                   <div 
@@ -531,11 +653,45 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                               {exam.show_results_immediately ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                               {exam.show_results_immediately ? 'النتيجة فورية' : 'النتيجة بعد الاعتماد'}
                             </span>
+
+                            {exam.is_scheduled && (
+                              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 border ${
+                                scheduleInfo.status === 'upcoming'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : scheduleInfo.status === 'open'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200'
+                              }`}>
+                                <CalendarClock className="w-3 h-3 shrink-0" />
+                                {scheduleInfo.status === 'upcoming' && 'مجدول (يبدأ قريباً)'}
+                                {scheduleInfo.status === 'open' && 'نافذة الاختبار متاحة الآن'}
+                                {scheduleInfo.status === 'expired' && 'انتهت نافذة الاختبار'}
+                              </span>
+                            )}
                           </div>
 
                           <h3 className="text-base font-black text-slate-900 leading-snug">{exam.title}</h3>
                           {exam.description && (
                             <p className="text-xs text-slate-500 mt-1 line-clamp-2">{exam.description}</p>
+                          )}
+
+                          {exam.is_scheduled && (
+                            <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] space-y-1">
+                              <div className="flex items-center justify-between gap-2 text-slate-700 font-bold">
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <Calendar className="w-3 h-3 text-emerald-600" />
+                                  البدء:
+                                </span>
+                                <span>{formatArabicDateTime(exam.scheduled_start)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 text-slate-700 font-bold">
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <Clock className="w-3 h-3 text-rose-600" />
+                                  الإغلاق:
+                                </span>
+                                <span>{formatArabicDateTime(exam.scheduled_end)}</span>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -558,7 +714,7 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                     </div>
 
                     {/* أزرار التحكم والعمليات */}
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
                       <button
                         onClick={() => {
                           setSelectedExamForProctoring(exam.id);
@@ -571,6 +727,15 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                       </button>
 
                       <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleOpenQuickSchedule(exam)}
+                          className="px-2.5 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-black transition flex items-center gap-1 shadow-2xs"
+                          title="تعديل موعد وجدولة الاختبار 🕒"
+                        >
+                          <CalendarClock className="w-3.5 h-3.5 text-amber-700" />
+                          <span>الجدولة 🕒</span>
+                        </button>
+
                         <button
                           onClick={() => handleToggleExamActive(exam)}
                           className={`p-2 rounded-xl border text-xs font-bold transition ${
@@ -885,6 +1050,107 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                   placeholder="اكتب تعليمات الاختبار والنصائح للطلاب هنا..."
                   className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-hidden focus:border-emerald-500 focus:bg-white"
                 />
+              </div>
+
+              {/* قسم جدولة موعد الاختبار والنوافذ الزمنية (Scheduled Exam Window) */}
+              <div className="sm:col-span-2 pt-4 mt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/80 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <CalendarClock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900">جدولة موعد الاختبار والتحكم في نافذة الإتاحة الزمنية</h4>
+                      <p className="text-[11px] text-slate-600">قفل الاختبار قبل موعد البدء، وإغلاقه تلقائياً بعد انتهاء نافذة الإتاحة.</p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isScheduled}
+                      onChange={e => setIsScheduled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                {isScheduled && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-xs font-bold text-slate-700">خيارات جدولة سريعة:</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => applySchedulePreset('now_2h')}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition"
+                        >
+                          اليوم (ساعتان)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applySchedulePreset('tomorrow_morning')}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition"
+                        >
+                          غداً صباحاً (8:00 ص - 2:00 م)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applySchedulePreset('weekend')}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition"
+                        >
+                          عطلة نهاية الأسبوع (48 ساعة)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                          موعد بدء الاختبار (Start Time):
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={scheduledStart}
+                          onChange={e => setScheduledStart(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
+                        />
+                        {scheduledStart && (
+                          <p className="text-[11px] text-emerald-700 font-medium">
+                            يبدأ: {formatArabicDateTime(scheduledStart)}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-rose-600" />
+                          موعد إغلاق الاختبار (End Time):
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={scheduledEnd}
+                          onChange={e => setScheduledEnd(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
+                        />
+                        {scheduledEnd && (
+                          <p className="text-[11px] text-rose-700 font-medium">
+                            يُغلق: {formatArabicDateTime(scheduledEnd)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-2">
+                      <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        سيتم قفل زر دخول الاختبار أمام الطلاب مع ظهور عداد تنازلي حتى يحين وقت البدء، ثم يُتاح تلقائياً ويُغلق نهائياً عند وقت الإغلاق.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1396,6 +1662,162 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                 className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-black hover:bg-slate-800"
               >
                 إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================= نافذة التعديل السريع للموعد والجدولة 🕒 ======================= */}
+      {quickScheduleExam && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+                  <CalendarClock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">تعديل الموعد والجدولة الزمنية</h3>
+                  <p className="text-xs text-slate-500 line-clamp-1">{quickScheduleExam.title}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setQuickScheduleExam(null)}
+                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* مفتاح تفعيل الجدولة */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200">
+              <div>
+                <h4 className="text-xs font-black text-amber-950">تفعيل النافذة الزمنية المجدولة</h4>
+                <p className="text-[11px] text-amber-800/80">عند التفعيل، يتقيد دخول الطلاب بالوقت المحدد فقط.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={quickIsScheduled}
+                  onChange={e => setQuickIsScheduled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+
+            {quickIsScheduled ? (
+              <div className="space-y-4">
+                {/* الخيارات السريعة */}
+                <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                  <span className="text-xs font-bold text-slate-600">خيارات سريعة:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => applySchedulePreset('now_2h', true)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition"
+                    >
+                      اليوم (ساعتان)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applySchedulePreset('tomorrow_morning', true)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition"
+                    >
+                      غداً صباحاً
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applySchedulePreset('weekend', true)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition"
+                    >
+                      عطلة الأسبوع
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      موعد البدء (Start):
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={quickScheduledStart}
+                      onChange={e => setQuickScheduledStart(e.target.value)}
+                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
+                    />
+                    {quickScheduledStart && (
+                      <p className="text-[10px] text-emerald-700 font-bold line-clamp-1">
+                        {formatArabicDateTime(quickScheduledStart)}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-rose-600" />
+                      موعد الإغلاق (End):
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={quickScheduledEnd}
+                      onChange={e => setQuickScheduledEnd(e.target.value)}
+                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
+                    />
+                    {quickScheduledEnd && (
+                      <p className="text-[10px] text-rose-700 font-bold line-clamp-1">
+                        {formatArabicDateTime(quickScheduledEnd)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-900 text-[11px] flex items-center gap-2">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    يتم تطبيق وحفظ التوقيت سحابياً وفورياً لجميع الطلاب دون الحاجة لإعادة نشر الاختبار.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-700">الاختبار غير مقيد بجدول زمني (وقت مفتوح)</p>
+                <p className="text-[11px] text-slate-500">
+                  يمكن للطلاب الدخول للاختبار في أي وقت طالما أن الاختبار مفعّل ({quickScheduleExam.is_active ? 'مفعّل حالياً' : 'مغلق'}).
+                </p>
+              </div>
+            )}
+
+            {/* أزرار الإجراءات */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setQuickScheduleExam(null)}
+                disabled={isSavingQuickSchedule}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickSchedule}
+                disabled={isSavingQuickSchedule}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {isSavingQuickSchedule ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    جاري الحفظ...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    حفظ وتحديث الجدولة فوراً 💾
+                  </>
+                )}
               </button>
             </div>
           </div>

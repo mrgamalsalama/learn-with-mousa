@@ -121,6 +121,11 @@ export interface Exam {
   questions: ExamQuestion[];      // قائمة الأسئلة
   created_at: string;
   description?: string;
+
+  // حقول جدولة الاختبار والنوافذ الزمنية (Scheduled Exam Windows)
+  is_scheduled?: boolean;         // افتراضي false، إذا كان true يتقيد بالنوافذ الزمنية
+  scheduled_start?: string | null;// تاريخ وساعة بدء إتاحة الاختبار (ISO / TIMESTAMP)
+  scheduled_end?: string | null;  // تاريخ وساعة إغلاق الاختبار (ISO / TIMESTAMP)
 }
 
 export type ExamSessionStatus = 'not_started' | 'in_progress' | 'submitted' | 'force_stopped';

@@ -112,8 +112,16 @@ CREATE TABLE IF NOT EXISTS public.exams (
   is_active BOOLEAN NOT NULL DEFAULT true,
   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
   description TEXT,
+  is_scheduled BOOLEAN NOT NULL DEFAULT false,
+  scheduled_start TIMESTAMP WITH TIME ZONE,
+  scheduled_end TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+-- تحديثات الأعمدة في حال كان الجدول منشأ مسبقاً
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_start TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_end TIMESTAMP WITH TIME ZONE;
 
 -- جدول جلسات الاختبار والمراقبة الحية للطلاب
 CREATE TABLE IF NOT EXISTS public.exam_sessions (

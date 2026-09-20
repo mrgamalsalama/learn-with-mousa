@@ -1472,7 +1472,10 @@ export const syncExamsFromCloud = async (): Promise<Exam[]> => {
           ? e.questions
           : (typeof e.questions === 'string' ? JSON.parse(e.questions) : []),
         description: e.description || undefined,
-        created_at: e.created_at || new Date().toISOString()
+        created_at: e.created_at || new Date().toISOString(),
+        is_scheduled: e.is_scheduled === true,
+        scheduled_start: e.scheduled_start || null,
+        scheduled_end: e.scheduled_end || null
       }));
 
       // دمج الاختبارات التأسيسية
@@ -1516,7 +1519,10 @@ export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }>
       is_active: exam.is_active,
       questions: exam.questions || [],
       description: exam.description || null,
-      created_at: exam.created_at || new Date().toISOString()
+      created_at: exam.created_at || new Date().toISOString(),
+      is_scheduled: exam.is_scheduled === true,
+      scheduled_start: exam.scheduled_start || null,
+      scheduled_end: exam.scheduled_end || null
     });
 
     if (error) {
