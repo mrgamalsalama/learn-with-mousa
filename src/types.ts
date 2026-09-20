@@ -464,3 +464,84 @@ export interface PadletPost {
   pinned?: boolean;
 }
 
+// ================= نظام تحدي موسى التنافسي الحي (Mousa Live Quiz Challenge) =================
+
+export type ChallengeShape = 'triangle' | 'diamond' | 'circle' | 'square';
+// 🔺 أحمر (مثلث)
+// 🔷 أزرق (معين)
+// 🟡 أصفر (دائرة)
+// 🟩 أخضر (مربع)
+
+export interface ChallengeOption {
+  id: string; // '0', '1', '2', '3'
+  text: string;
+  shape: ChallengeShape;
+}
+
+export interface ChallengeQuestion {
+  id: string;
+  text: string; // نص السؤال مشكول
+  options: ChallengeOption[];
+  correctIndex: number; // 0, 1, 2, or 3
+  timeLimitSeconds: number; // 10, 20, 30 ثانية
+  explanation?: string; // توضيح تربوي سريع بصوت موسى
+}
+
+export interface ChallengeQuiz {
+  id: string;
+  title: string;
+  description?: string;
+  teacher_id: string;
+  teacher_name?: string;
+  target_grade: GradeLevel;
+  target_track?: ArabicTrack;
+  questions: ChallengeQuestion[];
+  is_ai_generated?: boolean;
+  topic?: string;
+  created_at: string;
+}
+
+export type ChallengeRoomStatus = 
+  | 'lobby'           // شاشة انتظار الطلاب
+  | 'question_active' // السؤال معروض والعداد شغال
+  | 'question_revealed' // كشف الإجابة الصحيحة وشرح موسى
+  | 'leaderboard'     // عرض ترتيب النقاط بعد السؤال
+  | 'finished';       // نهاية المسابقة والتتويج (منصة التتويج Podium)
+
+export interface ChallengePlayerAnswer {
+  questionId: string;
+  selectedIndex: number;
+  isCorrect: boolean;
+  timeTakenMs: number; // الزمن بالمللي ثانية لاحتساب سرعة النقر
+  pointsEarned: number;
+  answeredAt: number;
+}
+
+export interface ChallengePlayer {
+  id: string; // student user id or guest id
+  name: string;
+  avatar?: string;
+  score: number;
+  streak: number;
+  lastAnswer?: ChallengePlayerAnswer;
+  isOnline: boolean;
+  joinedAt: number;
+}
+
+export interface ChallengeRoom {
+  id: string; // room id
+  pin: string; // 6-digit PIN code (e.g. '829410')
+  quiz_id: string;
+  quiz_title: string;
+  host_id: string; // teacher id
+  host_name: string;
+  target_grade: GradeLevel;
+  status: ChallengeRoomStatus;
+  current_question_index: number;
+  questions: ChallengeQuestion[];
+  players: Record<string, ChallengePlayer>; // keyed by player id
+  question_start_time?: number; // timestamp when current question started
+  created_at: string;
+  updated_at?: string;
+}
+

@@ -1,5 +1,6 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer } from './types';
 import { INITIAL_BOOKS } from './booksData';
+import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
 import { canManageTeacherTasks, sanitizeDelegatedPermissions } from './utils/permissions';
 import { 
@@ -25,6 +26,8 @@ export const TEACHER_TASKS_SYNC_ID = 'teacher_tasks_sync';
 export const DELEGATED_PERMISSIONS_SYNC_ID = 'delegated_permissions_sync';
 export const PADLET_BOARDS_KEY = 'lwm_padlet_boards';
 export const PADLET_POSTS_KEY = 'lwm_padlet_posts';
+export const CHALLENGE_QUIZZES_KEY = 'lwm_challenge_quizzes';
+export const CHALLENGE_ROOMS_KEY = 'lwm_challenge_rooms';
 
 export const INITIAL_EXAMS: Exam[] = [
   {
@@ -2105,5 +2108,210 @@ export const syncPadletPostsFromCloud = async (boardId?: string): Promise<Padlet
     console.warn('فشل جلب منشورات الحائط سحابياً، سيتم استخدام التخزين المحلي:', err);
   }
   return getPadletPosts(boardId);
+};
+
+// ================= تحدي موسى التنافسي الحي (Mousa Challenge Storage & Realtime Sync) =================
+
+export const getChallengeQuizzes = (): ChallengeQuiz[] => {
+  const data = localStorage.getItem(CHALLENGE_QUIZZES_KEY);
+  if (!data) {
+    localStorage.setItem(CHALLENGE_QUIZZES_KEY, JSON.stringify(INITIAL_CHALLENGE_QUIZZES));
+    return INITIAL_CHALLENGE_QUIZZES;
+  }
+  try {
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(CHALLENGE_QUIZZES_KEY, JSON.stringify(INITIAL_CHALLENGE_QUIZZES));
+      return INITIAL_CHALLENGE_QUIZZES;
+    }
+    return parsed;
+  } catch {
+    return INITIAL_CHALLENGE_QUIZZES;
+  }
+};
+
+export const saveChallengeQuiz = async (quiz: ChallengeQuiz): Promise<ChallengeQuiz> => {
+  const quizzes = getChallengeQuizzes();
+  const index = quizzes.findIndex(q => q.id === quiz.id);
+  let updated: ChallengeQuiz[];
+  if (index >= 0) {
+    updated = [...quizzes];
+    updated[index] = quiz;
+  } else {
+    updated = [quiz, ...quizzes];
+  }
+  localStorage.setItem(CHALLENGE_QUIZZES_KEY, JSON.stringify(updated));
+
+  // محاولة المزامنة السحابية غير المعطلة
+  try {
+    await supabase.from('challenge_quizzes').upsert({
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description || null,
+      teacher_id: quiz.teacher_id,
+      teacher_name: quiz.teacher_name || null,
+      target_grade: quiz.target_grade,
+      target_track: quiz.target_track || 'arabic-a',
+      questions: quiz.questions,
+      is_ai_generated: quiz.is_ai_generated || false,
+      topic: quiz.topic || null,
+      created_at: quiz.created_at || new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('تعذر حفظ التحدي سحابياً (سيستمر محلياً):', e);
+  }
+
+  return quiz;
+};
+
+export const deleteChallengeQuiz = async (quizId: string): Promise<void> => {
+  const quizzes = getChallengeQuizzes().filter(q => q.id !== quizId);
+  localStorage.setItem(CHALLENGE_QUIZZES_KEY, JSON.stringify(quizzes));
+  try {
+    await supabase.from('challenge_quizzes').delete().eq('id', quizId);
+  } catch (e) {
+    console.warn('تعذر حذف التحدي سحابياً:', e);
+  }
+};
+
+// غرف التحدي الحية (Challenge Rooms)
+export const getChallengeRooms = (): ChallengeRoom[] => {
+  const data = localStorage.getItem(CHALLENGE_ROOMS_KEY);
+  if (!data) return [];
+  try {
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+};
+
+export const getChallengeRoomByPin = (pin: string): ChallengeRoom | null => {
+  const rooms = getChallengeRooms();
+  return rooms.find(r => r.pin === pin) || null;
+};
+
+export const getChallengeRoomById = (roomId: string): ChallengeRoom | null => {
+  const rooms = getChallengeRooms();
+  return rooms.find(r => r.id === roomId) || null;
+};
+
+export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeRoom> => {
+  const rooms = getChallengeRooms();
+  const index = rooms.findIndex(r => r.id === room.id);
+  let updated: ChallengeRoom[];
+  const now = new Date().toISOString();
+  const roomToSave = { ...room, updated_at: now };
+
+  if (index >= 0) {
+    updated = [...rooms];
+    updated[index] = roomToSave;
+  } else {
+    updated = [roomToSave, ...rooms];
+  }
+  localStorage.setItem(CHALLENGE_ROOMS_KEY, JSON.stringify(updated));
+
+  // بث التحديث محلياً عبر CustomEvent للمتصفحات/النوافذ في نفس السياق
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('challenge_room_updated', { detail: roomToSave }));
+  }
+
+  // المزامنة السحابية مع Supabase وبث الحدث
+  try {
+    await supabase.from('challenge_rooms').upsert({
+      id: roomToSave.id,
+      pin: roomToSave.pin,
+      quiz_id: roomToSave.quiz_id,
+      quiz_title: roomToSave.quiz_title,
+      host_id: roomToSave.host_id,
+      host_name: roomToSave.host_name,
+      target_grade: roomToSave.target_grade,
+      status: roomToSave.status,
+      current_question_index: roomToSave.current_question_index,
+      questions: roomToSave.questions,
+      players: roomToSave.players,
+      question_start_time: roomToSave.question_start_time || null,
+      created_at: roomToSave.created_at,
+      updated_at: roomToSave.updated_at
+    });
+  } catch (e) {
+    console.warn('تعذر تحديث غرفة التحدي سحابياً (سيستمر محلياً):', e);
+  }
+
+  return roomToSave;
+};
+
+export const syncChallengeRoomFromCloud = async (roomIdOrPin: string): Promise<ChallengeRoom | null> => {
+  try {
+    let query = supabase.from('challenge_rooms').select('*');
+    if (roomIdOrPin.length === 6 && /^\d+$/.test(roomIdOrPin)) {
+      query = query.eq('pin', roomIdOrPin);
+    } else {
+      query = query.eq('id', roomIdOrPin);
+    }
+    const { data, error } = await query.maybeSingle();
+
+    if (!error && data) {
+      const formatted: ChallengeRoom = {
+        id: data.id,
+        pin: data.pin,
+        quiz_id: data.quiz_id,
+        quiz_title: data.quiz_title,
+        host_id: data.host_id,
+        host_name: data.host_name,
+        target_grade: data.target_grade,
+        status: data.status,
+        current_question_index: data.current_question_index,
+        questions: Array.isArray(data.questions) ? data.questions : [],
+        players: (typeof data.players === 'object' && data.players) ? data.players : {},
+        question_start_time: data.question_start_time || undefined,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+
+      // حفظ محلي
+      const rooms = getChallengeRooms().filter(r => r.id !== formatted.id);
+      localStorage.setItem(CHALLENGE_ROOMS_KEY, JSON.stringify([formatted, ...rooms]));
+      return formatted;
+    }
+  } catch (err) {
+    console.warn('فشل جلب غرفة التحدي سحابياً:', err);
+  }
+  return getChallengeRoomById(roomIdOrPin) || getChallengeRoomByPin(roomIdOrPin);
+};
+
+export const syncChallengeQuizzesFromCloud = async (): Promise<ChallengeQuiz[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('challenge_quizzes')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const formatted: ChallengeQuiz[] = data.map((q: any) => ({
+        id: q.id,
+        title: q.title,
+        description: q.description || '',
+        teacher_id: q.teacher_id,
+        teacher_name: q.teacher_name || '',
+        target_grade: q.target_grade,
+        target_track: q.target_track || 'arabic-a',
+        questions: Array.isArray(q.questions) ? q.questions : [],
+        is_ai_generated: q.is_ai_generated || false,
+        topic: q.topic || '',
+        created_at: q.created_at || new Date().toISOString()
+      }));
+
+      // دمج مع الكويزات المحلية
+      const local = getChallengeQuizzes();
+      const localIds = new Set(formatted.map(f => f.id));
+      const remainingLocal = local.filter(l => !localIds.has(l.id));
+      const merged = [...formatted, ...remainingLocal];
+      localStorage.setItem(CHALLENGE_QUIZZES_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err) {
+    console.warn('فشل جلب تحديات موسى سحابياً:', err);
+  }
+  return getChallengeQuizzes();
 };
 

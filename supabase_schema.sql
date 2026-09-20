@@ -202,14 +202,62 @@ DROP POLICY IF EXISTS "Enable all for anon on padlet_posts" ON public.padlet_pos
 CREATE POLICY "Enable all for anon on padlet_posts" ON public.padlet_posts FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
--- 7. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
+-- 7. جدول تحديات ومسابقات موسى التنافسية الحية (Challenge Quizzes & Rooms)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.challenge_quizzes (
+   id TEXT PRIMARY KEY,
+   title TEXT NOT NULL,
+   description TEXT,
+   teacher_id TEXT NOT NULL,
+   teacher_name TEXT,
+   target_grade TEXT NOT NULL,
+   target_track TEXT DEFAULT 'arabic-a',
+   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+   is_ai_generated BOOLEAN NOT NULL DEFAULT false,
+   topic TEXT,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.challenge_rooms (
+   id TEXT PRIMARY KEY,
+   pin TEXT NOT NULL,
+   quiz_id TEXT NOT NULL,
+   quiz_title TEXT NOT NULL,
+   host_id TEXT NOT NULL,
+   host_name TEXT NOT NULL,
+   target_grade TEXT NOT NULL,
+   status TEXT NOT NULL DEFAULT 'lobby',
+   current_question_index INTEGER NOT NULL DEFAULT 0,
+   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+   players JSONB NOT NULL DEFAULT '{}'::jsonb,
+   question_start_time BIGINT,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_challenge_rooms_pin ON public.challenge_rooms(pin);
+CREATE INDEX IF NOT EXISTS idx_challenge_quizzes_grade ON public.challenge_quizzes(target_grade);
+
+ALTER TABLE public.challenge_quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.challenge_rooms ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for anon on challenge_quizzes" ON public.challenge_quizzes;
+CREATE POLICY "Enable all for anon on challenge_quizzes" ON public.challenge_quizzes FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for anon on challenge_rooms" ON public.challenge_rooms;
+CREATE POLICY "Enable all for anon on challenge_rooms" ON public.challenge_rooms FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 8. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
 -- ==============================================================================
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts, public.challenge_quizzes, public.challenge_rooms;
   EXCEPTION
     WHEN duplicate_object THEN NULL;
     WHEN undefined_object THEN NULL;
   END;
 END $$;
+

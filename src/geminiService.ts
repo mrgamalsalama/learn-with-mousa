@@ -869,6 +869,138 @@ ${cleanPassage}
 }
 
 /**
+ * دالة توليد أسئلة تحدي موسى التنافسية الحية (Mousa Challenge Quiz Generator)
+ * تضمن 4 خيارات مطابقة للأشكال التنافسية (مثلث، معين، دائرة، مربع) مع التشكيل التام وتوضيح تربوي سريع بصوت موسى
+ */
+export async function generateAIChallengeQuestions(params: {
+  topic: string;
+  grade: string;
+  count: number;
+  timeLimitSeconds?: number;
+}): Promise<any[]> {
+  const { topic, grade, count = 4, timeLimitSeconds = 20 } = params;
+  const ai = getAIClient();
+  const cleanTopic = topic.trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
+
+  const defaultShapes = ['triangle', 'diamond', 'circle', 'square'];
+
+  const fallbackQuestions = [
+    {
+      id: `ch_q_${Date.now()}_1`,
+      text: `مَا المَفْهُومُ الأَسَاسِيُّ المُرْتَبِطُ بِمَوْضُوعِ (${cleanTopic})؟`,
+      timeLimitSeconds,
+      correctIndex: 0,
+      explanation: `أَحْسَنْتُمْ يَا أَبْطَالَ مُوسَى! هَذَا المَفْهُومُ هُوَ أَسَاسُ دَرْسِ ${cleanTopic}!`,
+      options: [
+        { id: '0', text: `القَاعِدَةُ اللُّغَوِيَّةُ الأَسَاسِيَّةُ لِـ (${cleanTopic}) ✨`, shape: 'triangle' },
+        { id: '1', text: 'الإِعْرَابُ العَشْوَائِيُّ غَيْرُ المَضْبُوطِ', shape: 'diamond' },
+        { id: '2', text: 'حَذْفُ الحُرُوفِ دُونَ سَبَبٍ', shape: 'circle' },
+        { id: '3', text: 'تَجَاهُلُ عَلامَاتِ التَّرْقِيمِ', shape: 'square' },
+      ]
+    },
+    {
+      id: `ch_q_${Date.now()}_2`,
+      text: `أَيُّ الجُمَلِ التَّالِيَةِ كُتِبَتْ بِطَرِيقَةٍ صَحِيحَةٍ فِي سِيَاقِ (${cleanTopic})؟`,
+      timeLimitSeconds,
+      correctIndex: 1,
+      explanation: `رَائِعٌ جِدًّا! تَمَيَّزْتُمْ فِي ضَبْطِ الحَرَكَاتِ وَالصِّيَاغَةِ الفَصِيحَةِ!`,
+      options: [
+        { id: '0', text: 'الجُمْلَةُ الخَالِيَةُ مِنَ المَعْنَى', shape: 'triangle' },
+        { id: '1', text: `الجُمْلَةُ المَضْبُوطَةُ بِالشَّكْلِ التَّامِّ وَالحَرَكَاتِ 🎯`, shape: 'diamond' },
+        { id: '2', text: 'الجُمْلَةُ المَبْنِيَّةُ عَلَى الخَطَأِ الإِمْلائِيِّ', shape: 'circle' },
+        { id: '3', text: 'الجُمْلَةُ النَّاقِصَةُ لِلْمَعْنَى', shape: 'square' },
+      ]
+    }
+  ];
+
+  if (!ai) {
+    return fallbackQuestions.slice(0, count);
+  }
+
+  const prompt = `
+أنت «موسى» الخبير التربوي وصانع المسابقات التفاعلية الحية للأطفال في منصة "تعلَّم مع موسى".
+الموضوع المطلوب للمسابقة: [${cleanTopic}].
+الصف الدراسي: [${grade}].
+عدد الأسئلة المطلوبة: [${count}].
+زمن الإجابة لكل سؤال: [${timeLimitSeconds}] ثانية.
+
+المطلوب بدقة متناهية:
+1. توليد ${count} أسئلة مسابقة ممتعة، ذكية، ومناسبة لعمر وصف الطلاب.
+2. يجب تشكيل كافة النصوص (السؤال والخيارات والشرح) تشكيلاً تاماً 100% بالحركات الفصيحة (فتحة، ضمة، كسرة، سكون، تنوين، شدة).
+3. كل سؤال يجب أن يتضمن بالضبط 4 خيارات، خيار واحد فقط هو الصحيح، و 3 خيارات ذكية مموهة.
+4. الخيارات الأربعة تتبع دائماً الأشكال التنافسية التالية بالترتيب:
+   - الخيار 0: شكل "triangle" (مثلث)
+   - الخيار 1: شكل "diamond" (معين)
+   - الخيار 2: شكل "circle" (دائرة)
+   - الخيار 3: شكل "square" (مربع)
+5. تنويع موضع الإجابة الصحيحة (correctIndex: من 0 إلى 3) بين الأسئلة.
+6. تقديم توضيح تربوي تشجيعي سريع ودافئ (explanation) بصوت موسى يشرح فيه سبب صحة الإجابة للأطفال.
+7. أخرج النتيجة فقط بصيغة مصفوفة JSON مطابقة تماماً للمثال التالي دون أي نصوص إضافية:
+[
+  {
+    "id": "q_1",
+    "text": "نص السؤال المشكول بالحركات التامة؟",
+    "timeLimitSeconds": ${timeLimitSeconds},
+    "correctIndex": 0,
+    "explanation": "شرح موسى التربوي المشكول والمشجع جداً للأبطال 🌟",
+    "options": [
+      { "id": "0", "text": "الخيار الأول المشكول", "shape": "triangle" },
+      { "id": "1", "text": "الخيار الثاني المشكول", "shape": "diamond" },
+      { "id": "2", "text": "الخيار الثالث المشكول", "shape": "circle" },
+      { "id": "3", "text": "الخيار الرابع المشكول", "shape": "square" }
+    ]
+  }
+]
+`;
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+      targetRole: 'teacher'
+    });
+
+    const parsed: any[] = JSON.parse(cleanJsonText(response.text || '[]'));
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((item, idx) => {
+        const correctIdx = typeof item.correctIndex === 'number' && item.correctIndex >= 0 && item.correctIndex < 4
+          ? item.correctIndex
+          : 0;
+
+        const options = Array.isArray(item.options) && item.options.length === 4
+          ? item.options.map((opt: any, oIdx: number) => ({
+              id: String(oIdx),
+              text: opt.text || `خيار ${oIdx + 1}`,
+              shape: defaultShapes[oIdx] || 'triangle',
+            }))
+          : [
+              { id: '0', text: 'الخيار الأول', shape: 'triangle' },
+              { id: '1', text: 'الخيار الثاني', shape: 'diamond' },
+              { id: '2', text: 'الخيار الثالث', shape: 'circle' },
+              { id: '3', text: 'الخيار الرابع', shape: 'square' },
+            ];
+
+        return {
+          id: item.id || `ch_q_${Date.now()}_${idx + 1}`,
+          text: item.text || `سؤال المسابقة (${idx + 1})`,
+          timeLimitSeconds: item.timeLimitSeconds || timeLimitSeconds,
+          correctIndex: correctIdx,
+          explanation: item.explanation || 'إجابة متميزة يا أبطال لغتنا العربية الجميلة! 🌟',
+          options,
+        };
+      });
+    }
+    return fallbackQuestions.slice(0, count);
+  } catch (err) {
+    console.error('فشل توليد أسئلة تحدي موسى عبر الذكاء الاصطناعي:', err);
+    return fallbackQuestions.slice(0, count);
+  }
+}
+
+/**
  * ج) دالة التشكيل اللغوي التلقائي وضبط أواخر الكلمات
  */
 export async function autoTashkeelText(text: string): Promise<string> {
