@@ -1332,6 +1332,14 @@ export function stopMousaVoice(): void {
   }
 }
 
+export function isMousaVoicePlaying(): boolean {
+  if (currentSourceNode) return true;
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+    return true;
+  }
+  return false;
+}
+
 export function stopArabicSpeech(): void {
   stopMousaVoice();
 }
@@ -1542,24 +1550,11 @@ export function getMousaVoiceCacheSize(): number {
 }
 
 /**
- * التوليد والاستباق المسبق (Pre-buffering) لأصوات الألعاب، الخيارات، والتوجيهات
- * يحفظ المقاطع في الذاكرة الدائمة (IndexedDB) والرام لتعمل بضغطة زر دون أي انتظار (0ms)
+ * التوليد والاستباق المسبق (Pre-buffering) - تم تعطيله لمنع إطلاق أي طلب صوتي عبر الخلفية ما لم ينقر الطالب بنفسه
  */
-export async function prebufferMousaAudio(texts: (string | undefined | null)[]): Promise<void> {
-  const validTexts = texts
-    .map(t => (t ? cleanTextForSpeech(t) : ''))
-    .filter(t => t.length > 0 && !mousaAudioCache.has(t));
-
-  if (validTexts.length === 0) return;
-
-  // جلب المقاطع بالتتابع الهادئ لتفادي الضغط وتجهيزها في الكاش الدائم
-  for (const text of validTexts) {
-    try {
-      await fetchSingleAudioBuffer(text);
-    } catch {
-      // تجاوز أي خطأ فردي ومتابعة البقية
-    }
-  }
+export async function prebufferMousaAudio(_texts: (string | undefined | null)[]): Promise<void> {
+  // معطل عمداً: لا يتم تشغيل أو طلب أي مقطع صوتي في الخلفية إلا عند النقر اليدوي الصريح للطالب
+  return;
 }
 
 export async function preloadMousaVoice(texts: string[]): Promise<void> {
@@ -2062,8 +2057,6 @@ ${submissionsSummary || 'الطالب بدأ رحلته التعليمية لل�
           generatedAt: new Date().toLocaleDateString('ar-EG') + ' ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
         };
 
-        // تخزين مسبق لصوت موسى للتقرير ليعمل فوراً 0ms
-        prebufferMousaAudio([result.reportText]);
         return result;
       }
     }
@@ -2109,7 +2102,6 @@ ${submissionsSummary || 'الطالب بدأ رحلته التعليمية لل�
     generatedAt: new Date().toLocaleDateString('ar-EG') + ' ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
   };
 
-  prebufferMousaAudio([fallbackReport.reportText]);
   return fallbackReport;
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  X, BookOpen, Volume2, Sparkles, Award, ArrowLeft, 
+  X, BookOpen, Volume2, VolumeX, Sparkles, Award, ArrowLeft, 
   CheckCircle2, RefreshCw, Compass, BookmarkCheck, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -66,9 +66,6 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
       setCurrentNode(firstScene);
       setStoryHistory([firstScene]);
-
-      setIsSpeaking(true);
-      speakWithMousaVoice(firstScene.passage, () => setIsSpeaking(false));
     } catch (e: any) {
       console.error(e);
       setErrorMessage(e?.message || 'تعذر توليد القصة التكيفية بالذكاء الاصطناعي.');
@@ -102,9 +99,6 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
 
       setCurrentNode(nextScene);
       setStoryHistory(prev => [...prev, nextScene]);
-
-      setIsSpeaking(true);
-      speakWithMousaVoice(nextScene.passage, () => setIsSpeaking(false));
 
       if (nextScene.isEnding) {
         confetti({
@@ -273,9 +267,10 @@ export const AdaptiveStoryModal: React.FC<AdaptiveStoryModalProps> = ({
                       ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
                       : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
                   }`}
+                  title={isSpeaking ? 'إيقاف الاستماع' : 'استمع للمشهد بصوت موسى'}
                 >
-                  <Volume2 className="w-4 h-4" />
-                  <span>{isSpeaking ? 'يُقرَأ الآن...' : 'استمع للمشهد'}</span>
+                  {isSpeaking ? <VolumeX className="w-4 h-4 text-amber-700" /> : <Volume2 className="w-4 h-4" />}
+                  <span>{isSpeaking ? 'إيقاف ⏸️' : 'استمع 🔊'}</span>
                 </button>
               </div>
 

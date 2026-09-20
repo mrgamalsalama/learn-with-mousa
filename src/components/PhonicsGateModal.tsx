@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  X, Volume2, Sparkles, CheckCircle2, 
+  X, Volume2, VolumeX, Sparkles, CheckCircle2, 
   AlertCircle, Unlock, Lock, Award, RefreshCw, Star, ChevronLeft, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -52,19 +52,23 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
     : userPerm.allowed;
   const aiBlockReason = userPerm.reason || isAIFeatureAllowed('student').reason;
 
+  const [isSpeakingLetterSound, setIsSpeakingLetterSound] = useState(false);
+  const [isSpeakingEncouragement, setIsSpeakingEncouragement] = useState(false);
+
   const recognitionRef = useRef<any>(null);
   const currentConfig = LETTERS_CONFIG[currentLetterIndex];
 
-  // التوليد الاستباقي (Pre-buffering) لأصوات الحرف الحالي والأمثلة
+  // إيقاف الصوت عند إغلاق النافذة أو تبديل الحرف
   useEffect(() => {
-    if (!isOpen || !currentConfig) return;
-
-    prebufferMousaAudio([
-      `صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`,
-      currentConfig.sound,
-      ...currentConfig.examples
-    ]);
-  }, [isOpen, currentLetterIndex, currentConfig]);
+    stopMousaVoice();
+    setIsSpeakingLetterSound(false);
+    setIsSpeakingEncouragement(false);
+    return () => {
+      stopMousaVoice();
+      setIsSpeakingLetterSound(false);
+      setIsSpeakingEncouragement(false);
+    };
+  }, [isOpen, currentLetterIndex]);
 
   const toggleMic = () => {
     if (isListening) {
@@ -146,8 +150,6 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           type: 'voice',
           timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         });
-
-        speakWithMousaVoice(res.encouragement);
       } else {
         setGateUnlocked(false);
         saveStudentPhonicsRecord(studentId, {
@@ -157,7 +159,6 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
           type: 'voice',
           timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         });
-        speakWithMousaVoice(res.encouragement);
       }
     } catch (e: any) {
       console.error(e);
@@ -169,14 +170,41 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
 
   const nextLetterGate = () => {
     stopMousaVoice();
+    setIsSpeakingLetterSound(false);
+    setIsSpeakingEncouragement(false);
     setGateUnlocked(false);
     setResult(null);
     setInputWord('');
     setCurrentLetterIndex((prev) => (prev + 1) % LETTERS_CONFIG.length);
   };
 
-  const playLetterSound = () => {
-    speakWithMousaVoice(`صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`);
+  const handleToggleLetterSound = () => {
+    if (isSpeakingLetterSound) {
+      stopMousaVoice();
+      setIsSpeakingLetterSound(false);
+    } else {
+      stopMousaVoice();
+      setIsSpeakingLetterSound(true);
+      setIsSpeakingEncouragement(false);
+      speakWithMousaVoice(`صَوْتُ حَرْفِ ${currentConfig.name}: ${currentConfig.sound}`, () => {
+        setIsSpeakingLetterSound(false);
+      });
+    }
+  };
+
+  const handleToggleEncouragement = () => {
+    if (!result?.encouragement) return;
+    if (isSpeakingEncouragement) {
+      stopMousaVoice();
+      setIsSpeakingEncouragement(false);
+    } else {
+      stopMousaVoice();
+      setIsSpeakingEncouragement(true);
+      setIsSpeakingLetterSound(false);
+      speakWithMousaVoice(result.encouragement, () => {
+        setIsSpeakingEncouragement(false);
+      });
+    }
   };
 
   if (!isOpen) return null;
@@ -269,11 +297,16 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
               </span>
               <button
                 type="button"
-                onClick={playLetterSound}
-                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-                title="استمع لنطق الحرف"
+                onClick={handleToggleLetterSound}
+                className={`px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 text-xs font-bold ${
+                  isSpeakingLetterSound
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title={isSpeakingLetterSound ? 'إيقاف الاستماع' : 'استمع لنطق الحرف بصوت موسى'}
               >
-                <Volume2 className="w-4 h-4" />
+                {isSpeakingLetterSound ? <VolumeX className="w-3.5 h-3.5 text-amber-700" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isSpeakingLetterSound ? 'إيقاف ⏸️' : 'استمع 🔊'}</span>
               </button>
             </div>
 
@@ -367,9 +400,24 @@ export const PhonicsGateModal: React.FC<PhonicsGateModalProps> = ({
                 )}
               </div>
 
-              <p className="text-xs font-medium leading-relaxed bg-white/60 p-3 rounded-xl border border-black/5">
-                {result.encouragement}
-              </p>
+              <div className="flex items-center justify-between bg-white/70 p-3 rounded-xl border border-black/5 gap-2">
+                <p className="text-xs font-medium leading-relaxed flex-1">
+                  {result.encouragement}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleToggleEncouragement}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1 ${
+                    isSpeakingEncouragement
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900'
+                  }`}
+                  title={isSpeakingEncouragement ? 'إيقاف الاستماع' : 'استمع لتشجيع موسى بصوته الأصلي'}
+                >
+                  {isSpeakingEncouragement ? <VolumeX className="w-3.5 h-3.5 text-amber-700" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  <span>{isSpeakingEncouragement ? 'إيقاف ⏸️' : 'استمع 🔊'}</span>
+                </button>
+              </div>
 
               {result.meaningSimple && (
                 <p className="text-[11px] text-slate-600">

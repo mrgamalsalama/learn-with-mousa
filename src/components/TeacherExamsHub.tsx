@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileCheck2, Plus, Sparkles, Upload, Clock, Eye, EyeOff, CheckCircle2, 
-  AlertTriangle, ShieldAlert, XCircle, Trash2, Edit3, Volume2, 
+  AlertTriangle, ShieldAlert, XCircle, Trash2, Edit3, Volume2, VolumeX,
   HelpCircle, RefreshCw, BarChart3, Users, Play, StopCircle, ArrowRight,
   Check, FileText, Award, Search, Info
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import {
   getExamSessions, saveExamSession, syncExamSessionsFromCloud,
   forceStopStudentExam, updateStudentExamSession, getUsers
 } from '../storage';
-import { generateAIExamQuestions, autoTashkeelText, speakWithMousaVoice } from '../geminiService';
+import { generateAIExamQuestions, autoTashkeelText, speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 import { parseQTIFile } from '../utils/qtiParser';
 
 interface TeacherExamsHubProps {
@@ -58,6 +58,7 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
 
   // حالة تفاصيل إجابات طالب في شاشة المراقبة
   const [viewingSession, setViewingSession] = useState<ExamSession | null>(null);
+  const [speakingQuestionIdx, setSpeakingQuestionIdx] = useState<number | null>(null);
 
   // تحميل البيانات ومزامنتها
   useEffect(() => {
@@ -72,7 +73,10 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
       syncExamSessionsFromCloud().then(data => setSessions(data));
     }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      stopMousaVoice();
+    };
   }, []);
 
   const refreshData = async () => {
@@ -201,9 +205,19 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
     } catch {}
   };
 
-  // تشغيل صوت موسى للسؤال
-  const handleSpeakQuestion = (text: string) => {
-    speakWithMousaVoice(text);
+  // تشغيل أو إيقاف صوت موسى للسؤال
+  const handleToggleSpeakQuestion = (index: number, text: string) => {
+    if (!text) return;
+    if (speakingQuestionIdx === index) {
+      stopMousaVoice();
+      setSpeakingQuestionIdx(null);
+    } else {
+      stopMousaVoice();
+      setSpeakingQuestionIdx(index);
+      speakWithMousaVoice(text, () => {
+        setSpeakingQuestionIdx(null);
+      });
+    }
   };
 
   // توليد الأسئلة بالذكاء الاصطناعي
@@ -934,11 +948,15 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => handleSpeakQuestion(q.text)}
-                        className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-emerald-700 text-xs transition"
-                        title="الاستماع بصوت موسى"
+                        onClick={() => handleToggleSpeakQuestion(idx, q.text)}
+                        className={`p-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${
+                          speakingQuestionIdx === idx
+                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                            : 'bg-white border-slate-200 text-slate-600 hover:text-emerald-700'
+                        }`}
+                        title={speakingQuestionIdx === idx ? 'إيقاف الاستماع' : 'الاستماع بصوت موسى'}
                       >
-                        <Volume2 className="w-3.5 h-3.5" />
+                        {speakingQuestionIdx === idx ? <VolumeX className="w-3.5 h-3.5 text-amber-800" /> : <Volume2 className="w-3.5 h-3.5" />}
                       </button>
 
                       <div className="flex items-center gap-1 text-xs">

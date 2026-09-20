@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  X, Award, Sparkles, Volume2, ArrowRight, RotateCcw, 
+  X, Award, Sparkles, Volume2, VolumeX, ArrowRight, RotateCcw, 
   CheckCircle2, Star, Trophy, ArrowLeft, Lightbulb,
   Search, FlaskConical, Scale
 } from 'lucide-react';
@@ -113,6 +113,8 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
   const [shakeError, setShakeError] = useState<boolean>(false);
   const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
   const [currentEarnedBadge, setCurrentEarnedBadge] = useState<ChildBadge | null>(null);
+  const [isSpeakingPrompt, setIsSpeakingPrompt] = useState<boolean>(false);
+  const [isSpeakingFeedback, setIsSpeakingFeedback] = useState<boolean>(false);
 
   // حالة لعبة تركيب الجمل
   const [selectedWordSequence, setSelectedWordSequence] = useState<string[]>([]);
@@ -132,6 +134,9 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
     setLevelStatus('playing');
     setFeedbackMsg('');
     setShakeError(false);
+    setIsSpeakingPrompt(false);
+    setIsSpeakingFeedback(false);
+    stopMousaVoice();
 
     if (gameData.gameType === 'sentence_builder') {
       // خلط الكلمات المتاحة للمستوى
@@ -143,46 +148,45 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setSorterFinishedWords({});
     }
 
-    // قراءة نص السؤال تلقائياً بصوت موسى
-    const promptText = currentLevel.prompt.replace(/[\*\#\_]/g, '');
-    speakWithMousaVoice(promptText);
-
     return () => {
       stopMousaVoice();
+      setIsSpeakingPrompt(false);
+      setIsSpeakingFeedback(false);
     };
   }, [currentLevelIndex, isOpen, gameData]);
 
-  // التوليد الاستباقي (Pre-buffering) لأصوات وخيارات المستوى الحالي والمستوى التالي
-  useEffect(() => {
-    if (!isOpen || !gameData?.levels) return;
-
-    const currentLvl = gameData.levels[currentLevelIndex];
-    const nextLvl = gameData.levels[currentLevelIndex + 1];
-
-    const toPrebuffer: string[] = [];
-
-    if (currentLvl) {
-      if (currentLvl.feedbackSuccess) toPrebuffer.push(currentLvl.feedbackSuccess);
-      if (currentLvl.feedbackHint) toPrebuffer.push(currentLvl.feedbackHint);
-      if (currentLvl.options) toPrebuffer.push(...currentLvl.options);
-      if (currentLvl.segments) toPrebuffer.push(...currentLvl.segments);
-      if (currentLvl.wordPuzzle) toPrebuffer.push(currentLvl.wordPuzzle);
-      if (currentLvl.categories) toPrebuffer.push(...currentLvl.categories);
+  // تشغيل / إيقاف قراءة السؤال يدوياً بصوت موسى
+  const handleToggleSpeakPrompt = () => {
+    if (!currentLevel) return;
+    if (isSpeakingPrompt) {
+      stopMousaVoice();
+      setIsSpeakingPrompt(false);
+    } else {
+      stopMousaVoice();
+      setIsSpeakingPrompt(true);
+      setIsSpeakingFeedback(false);
+      const promptText = currentLevel.prompt.replace(/[\*\#\_]/g, '');
+      speakWithMousaVoice(promptText, () => {
+        setIsSpeakingPrompt(false);
+      });
     }
+  };
 
-    if (nextLvl) {
-      if (nextLvl.prompt) toPrebuffer.push(nextLvl.prompt.replace(/[\*\#\_]/g, ''));
-      if (nextLvl.feedbackSuccess) toPrebuffer.push(nextLvl.feedbackSuccess);
-      if (nextLvl.feedbackHint) toPrebuffer.push(nextLvl.feedbackHint);
-      if (nextLvl.options) toPrebuffer.push(...nextLvl.options);
-      if (nextLvl.segments) toPrebuffer.push(...nextLvl.segments);
-      if (nextLvl.wordPuzzle) toPrebuffer.push(nextLvl.wordPuzzle);
-      if (nextLvl.categories) toPrebuffer.push(...nextLvl.categories);
+  // تشغيل / إيقاف قراءة رسالة التغذية الراجعة يدوياً بصوت موسى
+  const handleToggleSpeakFeedback = () => {
+    if (!feedbackMsg) return;
+    if (isSpeakingFeedback) {
+      stopMousaVoice();
+      setIsSpeakingFeedback(false);
+    } else {
+      stopMousaVoice();
+      setIsSpeakingFeedback(true);
+      setIsSpeakingPrompt(false);
+      speakWithMousaVoice(feedbackMsg, () => {
+        setIsSpeakingFeedback(false);
+      });
     }
-
-    // تجهيز الأصوات في الخلفية مسبقاً قبل نقر الطالب لتعمل فوراً 0ms
-    prebufferMousaAudio(toPrebuffer);
-  }, [isOpen, gameData, currentLevelIndex]);
+  };
 
   if (!isOpen || !gameData || !currentLevel) return null;
 
@@ -200,7 +204,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -210,7 +213,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -219,8 +221,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
   const handleSelectWord = (word: string, index: number) => {
     if (levelStatus === 'success') return;
     playSound('pop');
-    // نطق الكلمة المختارة فوراً بصوت موسى (المخزنة مسبقاً 0ms)
-    speakWithMousaVoice(word);
 
     const nextSelected = [...selectedWordSequence, word];
     setSelectedWordSequence(nextSelected);
@@ -258,7 +258,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -268,7 +267,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -295,7 +293,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -305,7 +302,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -324,7 +320,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -334,7 +329,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -353,7 +347,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -363,7 +356,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -382,7 +374,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('success');
       setFeedbackMsg(currentLevel.feedbackSuccess);
       setStars((prev) => prev + 1);
-      speakWithMousaVoice(currentLevel.feedbackSuccess);
 
       setTimeout(() => {
         advanceToNextLevel();
@@ -392,7 +383,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -430,7 +420,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
         setLevelStatus('success');
         setFeedbackMsg(currentLevel.feedbackSuccess);
         setStars((prev) => prev + 1);
-        speakWithMousaVoice(currentLevel.feedbackSuccess);
 
         setTimeout(() => {
           advanceToNextLevel();
@@ -441,7 +430,6 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
       setLevelStatus('hint');
       setShakeError(true);
       setFeedbackMsg(currentLevel.feedbackHint);
-      speakWithMousaVoice(currentLevel.feedbackHint);
       setTimeout(() => setShakeError(false), 700);
     }
   };
@@ -754,10 +742,16 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={() => speakWithMousaVoice(currentLevel.prompt)}
-                    className="flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-900 transition bg-amber-100/80 px-2 py-0.5 rounded-lg"
+                    onClick={handleToggleSpeakPrompt}
+                    className={`flex items-center gap-1 text-[11px] font-bold transition px-2.5 py-1 rounded-lg ${
+                      isSpeakingPrompt
+                        ? 'bg-amber-200 text-amber-950 border border-amber-400 shadow-2xs'
+                        : 'text-amber-800 hover:text-amber-950 bg-amber-100/90 hover:bg-amber-200/80'
+                    }`}
+                    title={isSpeakingPrompt ? 'إيقاف الاستماع' : 'استمع للسؤال بصوت موسى'}
                   >
-                    <Volume2 className="w-3.5 h-3.5" /> اسمع السؤال
+                    {isSpeakingPrompt ? <VolumeX className="w-3.5 h-3.5 text-amber-900" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    <span>{isSpeakingPrompt ? 'إيقاف ⏸️' : 'اسمع السؤال 🔊'}</span>
                   </button>
                 </div>
                 <p className="text-sm sm:text-base font-black text-slate-800 leading-relaxed">
@@ -1172,18 +1166,35 @@ export const AIGamePlayerModal: React.FC<AIGamePlayerModalProps> = ({
             {/* رسائل التغذية الراجعة التفاعلية (نجاح أو تلميح) */}
             {feedbackMsg && (
               <div
-                className={`mt-4 p-3.5 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 transition-all animate-fadeIn ${
+                className={`mt-4 p-3.5 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-between gap-2.5 transition-all animate-fadeIn ${
                   levelStatus === 'success'
                     ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                     : 'bg-amber-100 text-amber-900 border border-amber-300'
                 }`}
               >
-                {levelStatus === 'success' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                ) : (
-                  <Lightbulb className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                )}
-                <span>{feedbackMsg}</span>
+                <div className="flex items-center gap-2.5 flex-1">
+                  {levelStatus === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                  ) : (
+                    <Lightbulb className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  )}
+                  <span>{feedbackMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleSpeakFeedback}
+                  className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition shrink-0 ${
+                    isSpeakingFeedback
+                      ? 'bg-amber-200 text-amber-950 border border-amber-400 shadow-2xs'
+                      : levelStatus === 'success'
+                        ? 'bg-emerald-200/80 hover:bg-emerald-300 text-emerald-900'
+                        : 'bg-amber-200/80 hover:bg-amber-300 text-amber-900'
+                  }`}
+                  title={isSpeakingFeedback ? 'إيقاف الاستماع' : 'استمع للتعليق بصوت موسى'}
+                >
+                  {isSpeakingFeedback ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  <span>{isSpeakingFeedback ? 'إيقاف ⏸️' : 'استمع 🔊'}</span>
+                </button>
               </div>
             )}
 

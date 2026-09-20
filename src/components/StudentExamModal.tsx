@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Clock, AlertTriangle, ShieldAlert, CheckCircle2, XCircle, 
-  Volume2, ArrowRight, ArrowLeft, Send, Sparkles, Award, 
+  Volume2, VolumeX, ArrowRight, ArrowLeft, Send, Sparkles, Award, 
   HelpCircle, Eye, RefreshCw, X, Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -10,7 +10,7 @@ import {
   saveExamSession, updateStudentExamSession, incrementTabSwitchCount, 
   syncExamSessionsFromCloud 
 } from '../storage';
-import { speakWithMousaVoice } from '../geminiService';
+import { speakWithMousaVoice, stopMousaVoice } from '../geminiService';
 
 interface StudentExamModalProps {
   exam: Exam;
@@ -33,6 +33,7 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [finalSession, setFinalSession] = useState<ExamSession | null>(null);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const [isSpeakingQuestion, setIsSpeakingQuestion] = useState(false);
 
   // حساب وقت الاختبار بالثواني
   const initialDurationSeconds = (exam.duration_minutes || 0) * 60;
@@ -45,6 +46,18 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
 
   // لوحة أزرار التشكيل المساعدة لحقل الإملاء
   const TASHKEEL_BUTTONS = ['َ', 'ً', 'ُ', 'ٌ', 'ِ', 'ٍ', 'ْ', 'ّ'];
+
+  // إيقاف الصوت عند تبديل السؤال أو إغلاق المودال
+  useEffect(() => {
+    stopMousaVoice();
+    setIsSpeakingQuestion(false);
+  }, [currentQuestionIndex]);
+
+  useEffect(() => {
+    return () => {
+      stopMousaVoice();
+    };
+  }, []);
 
   // 1. تهيئة جلسة الاختبار في Supabase والتخزين المحلي
   useEffect(() => {
@@ -67,9 +80,6 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
     };
 
     saveExamSession(initialSession);
-
-    // ترحيب صوتي مشجع من موسى
-    speakWithMousaVoice(`مَرْحَباً بِكَ يَا بَطَل فِي اخْتِبَارِ: ${exam.title}. رَكِّزْ جَيِّداً وَسَتُحَقِّقُ أَعْلَى الدَّرَجَاتِ!`);
   }, [exam, currentUser]);
 
   // 2. العداد التنازلي للاختبار
@@ -141,9 +151,6 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
     const newCount = await incrementTabSwitchCount(sessionIdRef.current);
     setTabSwitchCount(newCount);
     setShowTabWarning(true);
-
-    // نطق تنبيه صوتي من موسى
-    speakWithMousaVoice('انْتَبِهْ يَا بَطَل! يُرْجَى عَدَمُ مُغَادَرَةِ شَاشَةِ الاخْتِبَارِ.');
   };
 
   // معالجة اختيار الإجابة
@@ -162,11 +169,20 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
     handleSelectAnswer(currentQ.id, currentVal + char);
   };
 
-  // قراءة السؤال بصوت موسى
-  const handleSpeakCurrentQuestion = () => {
-    const q = exam.questions[currentQuestionIndex];
-    const textToSpeak = q.audioPromptText || q.text;
-    speakWithMousaVoice(textToSpeak);
+  // قراءة أو إيقاف السؤال يدوياً بصوت موسى
+  const handleToggleSpeakCurrentQuestion = () => {
+    if (isSpeakingQuestion) {
+      stopMousaVoice();
+      setIsSpeakingQuestion(false);
+    } else {
+      stopMousaVoice();
+      const q = exam.questions[currentQuestionIndex];
+      const textToSpeak = q.audioPromptText || q.text;
+      setIsSpeakingQuestion(true);
+      speakWithMousaVoice(textToSpeak, () => {
+        setIsSpeakingQuestion(false);
+      });
+    }
   };
 
   // تسليم تلقائي عند نفاد الوقت
@@ -216,15 +232,6 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
           origin: { y: 0.6 }
         });
       } catch {}
-
-      const percentage = Math.round((calculatedScore / totalMarks) * 100);
-      if (percentage >= 80) {
-        speakWithMousaVoice(`مُمْتَازٌ جِدّاً يَا بَطَل! حَصَلْتَ عَلَى ${calculatedScore} مِنْ ${totalMarks}! أَنْتَ رَائِعٌ!`);
-      } else {
-        speakWithMousaVoice(`أَحْسَنْتَ صُنْعاً يَا بَطَل! حَصَلْتَ عَلَى ${calculatedScore} مِنْ ${totalMarks}. اسْتَمِرَّ فِي التَّعَلُّمِ وَالتَّأَلُّقِ!`);
-      }
-    } else {
-      speakWithMousaVoice('أَحْسَنْتَ يَا بَطَل! تَمَّ تَسْلِيمُ إِجَابَاتِكَ بِنَجَاحٍ، وَسَتَصِلُكَ النَّتِيجَةُ قَرِيباً.');
     }
 
     if (onExamSubmitted) {
@@ -493,12 +500,16 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
 
               <button
                 type="button"
-                onClick={handleSpeakCurrentQuestion}
-                className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition flex items-center gap-1.5 text-xs font-bold"
-                title="الاستماع لنص السؤال بصوت موسى"
+                onClick={handleToggleSpeakCurrentQuestion}
+                className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 text-xs font-bold ${
+                  isSpeakingQuestion
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                }`}
+                title={isSpeakingQuestion ? 'إيقاف الصوت مؤقتاً' : 'الاستماع لنص السؤال بصوت موسى'}
               >
-                <Volume2 className="w-4 h-4" />
-                استمع لموسى 🔊
+                {isSpeakingQuestion ? <VolumeX className="w-4 h-4 text-amber-700" /> : <Volume2 className="w-4 h-4" />}
+                <span>{isSpeakingQuestion ? 'إيقاف ⏸️' : 'اسمع السؤال 🔊'}</span>
               </button>
             </div>
           </div>
@@ -580,9 +591,23 @@ export const StudentExamModal: React.FC<StudentExamModalProps> = ({
             {/* 3. نمط الكتابة والإملاء المشكول */}
             {currentQ.type === 'spelling_dictation' && (
               <div className="space-y-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-200">
-                <label className="text-xs font-bold text-slate-600 block">
-                  اكتب الكلمة المشكولة بالحركات التامة:
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-600">
+                    اكتب الكلمة المشكولة بالحركات التامة:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleToggleSpeakCurrentQuestion}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                      isSpeakingQuestion
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900'
+                    }`}
+                  >
+                    {isSpeakingQuestion ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    <span>{isSpeakingQuestion ? 'إيقاف ⏸️' : 'اسمع السؤال 🔊'}</span>
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={answers[currentQ.id] || ''}

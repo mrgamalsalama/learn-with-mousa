@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, Palette, Eraser, Trash2, Sparkles, Star, Award, 
-  RefreshCw, CheckCircle2, Volume2, HelpCircle, ShieldAlert
+  RefreshCw, CheckCircle2, Volume2, VolumeX, HelpCircle, ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DrawingAnalysisResult, ChildBadge } from '../types';
@@ -49,6 +49,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<DrawingAnalysisResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSpeakingFeedback, setIsSpeakingFeedback] = useState<boolean>(false);
 
   const currentUser = getCurrentUser();
   const userPerm = canUserUseAI(currentUser);
@@ -61,6 +62,9 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
 
   // إعداد اللوحة عند الفتح
   useEffect(() => {
+    stopMousaVoice();
+    setIsSpeakingFeedback(false);
+
     if (isOpen && canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
@@ -72,6 +76,11 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
       setHasDrawn(false);
       setResult(null);
     }
+
+    return () => {
+      stopMousaVoice();
+      setIsSpeakingFeedback(false);
+    };
   }, [isOpen, selectedLetterIndex]);
 
   // أحداث الرسم بالماوس واللمس
@@ -191,13 +200,25 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
         type: 'drawing',
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
       });
-
-      speakWithMousaVoice(res.feedback);
     } catch (e: any) {
       console.error(e);
       setErrorMessage(e?.message || 'تعذر تحليل الرسمة بالذكاء الاصطناعي.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleSpeakFeedback = () => {
+    if (!result?.feedback) return;
+    if (isSpeakingFeedback) {
+      stopMousaVoice();
+      setIsSpeakingFeedback(false);
+    } else {
+      stopMousaVoice();
+      setIsSpeakingFeedback(true);
+      speakWithMousaVoice(result.feedback, () => {
+        setIsSpeakingFeedback(false);
+      });
     }
   };
 
@@ -403,11 +424,16 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={() => speakWithMousaVoice(result.feedback)}
-                  className="p-2 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-800 transition shrink-0"
-                  title="استمع لتعليق موسى بصوته الأصلي"
+                  onClick={handleToggleSpeakFeedback}
+                  className={`px-3 py-1.5 rounded-xl transition shrink-0 flex items-center gap-1.5 text-xs font-bold ${
+                    isSpeakingFeedback
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-purple-100 hover:bg-purple-200 text-purple-800'
+                  }`}
+                  title={isSpeakingFeedback ? 'إيقاف الاستماع' : 'استمع لتعليق موسى بصوته الأصلي'}
                 >
-                  <Volume2 className="w-4 h-4" />
+                  {isSpeakingFeedback ? <VolumeX className="w-4 h-4 text-amber-700" /> : <Volume2 className="w-4 h-4" />}
+                  <span>{isSpeakingFeedback ? 'إيقاف ⏸️' : 'استمع 🔊'}</span>
                 </button>
               </div>
 

@@ -36,19 +36,19 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  // إيقاف الصوت عند إغلاق النافذة
   useEffect(() => {
-    if (isOpen && !isMuted && messages.length === 1) {
-      setIsSpeaking(true);
-      speakWithMousaVoice(messages[0].text, () => setIsSpeaking(false));
-    }
     return () => {
       stopMousaVoice();
+      setPlayingMessageId(null);
+      setIsSpeaking(false);
     };
-  }, [isOpen]);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -137,11 +137,6 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
       };
 
       setMessages(prev => [...prev, musaMsg]);
-
-      if (!isMuted) {
-        setIsSpeaking(true);
-        speakWithMousaVoice(reply, () => setIsSpeaking(false));
-      }
     } catch (err: any) {
       console.error('خطأ في استلام رد موسى من النموذج:', err);
       const errorMsg: MusaChatMessage = {
@@ -157,13 +152,19 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
     }
   };
 
-  const handlePlayAudio = (text: string) => {
-    if (isSpeaking) {
+  const handleTogglePlayMessage = (msgId: string, text: string) => {
+    if (playingMessageId === msgId) {
       stopMousaVoice();
+      setPlayingMessageId(null);
       setIsSpeaking(false);
     } else {
+      stopMousaVoice();
+      setPlayingMessageId(msgId);
       setIsSpeaking(true);
-      speakWithMousaVoice(text, () => setIsSpeaking(false));
+      speakWithMousaVoice(text, () => {
+        setPlayingMessageId(null);
+        setIsSpeaking(false);
+      });
     }
   };
 
@@ -287,12 +288,16 @@ export const MusaCompanionModal: React.FC<MusaCompanionModalProps> = ({
                     {isMusa && (
                       <button
                         type="button"
-                        onClick={() => handlePlayAudio(msg.text)}
-                        className="text-emerald-600 hover:text-emerald-800 font-bold flex items-center gap-1 transition pr-2"
-                        title="استمع للصوت"
+                        onClick={() => handleTogglePlayMessage(msg.id, msg.text)}
+                        className={`font-bold flex items-center gap-1.5 transition px-2.5 py-1 rounded-lg text-[11px] ${
+                          playingMessageId === msg.id
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                            : 'text-emerald-700 hover:bg-emerald-50'
+                        }`}
+                        title={playingMessageId === msg.id ? 'إيقاف الاستماع' : 'استمع إلى موسى بصوته الأصلي'}
                       >
-                        <Volume2 className="w-3.5 h-3.5" />
-                        <span>استمع</span>
+                        {playingMessageId === msg.id ? <VolumeX className="w-3.5 h-3.5 text-amber-700" /> : <Volume2 className="w-3.5 h-3.5" />}
+                        <span>{playingMessageId === msg.id ? 'إيقاف ⏸️' : 'استمع إلى موسى 🔊'}</span>
                       </button>
                     )}
                   </div>
