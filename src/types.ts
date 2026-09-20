@@ -17,6 +17,37 @@ export type GradeLevel =
 // حالات الاستثناء والتحكم الفردي في الذكاء الاصطناعي لكل مستخدم
 export type AIAccessStatus = 'inherit' | 'allowed' | 'blocked';
 
+// نظام تفويض صلاحيات الإدارة العليا (Admin Delegation System)
+export interface DelegatedAdminPermissions {
+  can_manage_teacher_grades: boolean; // تعديل صفوف ومسارات المعلمين
+  can_manage_teacher_tasks: boolean;  // إضافة وحذف مهام المعلمين
+  can_control_ai_governance: boolean; // التحكم في أزرار وقواعد الذكاء الاصطناعي
+  can_create_hod: boolean;            // تعيين وترقية رؤساء أقسام
+}
+
+export const DEFAULT_DELEGATED_PERMISSIONS: DelegatedAdminPermissions = {
+  can_manage_teacher_grades: false,
+  can_manage_teacher_tasks: false,
+  can_control_ai_governance: false,
+  can_create_hod: false,
+};
+
+// مهام وتكليفات المعلمين الرسمية (Teacher Tasks & Assignments)
+export interface TeacherTask {
+  id: string;
+  teacherId: string;
+  teacherName?: string;
+  title: string;
+  description?: string;
+  dueDate?: string;
+  priority: 'low' | 'medium' | 'high';
+  completed: boolean;
+  completedAt?: string;
+  assignedBy: string;      // اسم المشرف أو رئيس القسم الذي أسند المهمة
+  assignedByRole: 'super_admin' | 'hod';
+  createdAt: string;
+}
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
@@ -27,6 +58,9 @@ export interface UserProfile {
   
   // التحكم الفردي الدقيق في صلاحيات الذكاء الاصطناعي للمستخدم
   ai_access_status?: AIAccessStatus;
+
+  // الصلاحيات المفوضة من الإدارة العليا (Admin Delegation)
+  delegated_admin_permissions?: DelegatedAdminPermissions;
 
   // تتبع النشاط والزيارات
   loginCount?: number;

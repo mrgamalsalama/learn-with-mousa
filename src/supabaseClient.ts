@@ -35,6 +35,7 @@ export async function upsertUserInSupabase(user: {
   loginCount?: number;
   lastLogin?: string | null;
   ai_access_status?: 'inherit' | 'allowed' | 'blocked';
+  delegated_admin_permissions?: any;
 }): Promise<{ data: any; error: any }> {
   // 1. ضمان وجود معرّف سليم (نصي أو UUID)
   const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
@@ -53,6 +54,9 @@ export async function upsertUserInSupabase(user: {
   }
   if (user.ai_access_status !== undefined) {
     userData.ai_access_status = user.ai_access_status;
+  }
+  if (user.delegated_admin_permissions !== undefined) {
+    userData.delegated_admin_permissions = user.delegated_admin_permissions;
   }
   if (user.stage !== undefined) {
     userData.stage = user.stage || null;
@@ -80,10 +84,21 @@ export async function upsertUserInSupabase(user: {
   }
 
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('users')
       .upsert(userData, { onConflict: 'id' })
       .select();
+
+    // في حال عدم وجود عمود delegated_admin_permissions في جدول users سحابياً (كود 42703)، نعيد المحاولة بدونه
+    if (error && error.code === '42703' && userData.delegated_admin_permissions !== undefined) {
+      delete userData.delegated_admin_permissions;
+      const retry = await supabase
+        .from('users')
+        .upsert(userData, { onConflict: 'id' })
+        .select();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.error('Supabase users upsert error:', error.message, error.details, error.hint);

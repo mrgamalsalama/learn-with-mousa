@@ -6,13 +6,15 @@ import {
   Library, Download, Eye, CheckSquare, X, Search, FileUp,
   Bot, Palette, Brain, Printer, MessageCircle, Star,
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
-  ShieldAlert, Sliders, AlertTriangle, FileCheck2
+  ShieldAlert, Sliders, AlertTriangle, FileCheck2,
+  ListTodo, KeyRound, Edit3
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
-  ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession
+  ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
+  TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -22,8 +24,16 @@ import {
   getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges,
   getOfflineSubmissionsQueue, drainOfflineQueue,
   getAIGovernanceRules, syncAIGovernanceRulesFromCloud, isAIFeatureAllowed, canUserUseAI,
-  getExams, getExamSessions, syncExamsFromCloud, syncExamSessionsFromCloud
+  getExams, getExamSessions, syncExamsFromCloud, syncExamSessionsFromCloud,
+  getTeacherTasks, syncTeacherTasksFromCloud
 } from './storage';
+import { 
+  canManageTeacherGrades, 
+  canManageTeacherTasks, 
+  canControlAIGovernance, 
+  canCreateHOD, 
+  countDelegatedPermissions 
+} from './utils/permissions';
 import { getCachedGamesOffline } from './db/offlineCache';
 import { MusaCompanionModal } from './components/MusaCompanionModal';
 import { AdaptiveStoryModal } from './components/AdaptiveStoryModal';
@@ -39,6 +49,10 @@ import { ShareableBadgeModal } from './components/ShareableBadgeModal';
 import { AdminAIGovernancePanel } from './components/AdminAIGovernancePanel';
 import { TeacherExamsHub } from './components/TeacherExamsHub';
 import { StudentExamModal } from './components/StudentExamModal';
+import { AdminDelegationModal } from './components/AdminDelegationModal';
+import { EditTeacherGradesModal } from './components/EditTeacherGradesModal';
+import { TeacherTasksManager } from './components/TeacherTasksManager';
+import { TeacherTasksReadOnlyView } from './components/TeacherTasksReadOnlyView';
 import { 
   generateAIPassage, 
   generateQuestionsFromPassage, 
@@ -75,13 +89,22 @@ export default function App() {
   const [aiGovernanceRules, setAiGovernanceRules] = useState<AIGovernanceRules>(getAIGovernanceRules());
 
   // تبويبات لوحة المشرف العام
-  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance'>('teachers');
+  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>('teachers');
 
   // تبويبات لوحة رئيس القسم
-  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library'>('overview');
+  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks'>('overview');
 
   // تبويبات لوحة المعلم
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams'>('activities');
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks'>('activities');
+
+  // قائمة مهام وتكليفات المعلمين
+  const [teacherTasks, setTeacherTasks] = useState<TeacherTask[]>(getTeacherTasks());
+
+  // حالة نوافذ تفويض الصلاحيات وتعديل الصفوف
+  const [isAdminDelegationModalOpen, setIsAdminDelegationModalOpen] = useState(false);
+  const [selectedUserForDelegation, setSelectedUserForDelegation] = useState<UserProfile | null>(null);
+  const [isEditTeacherGradesModalOpen, setIsEditTeacherGradesModalOpen] = useState(false);
+  const [selectedTeacherForGrades, setSelectedTeacherForGrades] = useState<UserProfile | null>(null);
 
   // تبويبات لوحة الطالب
   const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams'>('ai_studio');
@@ -182,6 +205,11 @@ export default function App() {
     syncUsersFromCloud().then((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
         setUsers(cloudUsers);
+        const curr = getCurrentUser();
+        if (curr) {
+          const fresh = cloudUsers.find(x => x.id === curr.id);
+          if (fresh) setUser(fresh);
+        }
       }
     });
     syncActivitiesFromCloud().then(cloudActs => setActivities(cloudActs));
@@ -189,14 +217,33 @@ export default function App() {
     syncAIGovernanceRulesFromCloud().then(rules => setAiGovernanceRules(rules));
     syncExamsFromCloud().then(e => setExamsList(e));
     syncExamSessionsFromCloud().then(s => setExamSessionsList(s));
+    syncTeacherTasksFromCloud().then(tasks => setTeacherTasks(tasks));
 
     // الاشتراك اللحظي في تحديثات Supabase Realtime
     const unsubscribe = subscribeToCloudChanges({
-      onUsersChange: () => syncUsersFromCloud().then(u => setUsers(u)),
+      onUsersChange: () => syncUsersFromCloud().then(u => {
+        setUsers(u);
+        const curr = getCurrentUser();
+        if (curr) {
+          const fresh = u.find(x => x.id === curr.id);
+          if (fresh) setUser(fresh);
+        }
+      }),
       onActivitiesChange: () => syncActivitiesFromCloud().then(a => setActivities(a)),
       onSubmissionsChange: () => syncSubmissionsFromCloud().then(s => setSubmissions(s)),
       onExamsChange: () => syncExamsFromCloud().then(e => setExamsList(e)),
       onExamSessionsChange: () => syncExamSessionsFromCloud().then(s => setExamSessionsList(s)),
+      onTeacherTasksChange: (tasks) => setTeacherTasks(tasks),
+      onDelegatedPermissionsChange: () => {
+        syncUsersFromCloud().then(u => {
+          setUsers(u);
+          const curr = getCurrentUser();
+          if (curr) {
+            const fresh = u.find(x => x.id === curr.id);
+            if (fresh) setUser(fresh);
+          }
+        });
+      },
       onGovernanceChange: () => {
         syncAIGovernanceRulesFromCloud().then(r => setAiGovernanceRules(r));
       },
@@ -510,6 +557,11 @@ export default function App() {
     e.preventDefault();
     if (!formName || !formUsername || !formPassword) return;
 
+    if (formRole === 'hod' && !canCreateHOD(currentUser)) {
+      alert('عفواً، لا تملك صلاحية إنشاء أو ترقية حسابات برتبة رئيس قسم (HOD). هذه الصلاحية محصورة في المشرف العام أو المفوضين إدارياً.');
+      return;
+    }
+
     if ((formRole === 'teacher' || formRole === 'hod') && selectedGrades.length === 0) {
       alert('يرجى تحديد صف دراسي واحد على الأقل!');
       return;
@@ -544,6 +596,7 @@ export default function App() {
       password: formPassword,
       role: formRole,
       loginCount: 0,
+      delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
       ...(formRole === 'teacher' || formRole === 'hod'
         ? {
             allowedGrades: selectedGrades,
@@ -1102,6 +1155,41 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Admin Delegation Modal */}
+        {isAdminDelegationModalOpen && selectedUserForDelegation && currentUser && (
+          <AdminDelegationModal
+            isOpen={isAdminDelegationModalOpen}
+            onClose={() => {
+              setIsAdminDelegationModalOpen(false);
+              setSelectedUserForDelegation(null);
+            }}
+            user={selectedUserForDelegation}
+            adminUser={currentUser}
+            onSaved={(updated) => {
+              setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+              if (currentUser.id === updated.id) {
+                setUser(updated);
+              }
+            }}
+          />
+        )}
+
+        {/* Edit Teacher Grades Modal */}
+        {isEditTeacherGradesModalOpen && selectedTeacherForGrades && currentUser && (
+          <EditTeacherGradesModal
+            isOpen={isEditTeacherGradesModalOpen}
+            onClose={() => {
+              setIsEditTeacherGradesModalOpen(false);
+              setSelectedTeacherForGrades(null);
+            }}
+            teacher={selectedTeacherForGrades}
+            actorUser={currentUser}
+            onSaved={(updated) => {
+              setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+            }}
+          />
+        )}
       </>
     );
   };
@@ -1562,6 +1650,22 @@ export default function App() {
                   <Library className="w-3.5 h-3.5" /> بنك القصص الإسلامية ({storyBank.length})
                 </button>
                 <button
+                  onClick={() => setAdminTab('teacher_tasks')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                    adminTab === 'teacher_tasks'
+                      ? 'bg-teal-700 text-white'
+                      : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
+                  }`}
+                >
+                  <ListTodo className="w-3.5 h-3.5 text-teal-600" />
+                  <span>مهام وتكليفات المعلمين</span>
+                  {teacherTasks.filter(t => !t.completed).length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-teal-600 text-white text-[10px] font-bold">
+                      {teacherTasks.filter(t => !t.completed).length}
+                    </span>
+                  )}
+                </button>
+                <button
                   onClick={() => setAdminTab('ai_governance')}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
                     adminTab === 'ai_governance'
@@ -1578,6 +1682,14 @@ export default function App() {
                   )}
                 </button>
               </div>
+
+              {adminTab === 'teacher_tasks' && (
+                <TeacherTasksManager
+                  actorUser={currentUser}
+                  teachers={teachersList}
+                  onTasksUpdated={() => setTeacherTasks(getTeacherTasks())}
+                />
+              )}
 
               {adminTab === 'ai_governance' && (
                 <AdminAIGovernancePanel
@@ -1622,61 +1734,138 @@ export default function App() {
                   {teachersList.length === 0 ? (
                     <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة معلمين بعد.</p>
                   ) : (
-                    teachersList.map((t) => (
-                      <div key={t.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-800">{t.name}</h4>
-                          <span className="text-[11px] text-slate-500">اسم المستخدم: <b>{t.username}</b> • كلمة السر: <b>{t.password}</b></span>
-                          <div className="flex gap-1.5 mt-2">
+                    teachersList.map((t) => {
+                      const delegatedCount = countDelegatedPermissions(t.delegated_admin_permissions);
+                      return (
+                        <div key={t.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-sm text-slate-800">{t.name}</h4>
+                                {delegatedCount > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold border border-indigo-200 flex items-center gap-1">
+                                    <KeyRound className="w-3 h-3 text-indigo-600" />
+                                    {delegatedCount} صلاحيات مفوضة
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-500">اسم المستخدم: <b>{t.username}</b> • كلمة السر: <b>{t.password}</b></span>
+                            </div>
+
+                            <button
+                              onClick={() => handleDeleteUser(t.id)}
+                              className="self-end sm:self-center p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                              title="حذف المعلم"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 items-center">
                             {t.allowedTracks?.map((tr) => (
                               <span key={tr} className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
                                 {tr === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
                               </span>
                             ))}
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-2">
                             {t.allowedGrades?.map((gId) => (
                               <span key={gId} className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
                                 {getGradeLabel(gId)}
                               </span>
                             ))}
                           </div>
+
+                          {/* أزرار الإدارة الحصرية: تعديل الصفوف والمراحل + إسناد المهام + تفويض الصلاحيات */}
+                          <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedTeacherForGrades(t);
+                                setIsEditTeacherGradesModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 flex items-center gap-1.5 transition-colors"
+                            >
+                              <GraduationCap className="w-3.5 h-3.5" />
+                              تعديل الصفوف والمراحل
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setAdminTab('teacher_tasks');
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-xs border border-teal-200 flex items-center gap-1.5 transition-colors"
+                            >
+                              <ListTodo className="w-3.5 h-3.5" />
+                              إدارة التكليفات
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setSelectedUserForDelegation(t);
+                                setIsAdminDelegationModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 flex items-center gap-1.5 transition-colors"
+                            >
+                              <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
+                              تفويض الصلاحيات الإدارية 🛡️
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => handleDeleteUser(t.id)}
-                          className="self-end sm:self-center p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
 
               {adminTab === 'hods' && (
                 <div className="space-y-3">
-                  {hodsList.map((h) => (
-                    <div key={h.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-800">{h.name}</h4>
-                        <span className="text-[11px] text-slate-500">اسم الدخول: <b>{h.username}</b> • كلمة السر: <b>{h.password}</b></span>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {h.allowedGrades?.map((gId) => (
-                            <span key={gId} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold">
-                              {getGradeLabel(gId)}
-                            </span>
-                          ))}
+                  {hodsList.map((h) => {
+                    const delegatedCount = countDelegatedPermissions(h.delegated_admin_permissions);
+                    return (
+                      <div key={h.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-sm text-slate-800">{h.name}</h4>
+                              {delegatedCount > 0 && (
+                                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold border border-indigo-200 flex items-center gap-1">
+                                  <KeyRound className="w-3 h-3 text-indigo-600" />
+                                  {delegatedCount} صلاحيات مفوضة
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-500">اسم الدخول: <b>{h.username}</b> • كلمة السر: <b>{h.password}</b></span>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {h.allowedGrades?.map((gId) => (
+                                <span key={gId} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold">
+                                  {getGradeLabel(gId)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteUser(h.id)}
+                            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                            title="حذف رئيس القسم"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* زر تفويض الصلاحيات لرئيس القسم */}
+                        <div className="pt-2 border-t border-slate-200/60 flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedUserForDelegation(h);
+                              setIsAdminDelegationModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 flex items-center gap-1.5 transition-colors"
+                          >
+                            <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
+                            تفويض الصلاحيات الإدارية 🛡️
+                          </button>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteUser(h.id)}
-                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1783,6 +1972,19 @@ export default function App() {
               <BarChart3 className="w-4 h-4" /> النظرة العامة والتقارير
             </button>
             <button
+              onClick={() => setHodTab('teacher_tasks')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'teacher_tasks' ? 'bg-teal-700 text-white' : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+            >
+              <ListTodo className="w-4 h-4 text-teal-400" /> إدارة مهام وتكليفات المعلمين
+              {teacherTasks.filter(t => !t.completed && departmentTeachers.some(dt => dt.id === t.teacherId)).length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-teal-500 text-white text-[10px] font-bold">
+                  {teacherTasks.filter(t => !t.completed && departmentTeachers.some(dt => dt.id === t.teacherId)).length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setHodTab('library')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                 hodTab === 'library' ? 'bg-emerald-800 text-white' : 'bg-white border border-slate-200 text-slate-600'
@@ -1790,6 +1992,18 @@ export default function App() {
             >
               <Library className="w-4 h-4 text-emerald-400" /> المستودع القرائي وإسناد الكتب ({filteredBooks.length})
             </button>
+            {canControlAIGovernance(currentUser) && (
+              <button
+                onClick={() => setHodTab('ai_governance' as any)}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  (hodTab as string) === 'ai_governance'
+                    ? 'bg-rose-700 text-white'
+                    : 'bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100'
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4 text-rose-500" /> التحكم في الذكاء الاصطناعي (مفوض) ⚡
+              </button>
+            )}
           </div>
 
           {hodTab === 'overview' && (
@@ -1841,6 +2055,7 @@ export default function App() {
                         <th className="pb-3 font-semibold">الأنشطة المنشورة</th>
                         <th className="pb-3 font-semibold">عدد مرات الدخول</th>
                         <th className="pb-3 font-semibold">آخر تسجيل دخول</th>
+                        <th className="pb-3 font-semibold text-center">إدارة الصفوف والتكليفات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1861,6 +2076,31 @@ export default function App() {
                             <td className="py-3 font-bold text-emerald-600">{actCount} نشاط</td>
                             <td className="py-3 font-bold text-indigo-600">{t.loginCount || 0} زيارة</td>
                             <td className="py-3 text-slate-500">{t.lastLogin || 'لم يسجل دخول بعد'}</td>
+                            <td className="py-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setSelectedTeacherForGrades(t);
+                                    setIsEditTeacherGradesModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 flex items-center gap-1 transition-colors"
+                                  title="تعديل الصفوف والمراحل حصرياً لرئيس القسم"
+                                >
+                                  <GraduationCap className="w-3.5 h-3.5" />
+                                  تعديل الصفوف
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setHodTab('teacher_tasks');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-[11px] border border-teal-200 flex items-center gap-1 transition-colors"
+                                  title="إدارة المهام والتكليفات"
+                                >
+                                  <ListTodo className="w-3.5 h-3.5" />
+                                  إسناد مهام
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1869,6 +2109,30 @@ export default function App() {
                 </div>
               </div>
             </>
+          )}
+
+          {hodTab === 'teacher_tasks' && (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+              <TeacherTasksManager
+                actorUser={currentUser}
+                teachers={departmentTeachers}
+                onTasksUpdated={() => setTeacherTasks(getTeacherTasks())}
+              />
+            </div>
+          )}
+
+          {(hodTab as string) === 'ai_governance' && canControlAIGovernance(currentUser) && (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
+              <AdminAIGovernancePanel
+                rules={aiGovernanceRules}
+                onRulesUpdated={(newRules) => setAiGovernanceRules(newRules)}
+                adminName={currentUser.name + ' (رئيس قسم مفوض)'}
+                users={users}
+                onUserUpdated={(updatedUser) => {
+                  setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+                }}
+              />
+            </div>
           )}
 
           {hodTab === 'library' && (
@@ -1999,6 +2263,21 @@ export default function App() {
               }`}
             >
               <FileCheck2 className="w-4 h-4 text-emerald-500" /> مركز الاختبارات والتقييمات 📝 ({examsList.filter(e => e.teacher_id === currentUser.id).length})
+            </button>
+            <button
+              onClick={() => setTeacherTab('tasks')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'tasks'
+                  ? 'bg-teal-700 text-white shadow-md shadow-teal-700/20'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <ListTodo className="w-4 h-4 text-teal-600" /> التكليفات والمهام المسندة إليك
+              {teacherTasks.filter(t => t.teacherId === currentUser.id && !t.completed).length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                  {teacherTasks.filter(t => t.teacherId === currentUser.id && !t.completed).length} مطلوبة
+                </span>
+              )}
             </button>
           </div>
 
@@ -2718,6 +2997,13 @@ export default function App() {
                 allowedGrades={teacherAllowedGrades}
               />
             </div>
+          )}
+
+          {teacherTab === 'tasks' && (
+            <TeacherTasksReadOnlyView
+              currentTeacher={currentUser}
+              onTaskStatusToggled={() => setTeacherTasks(getTeacherTasks())}
+            />
           )}
         </main>
 

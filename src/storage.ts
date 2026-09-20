@@ -1,6 +1,7 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
+import { canManageTeacherTasks, sanitizeDelegatedPermissions } from './utils/permissions';
 import { 
   cacheMultipleGamesOffline, 
   enqueueOfflineSubmission, 
@@ -19,6 +20,9 @@ const AI_GOVERNANCE_KEY = 'lwm_ai_governance_rules';
 const EXAMS_KEY = 'lwm_exams';
 const EXAM_SESSIONS_KEY = 'lwm_exam_sessions';
 export const AI_GOVERNANCE_SYNC_ID = 'ai_governance_rules_sync';
+export const TEACHER_TASKS_KEY = 'lwm_teacher_tasks';
+export const TEACHER_TASKS_SYNC_ID = 'teacher_tasks_sync';
+export const DELEGATED_PERMISSIONS_SYNC_ID = 'delegated_permissions_sync';
 
 export const INITIAL_EXAMS: Exam[] = [
   {
@@ -133,6 +137,7 @@ export const INITIAL_USERS: UserProfile[] = [
     password: '123',
     role: 'super_admin',
     loginCount: 5,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   },
   {
     id: 'usr_hod',
@@ -144,6 +149,7 @@ export const INITIAL_USERS: UserProfile[] = [
     allowedGrades: ['grade-1', 'grade-2', 'grade-3', 'grade-4'],
     allowedTracks: ['arabic-a', 'arabic-b'],
     loginCount: 8,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   },
   {
     id: 'usr_teacher',
@@ -155,6 +161,7 @@ export const INITIAL_USERS: UserProfile[] = [
     allowedGrades: ['grade-1', 'grade-2'],
     allowedTracks: ['arabic-a', 'arabic-b'],
     loginCount: 12,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   },
   {
     id: 'usr_student_mousa',
@@ -167,6 +174,7 @@ export const INITIAL_USERS: UserProfile[] = [
     track: 'arabic-a',
     teacherId: 'usr_teacher',
     loginCount: 15,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   },
   {
     id: 'usr_parent',
@@ -176,6 +184,37 @@ export const INITIAL_USERS: UserProfile[] = [
     role: 'parent',
     studentId: 'usr_student_mousa',
     loginCount: 6,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
+  }
+];
+
+export const INITIAL_TEACHER_TASKS: TeacherTask[] = [
+  {
+    id: 'task_demo_1',
+    teacherId: 'usr_teacher',
+    teacherName: 'الأستاذة فاطمة الزهراء',
+    title: 'مراجعة وتدقيق أنشطة الوعي الصوتي والمدود للصف الأول',
+    description: 'يرجى مراجعة وتدقيق أسئلة وبنك أنشطة مهارات الوعي الصوتي لطلاب الصف الأول والتحقق من التشكيل التام بالحركات قبل نهاية الأسبوع.',
+    dueDate: '2026-09-25',
+    priority: 'high',
+    completed: false,
+    assignedBy: 'د. أحمد المنصوري',
+    assignedByRole: 'hod',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'task_demo_2',
+    teacherId: 'usr_teacher',
+    teacherName: 'الأستاذة فاطمة الزهراء',
+    title: 'إسناد قصة الأسبوع من المستودع القرائي',
+    description: 'يرجى الدخول إلى المستودع القرائي واختيار قصة الأسبوع الملائمة لطلاب الصف الثاني وتكليفهم بقراءتها مع نشاط تقييمي.',
+    dueDate: '2026-09-28',
+    priority: 'medium',
+    completed: true,
+    completedAt: '٢٠٢٦/٠٩/١٩ ١٠:٣٠ ص',
+    assignedBy: 'المشرف العام',
+    assignedByRole: 'super_admin',
+    createdAt: new Date(Date.now() - 86400000 * 2).toISOString()
   }
 ];
 
@@ -188,30 +227,58 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
       console.error("Supabase Sync Error Details:", error.message, error.details, error.hint);
       return getUsers();
     }
+
+    // استرجاع خريطة الصلاحيات المفوضة من قناة المزامنة السحابية
+    let cloudDelegatedMap: Record<string, DelegatedAdminPermissions> = {};
+    try {
+      const { data: actData } = await supabase
+        .from('activities')
+        .select('passage')
+        .eq('id', DELEGATED_PERMISSIONS_SYNC_ID)
+        .maybeSingle();
+      if (actData?.passage) {
+        cloudDelegatedMap = JSON.parse(actData.passage);
+      }
+    } catch (e) {
+      console.warn('تعذر استرجاع خريطة الصلاحيات المفوضة سحابياً:', e);
+    }
+
     if (Array.isArray(data)) {
-      // إعادة تحويل Snake_Case إلى CamelCase
-      const cloudUsers: UserProfile[] = data.map((u: any) => ({
-        id: u.id,
-        name: u.name,
-        username: u.username,
-        password: u.password,
-        role: u.role,
-        stage: u.stage || undefined,
-        grade: u.grade || undefined,
-        track: u.track || undefined,
-        studentId: u.student_id || undefined,
-        ai_access_status: (u.ai_access_status === 'allowed' || u.ai_access_status === 'blocked') ? u.ai_access_status : 'inherit',
-        allowedGrades: Array.isArray(u.allowed_grades) ? u.allowed_grades : [],
-        allowedStages: Array.isArray(u.allowed_stages) ? u.allowed_stages : (u.stage ? [u.stage] : ['primary']),
-        allowedTracks: Array.isArray(u.allowed_tracks) ? u.allowed_tracks : ['arabic-a'],
-        loginCount: u.login_count || 0,
-        lastLogin: u.last_login || undefined
-      }));
+      // إعادة تحويل Snake_Case إلى CamelCase مع ضمان تطهير الصلاحيات المفوضة
+      const cloudUsers: UserProfile[] = data.map((u: any) => {
+        const userDelegated = sanitizeDelegatedPermissions(
+          cloudDelegatedMap[u.id] || u.delegated_admin_permissions
+        );
+
+        return {
+          id: u.id,
+          name: u.name,
+          username: u.username,
+          password: u.password,
+          role: u.role,
+          stage: u.stage || undefined,
+          grade: u.grade || undefined,
+          track: u.track || undefined,
+          studentId: u.student_id || undefined,
+          ai_access_status: (u.ai_access_status === 'allowed' || u.ai_access_status === 'blocked') ? u.ai_access_status : 'inherit',
+          delegated_admin_permissions: userDelegated,
+          allowedGrades: Array.isArray(u.allowed_grades) ? u.allowed_grades : [],
+          allowedStages: Array.isArray(u.allowed_stages) ? u.allowed_stages : (u.stage ? [u.stage] : ['primary']),
+          allowedTracks: Array.isArray(u.allowed_tracks) ? u.allowed_tracks : ['arabic-a'],
+          loginCount: u.login_count || 0,
+          lastLogin: u.last_login || undefined
+        };
+      });
 
       // الحفاظ على الحسابات الافتراضية التجريبية
       const mergedMap = new Map<string, UserProfile>();
       for (const initUser of INITIAL_USERS) {
-        mergedMap.set(initUser.username.toLowerCase(), initUser);
+        mergedMap.set(initUser.username.toLowerCase(), {
+          ...initUser,
+          delegated_admin_permissions: sanitizeDelegatedPermissions(
+            cloudDelegatedMap[initUser.id] || initUser.delegated_admin_permissions
+          )
+        });
       }
       for (const cu of cloudUsers) {
         mergedMap.set(cu.username.toLowerCase(), cu);
@@ -241,6 +308,15 @@ export const getUsers = (): UserProfile[] => {
       changed = true;
     }
   }
+
+  // التأكد الصارم من أن كل مستخدم يمتلك كائن delegated_admin_permissions بقيم افتراضية false
+  for (const u of currentList) {
+    if (!u.delegated_admin_permissions) {
+      u.delegated_admin_permissions = { ...DEFAULT_DELEGATED_PERMISSIONS };
+      changed = true;
+    }
+  }
+
   if (changed) {
     localStorage.setItem(USERS_KEY, JSON.stringify(currentList));
   }
@@ -306,6 +382,233 @@ export const setCurrentUser = (user: UserProfile | null) => {
   } else {
     localStorage.removeItem(CURRENT_USER_KEY);
   }
+};
+
+// ================= تفويض صلاحيات الإدارة العليا (Admin Delegation) =================
+
+export const saveUserDelegatedPermissions = async (
+  userId: string,
+  rawPermissions: DelegatedAdminPermissions,
+  adminUser: UserProfile
+): Promise<{ user: UserProfile; error?: any }> => {
+  if (adminUser.role !== 'super_admin') {
+    return {
+      user: {} as UserProfile,
+      error: new Error('عفواً، تفويض الصلاحيات الإدارية محصور في صلاحيات المشرف العام حصرياً.')
+    };
+  }
+
+  const permissions = sanitizeDelegatedPermissions(rawPermissions);
+  const users = getUsers();
+  const targetUserIdx = users.findIndex(u => u.id === userId);
+  if (targetUserIdx < 0) {
+    return { user: {} as UserProfile, error: new Error('المستخدم غير موجود') };
+  }
+
+  const updatedUser: UserProfile = {
+    ...users[targetUserIdx],
+    delegated_admin_permissions: permissions
+  };
+
+  users[targetUserIdx] = updatedUser;
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+
+  // تحديث المستخدم الحالي إن كان هو نفسه المستخدم المعدل
+  const current = getCurrentUser();
+  if (current && current.id === userId) {
+    setCurrentUser(updatedUser);
+  }
+
+  // حفظ في Supabase جدول users
+  try {
+    await upsertUserInSupabase(updatedUser);
+  } catch (e) {
+    console.warn('Upsert user in supabase error during permission delegation:', e);
+  }
+
+  // حفظ في سجل المزامنة السحابية activities لإطلاق إشعار Realtime لجميع النوافذ والمستخدمين المتصلين
+  try {
+    let cloudMap: Record<string, DelegatedAdminPermissions> = {};
+    const { data: actData } = await supabase
+      .from('activities')
+      .select('passage')
+      .eq('id', DELEGATED_PERMISSIONS_SYNC_ID)
+      .maybeSingle();
+
+    if (actData?.passage) {
+      try {
+        cloudMap = JSON.parse(actData.passage);
+      } catch (err) {}
+    }
+
+    cloudMap[userId] = permissions;
+
+    await supabase.from('activities').upsert({
+      id: DELEGATED_PERMISSIONS_SYNC_ID,
+      title: 'DELEGATED_PERMISSIONS_MAP',
+      passage: JSON.stringify(cloudMap),
+      teacher_id: adminUser.id,
+      teacher_name: adminUser.name,
+      stage: 'primary',
+      grade: 'grade-1',
+      track: 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.error('فشل بث تفويض الصلاحيات سحابياً:', e);
+  }
+
+  return { user: updatedUser };
+};
+
+// ================= مهام وتكليفات المعلمين (Teacher Tasks) =================
+
+export const getTeacherTasks = (): TeacherTask[] => {
+  const data = localStorage.getItem(TEACHER_TASKS_KEY);
+  if (!data) {
+    localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(INITIAL_TEACHER_TASKS));
+    return INITIAL_TEACHER_TASKS;
+  }
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return INITIAL_TEACHER_TASKS;
+  }
+};
+
+export const syncTeacherTasksFromCloud = async (): Promise<TeacherTask[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('activities')
+      .select('passage')
+      .eq('id', TEACHER_TASKS_SYNC_ID)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('فشل مزامنة مهام المعلمين سحابياً:', error.message);
+      return getTeacherTasks();
+    }
+
+    if (data?.passage) {
+      const cloudTasks: TeacherTask[] = JSON.parse(data.passage);
+      localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(cloudTasks));
+      return cloudTasks;
+    }
+  } catch (e) {
+    console.warn('استثناء أثناء مزامنة مهام المعلمين:', e);
+  }
+  return getTeacherTasks();
+};
+
+export const saveTeacherTask = async (
+  task: TeacherTask,
+  actorUser: UserProfile
+): Promise<{ task: TeacherTask; error?: any }> => {
+  if (!canManageTeacherTasks(actorUser)) {
+    return {
+      task,
+      error: new Error('عفواً، ليس لديك صلاحية لإضافة أو تعديل مهام المعلمين (محصورة في الإدارة ورئيس القسم).')
+    };
+  }
+
+  const tasks = getTeacherTasks();
+  const existingIdx = tasks.findIndex(t => t.id === task.id);
+  if (existingIdx >= 0) {
+    tasks[existingIdx] = task;
+  } else {
+    tasks.unshift(task);
+  }
+  localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(tasks));
+
+  // بث التحديث سحابياً
+  try {
+    await supabase.from('activities').upsert({
+      id: TEACHER_TASKS_SYNC_ID,
+      title: 'TEACHER_TASKS_DATA',
+      passage: JSON.stringify(tasks),
+      teacher_id: actorUser.id,
+      teacher_name: actorUser.name,
+      stage: 'primary',
+      grade: 'grade-1',
+      track: 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('فشل حفظ مهام المعلمين سحابياً:', e);
+  }
+
+  return { task };
+};
+
+export const deleteTeacherTask = async (
+  taskId: string,
+  actorUser: UserProfile
+): Promise<{ success: boolean; error?: any }> => {
+  if (!canManageTeacherTasks(actorUser)) {
+    return {
+      success: false,
+      error: new Error('عفواً، لا يملك المعلم صلاحية حذف المهام (محصورة في الإدارة العليا ورئيس القسم).')
+    };
+  }
+
+  const tasks = getTeacherTasks().filter(t => t.id !== taskId);
+  localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(tasks));
+
+  try {
+    await supabase.from('activities').upsert({
+      id: TEACHER_TASKS_SYNC_ID,
+      title: 'TEACHER_TASKS_DATA',
+      passage: JSON.stringify(tasks),
+      teacher_id: actorUser.id,
+      teacher_name: actorUser.name,
+      stage: 'primary',
+      grade: 'grade-1',
+      track: 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('فشل تحديث حذف مهام المعلمين سحابياً:', e);
+  }
+
+  return { success: true };
+};
+
+export const toggleTeacherTaskCompleted = async (
+  taskId: string,
+  actingUserId: string
+): Promise<TeacherTask | null> => {
+  const tasks = getTeacherTasks();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return null;
+
+  task.completed = !task.completed;
+  task.completedAt = task.completed
+    ? new Date().toLocaleDateString('ar-EG') + ' ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+    : undefined;
+
+  localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(tasks));
+
+  try {
+    await supabase.from('activities').upsert({
+      id: TEACHER_TASKS_SYNC_ID,
+      title: 'TEACHER_TASKS_DATA',
+      passage: JSON.stringify(tasks),
+      teacher_id: actingUserId,
+      teacher_name: 'User',
+      stage: 'primary',
+      grade: 'grade-1',
+      track: 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('فشل تحديث حالة إكمال المهمة سحابياً:', e);
+  }
+
+  return task;
 };
 
 // ================= الأنشطة (Activities Cloud & Local Sync) =================
@@ -828,6 +1131,8 @@ export const subscribeToCloudChanges = (callbacks: {
   onGovernanceChange?: (rules: AIGovernanceRules) => void;
   onExamsChange?: () => void;
   onExamSessionsChange?: (payload?: any) => void;
+  onTeacherTasksChange?: (tasks: TeacherTask[]) => void;
+  onDelegatedPermissionsChange?: (map: Record<string, DelegatedAdminPermissions>) => void;
 }) => {
   try {
     const channel = supabase
@@ -844,6 +1149,40 @@ export const subscribeToCloudChanges = (callbacks: {
             callbacks.onGovernanceChange?.(rules);
           } catch (e) {}
         }
+
+        // فحص هل النشاط المعدل هو سجل مهام وتكليفات المعلمين
+        if (payload?.new && (payload.new.id === TEACHER_TASKS_SYNC_ID || payload.new.title === 'TEACHER_TASKS_DATA')) {
+          try {
+            const tasks: TeacherTask[] = JSON.parse(payload.new.passage);
+            localStorage.setItem(TEACHER_TASKS_KEY, JSON.stringify(tasks));
+            callbacks.onTeacherTasksChange?.(tasks);
+          } catch (e) {}
+        }
+
+        // فحص هل النشاط المعدل هو خريطة تفويض الصلاحيات الإدارية
+        if (payload?.new && (payload.new.id === DELEGATED_PERMISSIONS_SYNC_ID || payload.new.title === 'DELEGATED_PERMISSIONS_MAP')) {
+          try {
+            const permsMap: Record<string, DelegatedAdminPermissions> = JSON.parse(payload.new.passage);
+            const users = getUsers();
+            let changed = false;
+            users.forEach(u => {
+              if (permsMap[u.id]) {
+                u.delegated_admin_permissions = sanitizeDelegatedPermissions(permsMap[u.id]);
+                changed = true;
+              }
+            });
+            if (changed) {
+              localStorage.setItem(USERS_KEY, JSON.stringify(users));
+              const current = getCurrentUser();
+              if (current && permsMap[current.id]) {
+                setCurrentUser({ ...current, delegated_admin_permissions: sanitizeDelegatedPermissions(permsMap[current.id]) });
+              }
+            }
+            callbacks.onDelegatedPermissionsChange?.(permsMap);
+            callbacks.onUsersChange?.();
+          } catch (e) {}
+        }
+
         callbacks.onActivitiesChange?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
