@@ -1894,33 +1894,58 @@ export const savePadletBoard = async (board: PadletBoard): Promise<{ board: Padl
   localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(boards));
   window.dispatchEvent(new CustomEvent('padlet_boards_updated'));
 
-  // إعداد حقول الحفظ مع إرسال اللون الافتراضي والصف المستهدف
+  // إعداد حقول الحفظ مع إرسال القيم بجميع التسميات المحتملة لدعم أي إصدار من جدول Supabase
   const boardData: any = {
     id: board.id,
-    title: board.title,
+    title: board.title || 'حائط تفاعلي',
     description: board.description || null,
-    teacher_id: board.teacher_id,
-    teacher_name: board.teacher_name || null,
-    grade: board.grade,
-    target_grade: board.target_grade || board.grade,
+    teacher_id: board.teacher_id || 'usr_teacher',
+    teacher_name: board.teacher_name || 'معلم المادة',
+    grade: board.grade || 'grade-1',
+    target_grade: board.target_grade || board.grade || 'grade-1',
     color: board.color || 'yellow',
     track: board.track || 'arabic-a',
     theme: board.theme || 'corkboard',
+    background_theme: board.theme || 'chalkboard',
     allow_comments: board.allow_comments ?? true,
+    allow_student_comments: board.allow_comments ?? true,
     require_approval: board.require_approval ?? false,
     is_locked: board.is_locked ?? false,
+    is_active: true,
     created_at: board.created_at || new Date().toISOString()
   };
 
   try {
-    const { error } = await supabase.from('padlet_boards').upsert(boardData, { onConflict: 'id' });
+    let { error } = await supabase.from('padlet_boards').upsert(boardData, { onConflict: 'id' });
     if (error) {
       console.warn('ملاحظة أثناء مزامنة لوحة الحائط مع Supabase:', error);
-      // في حال عدم وجود عمود target_grade في جدول Supabase القديم، نحاول الإرسال بدونه
-      if (error.message && error.message.includes('target_grade')) {
-        delete boardData.target_grade;
-        const retry = await supabase.from('padlet_boards').upsert(boardData, { onConflict: 'id' });
-        return { board, error: retry.error };
+      // في حال وجود تعارض أو نقص أعمدة، نقوم بتنظيف الحقول وإعادة المحاولة
+      if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+        const sanitized = { ...boardData };
+        if (error.message?.includes('target_grade')) delete sanitized.target_grade;
+        if (error.message?.includes('background_theme')) delete sanitized.background_theme;
+        if (error.message?.includes('allow_student_comments')) delete sanitized.allow_student_comments;
+        if (error.message?.includes('allow_comments')) delete sanitized.allow_comments;
+        if (error.message?.includes('track')) delete sanitized.track;
+        if (error.message?.includes('theme')) delete sanitized.theme;
+        if (error.message?.includes('color')) delete sanitized.color;
+        if (error.message?.includes('is_active')) delete sanitized.is_active;
+        const retry = await supabase.from('padlet_boards').upsert(sanitized, { onConflict: 'id' });
+        if (!retry.error) {
+          return { board, error: null };
+        }
+        
+        // المحاولة بالحد الأدنى الأساسي
+        const minimal = {
+          id: board.id,
+          title: board.title || 'حائط تفاعلي',
+          teacher_id: board.teacher_id || 'usr_teacher',
+          teacher_name: board.teacher_name || 'معلم المادة',
+          grade: board.grade || 'grade-1',
+          created_at: board.created_at || new Date().toISOString()
+        };
+        const minimalRetry = await supabase.from('padlet_boards').upsert(minimal, { onConflict: 'id' });
+        return { board, error: minimalRetry.error };
       }
       return { board, error };
     }
@@ -1928,6 +1953,48 @@ export const savePadletBoard = async (board: PadletBoard): Promise<{ board: Padl
   } catch (err) {
     console.warn('استثناء في مزامنة لوحة الحائط سحابياً:', err);
     return { board, error: err };
+  }
+};
+
+/**
+ * التأكد من أن الحائط التفاعلي مسجل في السحابة قبل كتابة أي بطاقة فيه
+ * هذا يمنع خطأ 23503 (Foreign Key Constraint: padlet_posts_board_id_fkey)
+ */
+export const ensurePadletBoardExists = async (boardId: string): Promise<void> => {
+  if (!boardId) return;
+  try {
+    const { data, error } = await supabase.from('padlet_boards').select('id').eq('id', boardId).maybeSingle();
+    if (!error && data?.id) {
+      return; // الحائط موجود بالفعل في السحابة
+    }
+
+    // إذا لم يكن موجوداً في السحابة، نبحث عنه في التخزين المحلي لرفعه
+    const localBoard = getPadletBoards().find(b => b.id === boardId);
+    if (localBoard) {
+      await savePadletBoard(localBoard);
+      return;
+    }
+
+    // إذا لم يكن موجوداً حتى محلياً، ننشئ حائطاً تلقائياً لمنع كسر قيد المفتاح الأجنبي
+    const fallbackBoard: PadletBoard = {
+      id: boardId,
+      title: 'جدار الأبطال التفاعلي 🌟',
+      description: 'مساحة تفاعلية لمشاركة الإبداعات والأنشطة',
+      teacher_id: 'usr_teacher',
+      teacher_name: 'الأستاذة فاطمة الزهراء',
+      grade: 'grade-1',
+      target_grade: 'grade-1',
+      color: 'yellow',
+      track: 'arabic-a',
+      theme: 'corkboard',
+      allow_comments: true,
+      require_approval: false,
+      is_locked: false,
+      created_at: new Date().toISOString()
+    };
+    await savePadletBoard(fallbackBoard);
+  } catch (err) {
+    console.warn('تنبيه أثناء التحقق من وجود الحائط التفاعلي في السحابة:', err);
   }
 };
 
@@ -2005,6 +2072,9 @@ export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPo
   localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(posts));
   window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
 
+  // 1. التأكد أولاً من وجود الحائط التفاعلي في السحابة قبل إضافة البطاقة لتفادي الخطأ 23503
+  await ensurePadletBoardExists(post.board_id);
+
   // إدراج ومزامنة مباشرة مع Supabase جدول padlet_posts
   let postData: any = {
     id: post.id,
@@ -2030,6 +2100,15 @@ export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPo
     if (error) {
       console.warn('Padlet post initial upsert returned error:', error);
       
+      // معالجة خطأ 23503 (عدم وجود الحائط في padlet_boards)
+      if (error.code === '23503' || (error.message && error.message.includes('foreign key constraint'))) {
+        await ensurePadletBoardExists(post.board_id);
+        const retryFk = await supabase.from('padlet_posts').upsert(postData, { onConflict: 'id' });
+        if (!retryFk.error) {
+          return { post, error: null };
+        }
+      }
+
       // في حال كان جدول Supabase يفتقر لبعض الأعمدة (PGRST204 missing column)
       // نحاول تدريجياً حذف الأعمدة غير الموجودة وإعادة المحاولة حتى ينجح الحفظ السحابي
       if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
@@ -2201,10 +2280,19 @@ export const syncPadletBoardsFromCloud = async (): Promise<PadletBoard[]> => {
       const local = getPadletBoards();
       const map = new Map<string, PadletBoard>();
       formatted.forEach(b => map.set(b.id, b));
+      const missingInCloud: PadletBoard[] = [];
       local.forEach(b => {
-        if (!map.has(b.id)) map.set(b.id, b);
+        if (!map.has(b.id)) {
+          map.set(b.id, b);
+          missingInCloud.push(b);
+        }
       });
       const combined = Array.from(map.values());
+
+      // رفع أي لوحات محلية غير مسجلة في السحابة لضمان اتساق المفاتيح الأجنبية
+      if (missingInCloud.length > 0) {
+        Promise.all(missingInCloud.map(b => savePadletBoard(b))).catch(() => {});
+      }
 
       localStorage.setItem(PADLET_BOARDS_KEY, JSON.stringify(combined));
       return combined;
