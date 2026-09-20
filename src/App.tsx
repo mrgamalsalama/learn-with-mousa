@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
@@ -65,8 +65,80 @@ import {
 // مسار الصورة المرفوعة داخل مجلد public
 const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
 
+// ================= إدارة ومزامنة التبويب النشط (Tab State Persistence) =================
+const normalizeTabName = (rawTab: string | null | undefined): string => {
+  if (!rawTab) return '';
+  const t = rawTab.trim().toLowerCase();
+  if (t === 'challenges' || t === 'challenge' || t === 'تحدي' || t === 'تحديات') return 'challenge';
+  if (t === 'padlet' || t === 'wall' || t === 'board' || t === 'جدار' || t === 'ابداع' || t === 'إبداع') return 'padlet';
+  if (t === 'ai_studio' || t === 'studio' || t === 'ai' || t === 'استوديو' || t === 'موسى') return 'ai_studio';
+  if (t === 'activities' || t === 'activity' || t === 'انشطة' || t === 'أنشطة') return 'activities';
+  if (t === 'games' || t === 'game' || t === 'العاب' || t === 'ألعاب') return 'games';
+  if (t === 'library' || t === 'books' || t === 'book' || t === 'مكتبة') return 'library';
+  if (t === 'exams' || t === 'exam' || t === 'اختبارات' || t === 'اختبار') return 'exams';
+  if (t === 'create' || t === 'new' || t === 'انشاء' || t === 'إنشاء') return 'create';
+  if (t === 'grades' || t === 'marks' || t === 'درجات') return 'grades';
+  if (t === 'tasks' || t === 'teacher_tasks' || t === 'مهام' || t === 'تكليفات') return 'tasks';
+  if (t === 'overview' || t === 'dashboard' || t === 'نظرة_عامة') return 'overview';
+  if (t === 'governance' || t === 'ai_governance' || t === 'حوكمة') return 'ai_governance';
+  if (t === 'progress' || t === 'متابعة') return 'progress';
+  if (t === 'teachers' || t === 'معلمون') return 'teachers';
+  if (t === 'hods' || t === 'رؤساء_أقسام') return 'hods';
+  if (t === 'students' || t === 'طلاب') return 'students';
+  if (t === 'parents' || t === 'أولياء_أمور') return 'parents';
+  if (t === 'bank' || t === 'بنك_القصص') return 'bank';
+  return t;
+};
+
+const isValidTabForRole = (tab: string, role?: UserRole | string): boolean => {
+  if (!tab || !role) return false;
+  if (role === 'student') {
+    return ['ai_studio', 'games', 'activities', 'library', 'exams', 'padlet', 'challenge'].includes(tab);
+  }
+  if (role === 'teacher') {
+    return ['activities', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge'].includes(tab);
+  }
+  if (role === 'hod') {
+    return ['overview', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'ai_governance'].includes(tab);
+  }
+  if (role === 'super_admin' || role === 'admin') {
+    return ['teachers', 'hods', 'students', 'parents', 'bank', 'ai_governance', 'teacher_tasks', 'tasks'].includes(tab);
+  }
+  if (role === 'parent') {
+    return ['progress', 'library'].includes(tab);
+  }
+  return false;
+};
+
+const getInitialTabForRole = (role: UserRole | string | undefined, defaultTab: string): string => {
+  try {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlTab = searchParams.get('tab');
+      if (urlTab) {
+        const norm = normalizeTabName(urlTab);
+        if (role && isValidTabForRole(norm, role)) {
+          return norm === 'tasks' && (role === 'hod' || role === 'super_admin' || role === 'admin') ? 'teacher_tasks' : norm;
+        }
+      }
+    }
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('current_active_tab');
+      if (saved) {
+        const normSaved = normalizeTabName(saved);
+        if (role && isValidTabForRole(normSaved, role)) {
+          return normSaved === 'tasks' && (role === 'hod' || role === 'super_admin' || role === 'admin') ? 'teacher_tasks' : normSaved;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error resolving initial tab:', e);
+  }
+  return defaultTab;
+};
+
 export default function App() {
-  const [currentUser, setUser] = useState<UserProfile | null>(null);
+  const [currentUser, setUser] = useState<UserProfile | null>(() => getCurrentUser());
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
@@ -92,14 +164,23 @@ export default function App() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [aiGovernanceRules, setAiGovernanceRules] = useState<AIGovernanceRules>(getAIGovernanceRules());
 
-  // تبويبات لوحة المشرف العام
-  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>('teachers');
+  // تبويبات لوحة المشرف العام مع استعادة التبويب النشط
+  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>(() => {
+    const initialUser = getCurrentUser();
+    return getInitialTabForRole(initialUser?.role || 'super_admin', 'teachers') as any;
+  });
 
-  // تبويبات لوحة رئيس القسم
-  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge'>('overview');
+  // تبويبات لوحة رئيس القسم مع استعادة التبويب النشط
+  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'ai_governance'>(() => {
+    const initialUser = getCurrentUser();
+    return getInitialTabForRole(initialUser?.role || 'hod', 'overview') as any;
+  });
 
-  // تبويبات لوحة المعلم
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge'>('activities');
+  // تبويبات لوحة المعلم مع استعادة التبويب النشط
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge'>(() => {
+    const initialUser = getCurrentUser();
+    return getInitialTabForRole(initialUser?.role || 'teacher', 'activities') as any;
+  });
 
   // قائمة مهام وتكليفات المعلمين
   const [teacherTasks, setTeacherTasks] = useState<TeacherTask[]>(getTeacherTasks());
@@ -110,8 +191,11 @@ export default function App() {
   const [isEditTeacherGradesModalOpen, setIsEditTeacherGradesModalOpen] = useState(false);
   const [selectedTeacherForGrades, setSelectedTeacherForGrades] = useState<UserProfile | null>(null);
 
-  // تبويبات لوحة الطالب
-  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge'>('ai_studio');
+  // تبويبات لوحة الطالب مع استعادة التبويب النشط
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge'>(() => {
+    const initialUser = getCurrentUser();
+    return getInitialTabForRole(initialUser?.role || 'student', 'ai_studio') as any;
+  });
 
   // قائمة الاختبارات والجلسات وحالة الاختبار النشط للطالب
   const [examsList, setExamsList] = useState<Exam[]>(getExams());
@@ -127,8 +211,69 @@ export default function App() {
     return () => clearInterval(clockInterval);
   }, []);
 
-  // تبويبات لوحة ولي الأمر
-  const [parentTab, setParentTab] = useState<'progress' | 'library'>('progress');
+  // تبويبات لوحة ولي الأمر مع استعادة التبويب النشط
+  const [parentTab, setParentTab] = useState<'progress' | 'library'>(() => {
+    const initialUser = getCurrentUser();
+    return getInitialTabForRole(initialUser?.role || 'parent', 'progress') as any;
+  });
+
+  // التبويب النشط الحالي للمستخدم وفق رتبته
+  const currentActiveTab = useMemo(() => {
+    if (!currentUser) return null;
+    switch (currentUser.role) {
+      case 'student': return studentTab;
+      case 'teacher': return teacherTab;
+      case 'hod': return hodTab === 'teacher_tasks' ? 'tasks' : hodTab;
+      case 'super_admin': return adminTab === 'teacher_tasks' ? 'tasks' : adminTab;
+      case 'parent': return parentTab;
+      default: return null;
+    }
+  }, [currentUser?.role, studentTab, teacherTab, hodTab, adminTab, parentTab]);
+
+  // مزامنة التبويب النشط في الرابط (URL Query Parameter: ?tab=...) وفي التخزين المحلي (localStorage)
+  useEffect(() => {
+    if (!currentUser || !currentActiveTab) return;
+    try {
+      localStorage.setItem('current_active_tab', currentActiveTab);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('tab') !== currentActiveTab) {
+          url.searchParams.set('tab', currentActiveTab);
+          window.history.replaceState({ tab: currentActiveTab }, '', url.toString());
+        }
+      }
+    } catch (err) {
+      console.warn('Error syncing active tab to URL/storage:', err);
+    }
+  }, [currentUser?.role, currentActiveTab]);
+
+  // الاستماع لأزرار الرجوع والتقدم في المتصفح (Browser Back/Forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlTab = searchParams.get('tab');
+        if (!urlTab || !currentUser) return;
+        const norm = normalizeTabName(urlTab);
+        if (currentUser.role === 'student' && isValidTabForRole(norm, 'student')) {
+          setStudentTab(norm as any);
+        } else if (currentUser.role === 'teacher' && isValidTabForRole(norm, 'teacher')) {
+          setTeacherTab(norm as any);
+        } else if (currentUser.role === 'hod' && isValidTabForRole(norm, 'hod')) {
+          setHodTab((norm === 'tasks' ? 'teacher_tasks' : norm) as any);
+        } else if (currentUser.role === 'super_admin' && isValidTabForRole(norm, 'super_admin')) {
+          setAdminTab((norm === 'tasks' ? 'teacher_tasks' : norm) as any);
+        } else if (currentUser.role === 'parent' && isValidTabForRole(norm, 'parent')) {
+          setParentTab(norm as any);
+        }
+      } catch (e) {
+        console.warn('Error handling popstate:', e);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser]);
 
   // مرشح تصفية الأقسام والمكتبات
   const [selectedSection, setSelectedSection] = useState<string>('all');
@@ -346,6 +491,21 @@ export default function App() {
           setActTrack(updatedUser.allowedTracks[0]);
         }
       }
+
+      // تفعيل التبويب الملائم بناء على الرابط أو التخزين السابق
+      const defaultRoleTab = updatedUser.role === 'student' ? 'ai_studio' : (updatedUser.role === 'parent' ? 'progress' : (updatedUser.role === 'super_admin' ? 'teachers' : (updatedUser.role === 'hod' ? 'overview' : 'activities')));
+      const targetTab = getInitialTabForRole(updatedUser.role, defaultRoleTab);
+      if (updatedUser.role === 'student') {
+        setStudentTab(targetTab as any);
+      } else if (updatedUser.role === 'teacher') {
+        setTeacherTab(targetTab as any);
+      } else if (updatedUser.role === 'hod') {
+        setHodTab((targetTab === 'tasks' ? 'teacher_tasks' : targetTab) as any);
+      } else if (updatedUser.role === 'super_admin') {
+        setAdminTab((targetTab === 'tasks' ? 'teacher_tasks' : targetTab) as any);
+      } else if (updatedUser.role === 'parent') {
+        setParentTab(targetTab as any);
+      }
     } else {
       setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة');
     }
@@ -359,6 +519,14 @@ export default function App() {
     setSelectedActivityToSolve(null);
     setQuizFinished(false);
     closeReader();
+    try {
+      localStorage.removeItem('current_active_tab');
+      localStorage.removeItem('current_padlet_board_id');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tab');
+      url.searchParams.delete('board');
+      window.history.replaceState(null, '', url.toString());
+    } catch (e) {}
   };
 
   const toggleGrade = (gId: GradeLevel) => {

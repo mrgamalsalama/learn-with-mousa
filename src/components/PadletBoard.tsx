@@ -159,7 +159,19 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
 
   // اللوحات والمنشورات
   const [boards, setBoards] = useState<PadletBoard[]>(getPadletBoards());
-  const [selectedBoardId, setSelectedBoardId] = useState<string>('');
+  const [selectedBoardId, setSelectedBoardId] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const urlBoard = new URLSearchParams(window.location.search).get('board');
+        if (urlBoard) return urlBoard;
+      }
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('current_padlet_board_id');
+        if (saved) return saved;
+      }
+    } catch (e) {}
+    return '';
+  });
   const [posts, setPosts] = useState<PadletPost[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -268,11 +280,24 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     setBoards(loadedBoards);
 
     if (loadedBoards.length > 0) {
-      const matched = loadedBoards.find(b => isGradeMatching(b.grade || b.target_grade, targetGrade));
-      if (matched) {
-        setSelectedBoardId(matched.id);
+      let candidateId = '';
+      try {
+        const urlBoard = new URLSearchParams(window.location.search).get('board');
+        if (urlBoard && loadedBoards.some(b => b.id === urlBoard)) {
+          candidateId = urlBoard;
+        } else {
+          const savedId = localStorage.getItem('current_padlet_board_id');
+          if (savedId && loadedBoards.some(b => b.id === savedId)) {
+            candidateId = savedId;
+          }
+        }
+      } catch (e) {}
+
+      if (candidateId) {
+        setSelectedBoardId(candidateId);
       } else {
-        setSelectedBoardId(loadedBoards[0].id);
+        const matched = loadedBoards.find(b => isGradeMatching(b.grade || b.target_grade, targetGrade));
+        setSelectedBoardId(matched ? matched.id : loadedBoards[0].id);
       }
     }
 
@@ -293,6 +318,21 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       }
     });
   }, [targetGrade, isTeacher]);
+
+  // مزامنة اللوحة النشطة مع الرابط (URL Query Parameter: ?board=...) والتخزين المحلي
+  useEffect(() => {
+    if (!selectedBoardId) return;
+    try {
+      localStorage.setItem('current_padlet_board_id', selectedBoardId);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('board') !== selectedBoardId) {
+          url.searchParams.set('board', selectedBoardId);
+          window.history.replaceState(null, '', url.toString());
+        }
+      }
+    } catch (e) {}
+  }, [selectedBoardId]);
 
   // تحميل منشورات اللوحة النشطة
   const refreshPosts = () => {
