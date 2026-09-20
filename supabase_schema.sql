@@ -96,12 +96,60 @@ DROP POLICY IF EXISTS "Enable all for anon on badges" ON public.badges;
 CREATE POLICY "Enable all for anon on badges" ON public.badges FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
+-- 5. جدول الاختبارات وجلسات المراقبة الحية (Exams & Live Proctoring Sessions)
+-- ==============================================================================
+
+-- جدول الاختبارات والتقييمات
+CREATE TABLE IF NOT EXISTS public.exams (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  teacher_id TEXT NOT NULL,
+  teacher_name TEXT,
+  target_grade TEXT NOT NULL,
+  target_track TEXT DEFAULT 'arabic-a',
+  duration_minutes INTEGER NOT NULL DEFAULT 0,
+  show_results_immediately BOOLEAN NOT NULL DEFAULT true,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- جدول جلسات الاختبار والمراقبة الحية للطلاب
+CREATE TABLE IF NOT EXISTS public.exam_sessions (
+  id TEXT PRIMARY KEY,
+  exam_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  student_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'not_started',
+  start_time TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  end_time TIMESTAMP WITH TIME ZONE,
+  score NUMERIC DEFAULT 0,
+  total_marks NUMERIC DEFAULT 0,
+  answers JSONB NOT NULL DEFAULT '{}'::jsonb,
+  tab_switch_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_exam_sessions_exam ON public.exam_sessions(exam_id);
+CREATE INDEX IF NOT EXISTS idx_exam_sessions_student ON public.exam_sessions(student_id);
+
+ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_sessions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for anon on exams" ON public.exams;
+CREATE POLICY "Enable all for anon on exams" ON public.exams FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for anon on exam_sessions" ON public.exam_sessions;
+CREATE POLICY "Enable all for anon on exam_sessions" ON public.exam_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ==============================================================================
 -- 6. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
 -- ==============================================================================
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions;
   EXCEPTION
     WHEN duplicate_object THEN NULL;
     WHEN undefined_object THEN NULL;

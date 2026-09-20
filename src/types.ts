@@ -59,6 +59,53 @@ export interface Question {
   points: number;
 }
 
+// ===================== نظام الاختبارات والتقييمات التفاعلية (Interactive Exams System) =====================
+
+export type ExamQuestionType = 'multiple_choice' | 'true_false' | 'spelling_dictation';
+
+export interface ExamQuestion {
+  id: string;
+  text: string;                   // نص السؤال مشكول
+  type: ExamQuestionType;
+  options?: string[];             // خيارات الإجابة
+  correctAnswer: string;          // الإجابة الصحيحة النموذجية
+  points: number;                 // درجة السؤال
+  explanation?: string;           // توجيه أو شرح تعليمي
+  audioPromptText?: string;       // نص إملائي للاستماع
+}
+
+export interface Exam {
+  id: string;
+  title: string;
+  teacher_id: string;
+  teacher_name?: string;
+  target_grade: GradeLevel;
+  target_track?: ArabicTrack;
+  duration_minutes: number;       // مدة الاختبار بالدقائق (0 = مفتوح)
+  show_results_immediately: boolean; // إظهار النتيجة فوراً للطالب
+  is_active: boolean;             // حالة الاختبار: متاح / مغلق
+  questions: ExamQuestion[];      // قائمة الأسئلة
+  created_at: string;
+  description?: string;
+}
+
+export type ExamSessionStatus = 'not_started' | 'in_progress' | 'submitted' | 'force_stopped';
+
+export interface ExamSession {
+  id: string;
+  exam_id: string;
+  student_id: string;
+  student_name: string;
+  status: ExamSessionStatus;
+  start_time: string;
+  end_time?: string | null;
+  score: number;
+  total_marks: number;
+  answers: Record<string, string>;
+  tab_switch_count: number;       // عداد مغادرة صفحة الاختبار
+  created_at?: string;
+}
+
 // عنصر بنك القصص والأسئلة التأسيسي
 export interface StoryBankItem {
   id: string;

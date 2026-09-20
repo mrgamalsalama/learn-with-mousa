@@ -1,4 +1,4 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
 import { 
@@ -16,7 +16,105 @@ const BOOKS_KEY = 'lwm_books_repository';
 const BADGES_KEY = 'lwm_student_badges';
 const PHONICS_RECORDS_KEY = 'lwm_student_phonics';
 const AI_GOVERNANCE_KEY = 'lwm_ai_governance_rules';
+const EXAMS_KEY = 'lwm_exams';
+const EXAM_SESSIONS_KEY = 'lwm_exam_sessions';
 export const AI_GOVERNANCE_SYNC_ID = 'ai_governance_rules_sync';
+
+export const INITIAL_EXAMS: Exam[] = [
+  {
+    id: 'exam_demo_grade1',
+    title: 'تَقْيِيمُ مُنْتَصَفِ الفَصْلِ: مَهَارَاتُ اللُّغَةِ العَرَبِيَّةِ وَالقِرَاءَةِ 📝',
+    teacher_id: 'usr_teacher',
+    teacher_name: 'الأستاذة فاطمة الزهراء',
+    target_grade: 'grade-1',
+    target_track: 'arabic-a',
+    duration_minutes: 15,
+    show_results_immediately: true,
+    is_active: true,
+    description: 'اختبار تشخيصي لقياس مهارات الوعي الصوتي والحركات والمدود والإملاء المشكول للصف الأول.',
+    created_at: new Date().toISOString(),
+    questions: [
+      {
+        id: 'q1',
+        text: 'مَا الصَّوْتُ الأَوَّلُ فِي كَلِمَةِ: (أَسَدٌ)؟',
+        type: 'multiple_choice',
+        options: ['أَ (حَرْفُ الأَلِفِ المَفْتُوحُ)', 'بَ (حَرْفُ البَاءِ)', 'سَ (حَرْفُ السِّينِ)', 'مَ (حَرْفُ المِيمِ)'],
+        correctAnswer: 'أَ (حَرْفُ الأَلِفِ المَفْتُوحُ)',
+        points: 5,
+        explanation: 'كَلِمَةُ (أَسَدٌ) تَبْدَأُ بِحَرْفِ الأَلِفِ مَعَ حَرَكَةِ الفَتْحِ (أَ).'
+      },
+      {
+        id: 'q2',
+        text: 'كَلِمَةُ (القَمَرُ) تَحْتَوِي عَلَى لَامٍ قَمَرِيَّةٍ تُكْتَبُ وَتُنْطَقُ.',
+        type: 'true_false',
+        options: ['صَحِيحٌ ✅', 'خَطَأٌ ❌'],
+        correctAnswer: 'صَحِيحٌ ✅',
+        points: 5,
+        explanation: 'اللَّامُ القَمَرِيَّةُ سَاكِنَةٌ وَتُنْطَقُ بِوُضُوحٍ كَمَا فِي (القَمَرُ).'
+      },
+      {
+        id: 'q3',
+        text: 'اكْتُبِ الكَلِمَةَ التَّالِيَةَ مَضْبُوطَةً بِالشَّكْلِ التَّامِّ: (قَلَمٌ)',
+        type: 'spelling_dictation',
+        correctAnswer: 'قَلَمٌ',
+        points: 5,
+        explanation: 'فَتْحَةٌ فَوْقَ القَافِ، وَفَتْحَةٌ فَوْقَ اللَّامِ، وَتَنْوِينُ ضَمٍّ فَوْقَ المِيمِ.',
+        audioPromptText: 'قَلَمٌ'
+      },
+      {
+        id: 'q4',
+        text: 'أَيٌّ مِنَ الكَلِمَاتِ التَّالِيَةِ تَشْتَمِلُ عَلَى مَدٍّ بِاليَاءِ؟',
+        type: 'multiple_choice',
+        options: ['فِيلٌ', 'بَابٌ', 'نُورٌ', 'بَيْتٌ'],
+        correctAnswer: 'فِيلٌ',
+        points: 5,
+        explanation: 'المَدُّ بِاليَاءِ يَأْتِي مَسْبُوقاً بِحَرْفٍ مَكْسُورٍ مِثْلَ: فِـيـلٌ.'
+      }
+    ]
+  },
+  {
+    id: 'exam_demo_grade2',
+    title: 'اخْتِبَارُ الظَّوَاهِرِ اللُّغَوِيَّةِ وَالتَّنْوِينِ التَّفَاعُلِيُّ 🌟',
+    teacher_id: 'usr_teacher',
+    teacher_name: 'الأستاذة فاطمة الزهراء',
+    target_grade: 'grade-2',
+    target_track: 'arabic-a',
+    duration_minutes: 20,
+    show_results_immediately: false,
+    is_active: true,
+    description: 'اختبار دقيق في التمييز بين التاء المربوطة والمفتوحة واللامات وأنواع التنوين.',
+    created_at: new Date().toISOString(),
+    questions: [
+      {
+        id: 'q2_1',
+        text: 'تُنْطَقُ التَّاءُ المَفْتُوحَةُ (ت) تَاءً فِي الوَقْفِ وَالوَصْلِ.',
+        type: 'true_false',
+        options: ['صَحِيحٌ ✅', 'خَطَأٌ ❌'],
+        correctAnswer: 'صَحِيحٌ ✅',
+        points: 5,
+        explanation: 'التَّاءُ المَفْتُوحَةُ فِي مِثْلِ (بَيْتٌ / بَيْتْ) تَبْقَى تَاءً فِي الحَالَتَيْنِ.'
+      },
+      {
+        id: 'q2_2',
+        text: 'مَا الإِعْرَابُ أَوْ الشَّكْلُ الصَّحِيحُ لِكَلِمَةِ (مَدْرَسَة) عِنْدَ إِضَافَةِ تَنْوِينِ الفَتْحِ؟',
+        type: 'multiple_choice',
+        options: ['مَدْرَسَةً (بِدُونِ أَلِفٍ زَائِدَةٍ)', 'مَدْرَسَتًا', 'مَدْرَسَةٍ', 'مَدْرَسَةُ'],
+        correctAnswer: 'مَدْرَسَةً (بِدُونِ أَلِفٍ زَائِدَةٍ)',
+        points: 5,
+        explanation: 'التَّاءُ المَرْبُوطَةُ لَا تَلْحَقُهَا أَلِفُ التَّنْوِينِ، بَلْ يُوضَعُ التَّنْوِينُ فَوْقَهَا مُبَاشَرَةً.'
+      },
+      {
+        id: 'q2_3',
+        text: 'اكْتُبِ الكَلِمَةَ التَّالِيَةَ كِتَابَةً إِمْلَائِيَّةً صَحِيحَةً: (الشَّجَرَةُ)',
+        type: 'spelling_dictation',
+        correctAnswer: 'الشَّجَرَةُ',
+        points: 5,
+        explanation: 'انْتَبِهْ لِلَّامِ الشَّمْسِيَّةِ مَعَ الشَّدَّةِ فَوْقَ الشِّينِ وَالتَّاءِ المَرْبُوطَةِ فِي الآخِرِ.',
+        audioPromptText: 'الشَّجَرَةُ'
+      }
+    ]
+  }
+];
 
 export const DEFAULT_AI_GOVERNANCE_RULES: AIGovernanceRules = {
   master_ai_killswitch: false, // يعمل الذكاء الاصطناعي بشكل طبيعي
@@ -728,6 +826,8 @@ export const subscribeToCloudChanges = (callbacks: {
   onSubmissionsChange?: () => void;
   onBadgesChange?: () => void;
   onGovernanceChange?: (rules: AIGovernanceRules) => void;
+  onExamsChange?: () => void;
+  onExamSessionsChange?: (payload?: any) => void;
 }) => {
   try {
     const channel = supabase
@@ -751,6 +851,12 @@ export const subscribeToCloudChanges = (callbacks: {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'badges' }, () => {
         callbacks.onBadgesChange?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, () => {
+        callbacks.onExamsChange?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_sessions' }, (payload: any) => {
+        callbacks.onExamSessionsChange?.(payload);
       })
       .subscribe();
 
@@ -972,3 +1078,293 @@ export const canUserUseAI = (
     overrideStatus: 'inherit'
   };
 };
+
+// ================= نظام إدارة الاختبارات والتقييمات التفاعلية (Exams Hub Storage & Cloud) =================
+
+/**
+ * استرجاع الاختبارات محلياً مع تزويد بالبيانات التأسيسية إن وُجد فراغ
+ */
+export const getExams = (): Exam[] => {
+  try {
+    const data = localStorage.getItem(EXAMS_KEY);
+    if (!data) {
+      localStorage.setItem(EXAMS_KEY, JSON.stringify(INITIAL_EXAMS));
+      return INITIAL_EXAMS;
+    }
+    const current: Exam[] = JSON.parse(data);
+    let updated = false;
+    for (const initExam of INITIAL_EXAMS) {
+      if (!current.some(e => e.id === initExam.id)) {
+        current.push(initExam);
+        updated = true;
+      }
+    }
+    if (updated) {
+      localStorage.setItem(EXAMS_KEY, JSON.stringify(current));
+    }
+    return current;
+  } catch {
+    return INITIAL_EXAMS;
+  }
+};
+
+/**
+ * مزامنة الاختبارات سحابياً مع Supabase
+ */
+export const syncExamsFromCloud = async (): Promise<Exam[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('exams')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const cloudExams: Exam[] = data.map((e: any) => ({
+        id: e.id,
+        title: e.title,
+        teacher_id: e.teacher_id,
+        teacher_name: e.teacher_name || undefined,
+        target_grade: e.target_grade,
+        target_track: e.target_track || 'arabic-a',
+        duration_minutes: Number(e.duration_minutes) || 0,
+        show_results_immediately: e.show_results_immediately !== false,
+        is_active: e.is_active !== false,
+        questions: Array.isArray(e.questions)
+          ? e.questions
+          : (typeof e.questions === 'string' ? JSON.parse(e.questions) : []),
+        description: e.description || undefined,
+        created_at: e.created_at || new Date().toISOString()
+      }));
+
+      // دمج الاختبارات التأسيسية
+      const map = new Map<string, Exam>();
+      for (const init of INITIAL_EXAMS) map.set(init.id, init);
+      for (const ce of cloudExams) map.set(ce.id, ce);
+
+      const merged = Array.from(map.values());
+      localStorage.setItem(EXAMS_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err) {
+    console.warn('تعذر جلب الاختبارات سحابياً، سيتم استخدام التخزين المحلي:', err);
+  }
+  return getExams();
+};
+
+/**
+ * حفظ أو تحديث اختبار محلياً وسحابياً في Supabase
+ */
+export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }> => {
+  const current = getExams();
+  const idx = current.findIndex(e => e.id === exam.id);
+  if (idx >= 0) {
+    current[idx] = exam;
+  } else {
+    current.unshift(exam);
+  }
+  localStorage.setItem(EXAMS_KEY, JSON.stringify(current));
+
+  try {
+    const { error } = await supabase.from('exams').upsert({
+      id: exam.id,
+      title: exam.title,
+      teacher_id: exam.teacher_id,
+      teacher_name: exam.teacher_name || null,
+      target_grade: exam.target_grade,
+      target_track: exam.target_track || 'arabic-a',
+      duration_minutes: exam.duration_minutes || 0,
+      show_results_immediately: exam.show_results_immediately,
+      is_active: exam.is_active,
+      questions: exam.questions || [],
+      description: exam.description || null,
+      created_at: exam.created_at || new Date().toISOString()
+    });
+
+    if (error) {
+      console.warn('ملاحظة في حفظ الاختبار سحابياً:', error.message);
+      return { exam, error };
+    }
+    return { exam };
+  } catch (err) {
+    console.warn('استثناء في حفظ الاختبار سحابياً:', err);
+    return { exam, error: err };
+  }
+};
+
+/**
+ * حذف اختبار محلياً وسحابياً
+ */
+export const deleteExam = async (examId: string): Promise<void> => {
+  const current = getExams().filter(e => e.id !== examId);
+  localStorage.setItem(EXAMS_KEY, JSON.stringify(current));
+
+  try {
+    await supabase.from('exams').delete().eq('id', examId);
+    // حذف الجلسات التابعة للاختبار
+    await supabase.from('exam_sessions').delete().eq('exam_id', examId);
+  } catch (err) {
+    console.error('فشل حذف الاختبار سحابياً:', err);
+  }
+};
+
+// ================= جلسات الاختبار والمراقبة الحية (Exam Sessions & Live Proctoring) =================
+
+/**
+ * استرجاع جلسات الاختبارات محلياً
+ */
+export const getExamSessions = (examId?: string): ExamSession[] => {
+  try {
+    const data = localStorage.getItem(EXAM_SESSIONS_KEY);
+    const sessions: ExamSession[] = data ? JSON.parse(data) : [];
+    if (examId) {
+      return sessions.filter(s => s.exam_id === examId);
+    }
+    return sessions;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * مزامنة جلسات الاختبارات سحابياً مع Supabase
+ */
+export const syncExamSessionsFromCloud = async (examId?: string): Promise<ExamSession[]> => {
+  try {
+    let query = supabase.from('exam_sessions').select('*');
+    if (examId) {
+      query = query.eq('exam_id', examId);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      const cloudSessions: ExamSession[] = data.map((s: any) => ({
+        id: s.id,
+        exam_id: s.exam_id,
+        student_id: s.student_id,
+        student_name: s.student_name,
+        status: s.status,
+        start_time: s.start_time,
+        end_time: s.end_time || null,
+        score: Number(s.score) || 0,
+        total_marks: Number(s.total_marks) || 0,
+        answers: typeof s.answers === 'object' && s.answers !== null ? s.answers : {},
+        tab_switch_count: Number(s.tab_switch_count) || 0,
+        created_at: s.created_at || undefined
+      }));
+
+      // تحديث التخزين المحلي
+      const allLocal = getExamSessions();
+      const localMap = new Map<string, ExamSession>();
+      allLocal.forEach(s => localMap.set(s.id, s));
+      cloudSessions.forEach(s => localMap.set(s.id, s));
+
+      const merged = Array.from(localMap.values());
+      localStorage.setItem(EXAM_SESSIONS_KEY, JSON.stringify(merged));
+
+      if (examId) {
+        return merged.filter(s => s.exam_id === examId);
+      }
+      return merged;
+    }
+  } catch (err) {
+    console.warn('تعذر جلب جلسات الاختبار سحابياً:', err);
+  }
+  return getExamSessions(examId);
+};
+
+/**
+ * حفظ جلسة اختبار محلياً وسحابياً
+ */
+export const saveExamSession = async (session: ExamSession): Promise<{ session: ExamSession; error?: any }> => {
+  const all = getExamSessions();
+  const idx = all.findIndex(s => s.id === session.id);
+  if (idx >= 0) {
+    all[idx] = session;
+  } else {
+    all.unshift(session);
+  }
+  localStorage.setItem(EXAM_SESSIONS_KEY, JSON.stringify(all));
+
+  try {
+    const { error } = await supabase.from('exam_sessions').upsert({
+      id: session.id,
+      exam_id: session.exam_id,
+      student_id: session.student_id,
+      student_name: session.student_name,
+      status: session.status,
+      start_time: session.start_time,
+      end_time: session.end_time || null,
+      score: session.score,
+      total_marks: session.total_marks,
+      answers: session.answers,
+      tab_switch_count: session.tab_switch_count
+    });
+
+    if (error) {
+      console.warn('ملاحظة في حفظ جلسة الاختبار سحابياً:', error.message);
+      return { session, error };
+    }
+    return { session };
+  } catch (err) {
+    console.warn('استثناء في رفع جلسة الاختبار سحابياً:', err);
+    return { session, error: err };
+  }
+};
+
+/**
+ * تحديث حالة الجلسة أو بياناتها بشكل جزئي
+ */
+export const updateStudentExamSession = async (
+  sessionId: string, 
+  updates: Partial<ExamSession>
+): Promise<ExamSession | null> => {
+  const all = getExamSessions();
+  const idx = all.findIndex(s => s.id === sessionId);
+  if (idx === -1) return null;
+
+  const updated: ExamSession = { ...all[idx], ...updates };
+  all[idx] = updated;
+  localStorage.setItem(EXAM_SESSIONS_KEY, JSON.stringify(all));
+
+  try {
+    await supabase.from('exam_sessions').update({
+      ...(updates.status ? { status: updates.status } : {}),
+      ...(updates.end_time !== undefined ? { end_time: updates.end_time } : {}),
+      ...(updates.score !== undefined ? { score: updates.score } : {}),
+      ...(updates.total_marks !== undefined ? { total_marks: updates.total_marks } : {}),
+      ...(updates.answers !== undefined ? { answers: updates.answers } : {}),
+      ...(updates.tab_switch_count !== undefined ? { tab_switch_count: updates.tab_switch_count } : {})
+    }).eq('id', sessionId);
+  } catch (e) {
+    console.warn('خطأ في تحديث الجلسة سحابياً:', e);
+  }
+
+  return updated;
+};
+
+/**
+ * إيقاف الاختبار فورياً عن الطالب من قبل المعلم (Force Stop Exam)
+ */
+export const forceStopStudentExam = async (sessionId: string): Promise<void> => {
+  await updateStudentExamSession(sessionId, {
+    status: 'force_stopped',
+    end_time: new Date().toISOString()
+  });
+};
+
+/**
+ * تسجيل وتحديث عداد مغادرة التبويب (Tab-Switch Increment)
+ */
+export const incrementTabSwitchCount = async (sessionId: string): Promise<number> => {
+  const all = getExamSessions();
+  const session = all.find(s => s.id === sessionId);
+  const currentCount = session ? (session.tab_switch_count || 0) : 0;
+  const newCount = currentCount + 1;
+
+  await updateStudentExamSession(sessionId, {
+    tab_switch_count: newCount
+  });
+
+  return newCount;
+};
+

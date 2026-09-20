@@ -11,15 +11,10 @@ import {
   GameData,
   GameLevel,
   QuickAIDiagnosticResult,
-  AIGovernanceTarget
+  AIGovernanceTarget,
+  ExamQuestion
 } from './types';
 import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
-
-// قراءة المفتاح بالشكل المطلوب مع دعم المتغيرات البيئية
-const apiKey = 
-  (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || 
-  import.meta.env.VITE_GEMINI_API_KEY || 
-  "AQ.Ab8RN6L5VOZZTZjwqu1EGZOXv5O4YHvzY02oOcKbyHK2AAL2FQ";
 
 // النماذج المعتمدة لسرعة الاستجابة والدقة العالية
 const PRIMARY_MODEL = 'gemini-3.8-flash';
@@ -27,25 +22,37 @@ const CANDIDATE_MODELS = [
   'gemini-3.8-flash',
   'gemini-flash-latest',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
 ];
 
-// إنشاء عميل الذكاء الاصطناعي بنمط التهيئة الكسولة (Lazy Initialization)
-let genAIClient: GoogleGenAI | null = null;
-
-const getAIClient = (): GoogleGenAI => {
-  if (!genAIClient) {
-    genAIClient = new GoogleGenAI({ 
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
-  }
-  return genAIClient;
+const getAIClient = (): any => {
+  return { isAvailable: true };
 };
+
+// دالة الاتصال بالخادم الآمن لاستدعاء نماذج Gemini وحماية المفاتيح البرمجية
+async function callServerGenerateContent(params: {
+  model: string;
+  contents: any;
+  config?: any;
+}): Promise<any> {
+  const res = await fetch('/api/gemini/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let errorMsg = `Server generation error (${res.status})`;
+    try {
+      const errJson = await res.json();
+      if (errJson?.error) errorMsg = errJson.error;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+
+  return await res.json();
+}
 
 // دالة مساعدة لتنظيف كتل JSON المستلمة
 function cleanJsonText(raw: string): string {
@@ -81,7 +88,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
 
 // دالة مساعدة لتنفيذ طلبات التوليد مع دعم التبديل التلقائي بين النماذج لضمان أقصى اعتمادية
 async function generateContentWithFallback(
-  ai: GoogleGenAI,
+  _ai: any,
   params: {
     contents: any;
     config?: any;
@@ -95,7 +102,7 @@ async function generateContentWithFallback(
 
   for (const modelName of CANDIDATE_MODELS) {
     try {
-      return await ai.models.generateContent({
+      return await callServerGenerateContent({
         model: modelName,
         contents: params.contents,
         config: params.config,
@@ -1368,7 +1375,7 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
       // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
       const promptText = `Read the following Arabic text naturally: ${cleanText}`;
 
-      const response = await ai.models.generateContent({
+      const response = await callServerGenerateContent({
         model: 'gemini-3.1-flash-tts-preview',
         contents: [{ parts: [{ text: promptText }] }],
         config: {
@@ -2105,4 +2112,134 @@ ${submissionsSummary || 'الطالب بدأ رحلته التعليمية لل�
   prebufferMousaAudio([fallbackReport.reportText]);
   return fallbackReport;
 }
+
+/**
+ * دالة توليد أسئلة الاختبار التفاعلي الذكي بالذكاء الاصطناعي (AI Exam Generator)
+ * تضمن دقة التشكيل العربي وتنوع أنماط الأسئلة (اختيار من متعدد، صح وخطأ، كتابة إملائية مشكولة)
+ */
+export async function generateAIExamQuestions(params: {
+  targetGrade: string;
+  skillTopic: string;
+  questionCount: number;
+  difficulty?: string;
+}): Promise<ExamQuestion[]> {
+  assertAIPermitted('teacher');
+  const ai = getAIClient();
+  const { targetGrade, skillTopic, questionCount = 5, difficulty = 'متوسط' } = params;
+
+  const prompt = `
+أنت خبير قياس وتقويم تربوي رائد في مناهج اللغة العربية للمرحلة المدرسية.
+المطلوب:
+توليد عدد (${questionCount}) أسئلة اختبار وتقييم تفاعلي مشكولة بالحركات التامة بدقة متناهية.
+المعايير والبيانات:
+- الصف المستهدف: [${targetGrade}].
+- المهارة اللغوية أو المحور: [${skillTopic}].
+- مستوى الصعوبة: [${difficulty}].
+- التنويع في أنماط الأسئلة:
+  1. نمط الاختيار من متعدد ("multiple_choice"): يتضمن 4 خيارات مشكولة واضحة، وإجابة صحيحة واحدة تطابق أحد الخيارات تماماً.
+  2. نمط صح أو خطأ ("true_false"): عبارة لغوية مشكولة صحيحة أو خاطئة، والخيارات ["صَحِيحٌ ✅", "خَطَأٌ ❌"].
+  3. نمط الكتابة الإملائية المشكولة ("spelling_dictation"): يطلب من الطالب كتابة الكلمة المشكولة أو تصحيح رسمها الإملائي (مع تزويده بنص صوتي audioPromptText).
+
+شروط صارمة:
+- جميع نصوص الأسئلة والخيارات والإجابات الصحيحة يجب أن تكون مضبوطة بالشكل التام (التشكيل العربي الكامل بالحركات والتنوين والشدة).
+- إسناد درجة لكل سؤال (points: 5 أو 10).
+- تقديم شرح تعليمي وتوجيهي مختصر ومحفز لكل سؤال في حقل explanation.
+- يجب أن يكون الإخراج مصفوفة JSON صالحة حصراً بدون أي كود أو نصوص إضافية خارج الـ JSON:
+
+[
+  {
+    "id": "exam_q_1",
+    "text": "نَصُّ السُّؤَالِ مَشْكُولاً بِالحَرَكَاتِ؟",
+    "type": "multiple_choice",
+    "options": ["خِيَارٌ أ", "خِيَارٌ ب", "خِيَارٌ ج", "خِيَارٌ د"],
+    "correctAnswer": "خِيَارٌ أ",
+    "points": 5,
+    "explanation": "شَرْحٌ تَعْلِيمِيٌّ لِلْإِجَابَةِ الصَّحِيحَةِ",
+    "audioPromptText": "نَصٌّ مَسْمُوعٌ"
+  }
+]
+`.trim();
+
+  const fallbackQuestions: ExamQuestion[] = [
+    {
+      id: `exam_q_${Date.now()}_1`,
+      text: 'مَا نَوْعُ التَّنْوِينِ فِي كَلِمَةِ: (كِتَابًا)؟',
+      type: 'multiple_choice',
+      options: ['تَنْوِينُ فَتْحٍ', 'تَنْوِينُ ضَمٍّ', 'تَنْوِينُ كَسْرٍ', 'لَا يُوجَدُ تَنْوِينٌ'],
+      correctAnswer: 'تَنْوِينُ فَتْحٍ',
+      points: 5,
+      explanation: 'تَنْوِينُ الفَتْحِ يُوضَعُ فَوْقَ الحَرْفِ الأَخِيرِ مَعَ أَلِفِ التَّنْوِينِ الزَّائِدَةِ.'
+    },
+    {
+      id: `exam_q_${Date.now()}_2`,
+      text: 'كَلِمَةُ (الشَّمْسُ) تَحْتَوِي عَلَى لَامٍ شَمْسِيَّةٍ تُكْتَبُ وَلَا تُنْطَقُ.',
+      type: 'true_false',
+      options: ['صَحِيحٌ ✅', 'خَطَأٌ ❌'],
+      correctAnswer: 'صَحِيحٌ ✅',
+      points: 5,
+      explanation: 'اللَّامُ الشَّمْسِيَّةُ تُدْغَمُ فِي الحَرْفِ التَّالِي لَهَا وَيَكُونُ مُشَدَّداً.'
+    },
+    {
+      id: `exam_q_${Date.now()}_3`,
+      text: 'اكْتُبِ الكَلِمَةَ التَّالِيَةَ مَضْبُوطَةً بِالشَّكْلِ: (مُعَلِّمٌ)',
+      type: 'spelling_dictation',
+      correctAnswer: 'مُعَلِّمٌ',
+      points: 5,
+      explanation: 'انْتَبِهْ لِلشَّدَّةِ وَالكِسْرَةِ تَحْتَ اللَّامِ وَتَنْوِينِ الضَّمِّ فَوْقَ المِيمِ.',
+      audioPromptText: 'مُعَلِّمٌ'
+    },
+    {
+      id: `exam_q_${Date.now()}_4`,
+      text: 'أَيٌّ مِنَ الكَلِمَاتِ التَّالِيَةِ تَحْتَوِي عَلَى مَدٍّ بِالأَلِفِ؟',
+      type: 'multiple_choice',
+      options: ['بَابٌ', 'بَيْتٌ', 'بِنْتٌ', 'بُرْجٌ'],
+      correctAnswer: 'بَابٌ',
+      points: 5,
+      explanation: 'المَدُّ بِالأَلِفِ يَأْتِي مَسْبُوقاً بِحَرْفٍ مَفْتُوحٍ كَمَا فِي (بَابٌ).'
+    },
+    {
+      id: `exam_q_${Date.now()}_5`,
+      text: 'التَّاءُ المَرْبُوطَةُ (ـة / ة) تُنْطَقُ هَاءً عِنْدَ الوَقْفِ وَتَاءً عِنْدَ الوَصْلِ.',
+      type: 'true_false',
+      options: ['صَحِيحٌ ✅', 'خَطَأٌ ❌'],
+      correctAnswer: 'صَحِيحٌ ✅',
+      points: 5,
+      explanation: 'مِثْلُ: مَدْرَسَة (مَدْرَسَهْ عِنْدَ الوَقْفِ، وَمَدْرَسَةُ الأَمَلِ عِنْدَ الوَصْلِ).'
+    }
+  ];
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.3,
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const raw = response.text || '';
+    const cleaned = cleanJsonText(raw);
+    const parsed = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((item: any, idx: number) => ({
+        id: item.id || `exam_q_${Date.now()}_${idx + 1}`,
+        text: item.text || `سُؤَالٌ رَقْمُ ${idx + 1}`,
+        type: (item.type === 'true_false' || item.type === 'spelling_dictation') ? item.type : 'multiple_choice',
+        options: item.type === 'true_false' 
+          ? ['صَحِيحٌ ✅', 'خَطَأٌ ❌']
+          : (Array.isArray(item.options) && item.options.length > 0 ? item.options : undefined),
+        correctAnswer: item.correctAnswer || (item.options?.[0] || 'صَحِيحٌ ✅'),
+        points: Number(item.points) || 5,
+        explanation: item.explanation || undefined,
+        audioPromptText: item.audioPromptText || item.text
+      }));
+    }
+  } catch (err) {
+    console.warn('تعذر توليد أسئلة الاختبار الذكي، سيتم استخدام بنك الأسئلة الاحتياطي المشكول:', err);
+  }
+
+  return fallbackQuestions.slice(0, questionCount);
+}
+
 
