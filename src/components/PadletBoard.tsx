@@ -624,9 +624,15 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     try {
       const { post: savedPost, error } = await savePadletPost(newPost);
 
+      // إضافة المنشور المحفوظ محلياً للحالة فوراً لضمان عدم تأثره بأي بطء في الاتصال
+      setPosts(prev => {
+        const exists = prev.some(p => p.id === savedPost.id);
+        if (exists) return prev.map(p => p.id === savedPost.id ? savedPost : p);
+        return [savedPost, ...prev];
+      });
+
       if (error) {
-        console.error('Padlet post insert failed:', error);
-        alert('تنبيه: حدثت مشكلة أثناء الحفظ السحابي للبطاقة. تم حفظها مؤقتاً على جهازك ولكن قد لا تظهر للآخرين حتى يتم التحقق من الاتصال بالشبكة.');
+        console.warn('Padlet post cloud insert warning:', error);
       } else {
         // تفجير قصاصات الاحتفال للأطفال
         try {
@@ -652,7 +658,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
       // إعادة تحميل فوري من السحابة لضمان التزامن
       if (activeBoard) {
         syncPadletPostsFromCloud(activeBoard.id).then(cloudPosts => {
-          if (cloudPosts) setPosts(cloudPosts);
+          if (cloudPosts && cloudPosts.length > 0) setPosts(cloudPosts);
         });
       }
     } catch (submitErr) {

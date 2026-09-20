@@ -191,6 +191,25 @@ CREATE TABLE IF NOT EXISTS public.padlet_posts (
    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+-- تحديث أعمدة جداول الحائط في حال تم إنشاؤها مسبقاً بنقص في الأعمدة
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS target_grade TEXT;
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS track TEXT DEFAULT 'arabic-a';
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'corkboard';
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS color TEXT DEFAULT 'yellow';
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS allow_comments BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS require_approval BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.padlet_boards ADD COLUMN IF NOT EXISTS is_locked BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS color TEXT DEFAULT 'yellow';
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS audio_url TEXT;
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS content_type TEXT DEFAULT 'text';
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS likes_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS liked_by JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS comments JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.padlet_posts ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
+
 CREATE INDEX IF NOT EXISTS idx_padlet_posts_board ON public.padlet_posts(board_id);
 CREATE INDEX IF NOT EXISTS idx_padlet_boards_grade ON public.padlet_boards(grade);
 

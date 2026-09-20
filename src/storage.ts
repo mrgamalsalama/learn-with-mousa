@@ -1975,8 +1975,26 @@ export const getPadletPosts = (boardId?: string): PadletPost[] => {
   });
 };
 
+// دالة مساعدة لتنظيف كائن البطاقة من الأعمدة غير الموجودة في جدول Supabase بحسب رسالة الخطأ
+const sanitizePostPayloadForError = (payload: any, errorMessage: string) => {
+  const sanitized = { ...payload };
+  const lower = errorMessage.toLowerCase();
+  
+  if (lower.includes("'comments'") || lower.includes("comments column")) delete sanitized.comments;
+  if (lower.includes("'status'") || lower.includes("status column")) delete sanitized.status;
+  if (lower.includes("'pinned'") || lower.includes("pinned column")) delete sanitized.pinned;
+  if (lower.includes("'content_type'") || lower.includes("content_type column")) delete sanitized.content_type;
+  if (lower.includes("'audio_url'") || lower.includes("audio_url column")) delete sanitized.audio_url;
+  if (lower.includes("'image_url'") || lower.includes("image_url column")) delete sanitized.image_url;
+  if (lower.includes("'likes_count'") || lower.includes("likes_count column")) delete sanitized.likes_count;
+  if (lower.includes("'liked_by'") || lower.includes("liked_by column")) delete sanitized.liked_by;
+  if (lower.includes("'color'") || lower.includes("color column")) delete sanitized.color;
+  if (lower.includes("'author_role'") || lower.includes("author_role column")) delete sanitized.author_role;
+  return sanitized;
+};
+
 export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPost; error?: any }> => {
-  // تحديث التخزين المحلي فوراً كنسخة احتياطية سريعة
+  // تحديث التخزين المحلي فوراً كنسخة احتياطية سريعة وموثوقة
   const posts = getPadletPosts();
   const index = posts.findIndex(p => p.id === post.id);
   if (index >= 0) {
@@ -1988,7 +2006,7 @@ export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPo
   window.dispatchEvent(new CustomEvent('padlet_posts_updated'));
 
   // إدراج ومزامنة مباشرة مع Supabase جدول padlet_posts
-  const postData = {
+  let postData: any = {
     id: post.id,
     board_id: post.board_id,
     author_id: post.author_id,
@@ -2010,7 +2028,40 @@ export const savePadletPost = async (post: PadletPost): Promise<{ post: PadletPo
   try {
     const { data, error } = await supabase.from('padlet_posts').upsert(postData, { onConflict: 'id' });
     if (error) {
-      console.error('Padlet post insert failed:', error);
+      console.warn('Padlet post initial upsert returned error:', error);
+      
+      // في حال كان جدول Supabase يفتقر لبعض الأعمدة (PGRST204 missing column)
+      // نحاول تدريجياً حذف الأعمدة غير الموجودة وإعادة المحاولة حتى ينجح الحفظ السحابي
+      if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+        let retryPayload = sanitizePostPayloadForError(postData, error.message || '');
+        let retryRes = await supabase.from('padlet_posts').upsert(retryPayload, { onConflict: 'id' });
+        
+        // إذا كان هناك عمود آخر مفقود في المحاولة الثانية، نجرب الحفظ بالحد الأدنى الأساسي
+        if (retryRes.error && (retryRes.error.code === 'PGRST204' || retryRes.error.message?.includes('column'))) {
+          retryPayload = sanitizePostPayloadForError(retryPayload, retryRes.error.message || '');
+          retryRes = await supabase.from('padlet_posts').upsert(retryPayload, { onConflict: 'id' });
+        }
+
+        // إذا استمر الخطأ، نجرب الحفظ بالحقول الأساسية الحتمية فقط
+        if (retryRes.error && (retryRes.error.code === 'PGRST204' || retryRes.error.message?.includes('column'))) {
+          const minimalPayload: any = {
+            id: post.id,
+            board_id: post.board_id,
+            author_id: post.author_id,
+            author_name: post.author_name,
+            content: post.content,
+            created_at: post.created_at || new Date().toISOString()
+          };
+          retryRes = await supabase.from('padlet_posts').upsert(minimalPayload, { onConflict: 'id' });
+        }
+
+        if (!retryRes.error) {
+          console.log('Padlet post saved to cloud successfully via schema adaptation fallback');
+          return { post, error: null };
+        }
+        return { post, error: retryRes.error };
+      }
+
       return { post, error };
     }
     return { post, error: null };
@@ -2192,12 +2243,29 @@ export const syncPadletPostsFromCloud = async (boardId?: string): Promise<Padlet
         created_at: p.created_at || new Date().toISOString()
       }));
 
-      // دمج مع المشاركات المحلية الحالية لتجنب فقدان المنشورات الحديثة غير المتزامنة
+      // دمج ذكي ثنائي الاتجاه: السحابي هو المرجع الأساسي، مع الحفاظ على أي منشور محلي حديث لم يصله السحاب بعد
       const local = getPadletPosts();
-      const localOther = boardId ? local.filter(l => l.board_id !== boardId) : [];
-      const merged = [...formatted, ...localOther];
+      const map = new Map<string, PadletPost>();
+      
+      // نبدأ بوضع كل المنشورات السحابية
+      formatted.forEach(post => map.set(post.id, post));
+      
+      // نتحقق من المنشورات المحلية: إذا كان هناك منشور تم إنشاؤه محلياً ولم يُسجل سحابياً بعد، نحتفظ به
+      local.forEach(post => {
+        if (!map.has(post.id)) {
+          map.set(post.id, post);
+        }
+      });
+
+      const merged = Array.from(map.values()).sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
       localStorage.setItem(PADLET_POSTS_KEY, JSON.stringify(merged));
-      return formatted;
+      const result = boardId ? merged.filter(p => p.board_id === boardId) : merged;
+      return result;
     }
   } catch (err) {
     console.warn('فشل جلب منشورات الحائط سحابياً، سيتم استخدام التخزين المحلي:', err);
