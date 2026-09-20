@@ -13,9 +13,9 @@ import {
   getPadletBoards, savePadletBoard, deletePadletBoard, 
   getPadletPosts, savePadletPost, updatePadletPostStatus, 
   togglePadletPostLike, addPadletComment, deletePadletPost, 
-  togglePadletPostPin, syncPadletBoardsFromCloud, syncPadletPostsFromCloud,
-  subscribeToCloudChanges 
+  togglePadletPostPin, syncPadletBoardsFromCloud, syncPadletPostsFromCloud
 } from '../storage';
+import { supabase } from '../supabaseClient';
 import { autoTashkeelText } from '../geminiService';
 import confetti from 'canvas-confetti';
 
@@ -238,25 +238,45 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     window.addEventListener('padlet_posts_updated', handleLocalPostUpdate);
     window.addEventListener('padlet_boards_updated', handleLocalBoardUpdate);
 
-    const unsubscribe = subscribeToCloudChanges({
-      onPadletBoardsChange: () => {
-        syncPadletBoardsFromCloud().then(b => {
-          if (b) setBoards(b);
-        });
-      },
-      onPadletPostsChange: () => {
-        if (activeBoard) {
-          syncPadletPostsFromCloud(activeBoard.id).then(p => {
-            if (p) setPosts(p);
+    // إنشاء قناة Realtime خاصة ومخصصة للجدار مع ربط كافة مستمعي الأحداث (.on) أولاً قبل .subscribe()
+    const channelName = `padlet_realtime_${activeBoard?.id || 'global'}_${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'padlet_boards' },
+        () => {
+          syncPadletBoardsFromCloud().then(b => {
+            if (b) setBoards(b);
           });
         }
-      }
-    });
+      )
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'padlet_posts',
+          ...(activeBoard?.id ? { filter: `board_id=eq.${activeBoard.id}` } : {})
+        },
+        () => {
+          if (activeBoard?.id) {
+            syncPadletPostsFromCloud(activeBoard.id).then(p => {
+              if (p) setPosts(p);
+            });
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
       window.removeEventListener('padlet_posts_updated', handleLocalPostUpdate);
       window.removeEventListener('padlet_boards_updated', handleLocalBoardUpdate);
-      if (typeof unsubscribe === 'function') unsubscribe();
+      try {
+        supabase.removeChannel(channel);
+      } catch (err) {
+        console.warn('Realtime padlet channel removal warning:', err);
+      }
       if (activeAudioElementRef.current) {
         activeAudioElementRef.current.pause();
       }
