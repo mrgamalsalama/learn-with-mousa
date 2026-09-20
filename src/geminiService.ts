@@ -432,42 +432,51 @@ export async function verifyPhonicsWord(
 // ================= 4. لوحة الرسم والتعرف البصري (Canvas & Multimodal AI) =================
 export async function analyzeChildDrawing(
   letter: string,
-  base64Image: string
+  base64Image: string,
+  positionInfo?: {
+    positionLabel?: string;
+    letterForm?: string;
+    exampleWord?: string;
+  }
 ): Promise<DrawingAnalysisResult> {
   const ai = getAIClient();
 
   // تنظيف صيغة data:image/png;base64,
   const base64Data = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
 
+  const positionDesc = positionInfo?.letterForm 
+    ? `(موضع الحرف: ${positionInfo.positionLabel || ''}، شكل الحرف: "${positionInfo.letterForm}"، والكلمة الاسترشادية للطفل: "${positionInfo.exampleWord || ''}")`
+    : '';
+
   if (!ai) {
     return {
-      recognizedObject: `رَسْمَةٌ إِبْدَاعِيَّةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
+      recognizedObject: positionInfo?.exampleWord || `رَسْمَةٌ إِبْدَاعِيَّةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
       startsWithTargetLetter: true,
       targetLetter: letter,
       confidenceScore: 95,
-      feedback: `مَا شَاءَ اللهُ! لَوْحَةٌ فَنِّيَّةٌ مُبْهِرَةٌ يَا صَدِيقِي الفَنَّان! رَسَمْتَ شَيْئًا جَمِيلًا يَبْدَأُ بِحَرْفِ (${letter})! لَقَدْ حَصَلْتَ عَلَى ٥ نُجُوم! 🎨⭐`,
-      badgeEarned: `وسام فنان الحروف العبقري 🎨🖌️`,
+      feedback: `مَا شَاءَ اللهُ! لَوْحَةٌ فَنِّيَّةٌ مُبْهِرَةٌ يَا صَدِيقِي الفَنَّان! رَسَمْتَ شَيْئًا جَمِيلًا يُمَثِّلُ حَرْفَ (${positionInfo?.letterForm || letter})! لَقَدْ حَصَلْتَ عَلَى ٥ نُجُوم! 🎨⭐`,
+      badgeEarned: `وسام فنان الحروف العبقري (${letter}) 🎨🖌️`,
       starsCount: 5,
     };
   }
 
   const prompt = `
-أنت معلم وفنان للأطفال، تحلل رسمة طفل مرسومة على شاشة Canvas.
-الحرف العربي المستهدف: [${letter}].
+أنت معلم وفنان للأطفال، تحلل رسمة طفل مرسومة على شاشة Canvas التفاعلية.
+الحرف العربي المستهدف: [${letter}] ${positionDesc}.
 
 حلل الصورة المرفقة وأجب عن الآتي:
-1. ما هو الشيء أو العنصر الذي يبدو أن الطفل حاول رسمه؟ (مثال: بطة، تفاحة، شجرة، سيارة، شمس، بيت، كلب، قمر، ولد، سمكة، وردة...). كن متفهماً ومتسامحاً مع رسومات الأطفال غير المتقنة وشجع خيالهم!
-2. هل هذا الشيء يبدأ باللغة العربية بحرف [${letter}]؟ (أو هل هو قريب جداً أو يمثل حرف ${letter} نفسه)؟
-3. قدم تقييماً مشجعاً جداً ومفرحاً للطفل مع التشكيل بالحركات.
+1. ما هو الشيء أو العنصر الذي يبدو أن الطفل حاول رسمه؟ (مثال: هل رسم شكل الحرف "${positionInfo?.letterForm || letter}"، أم رسم الكلمة التوضيحية "${positionInfo?.exampleWord || ''}"، أم رسم شيئاً آخر مثل: بطة، تفاحة، شجرة، سيارة، شمس، بيت، كلب، قمر، ولد، سمكة، وردة...). كن متفهماً ومتسامحاً جداً مع رسومات وتخيلات الأطفال الصغار غير المتقنة وشجعهم بحرارة!
+2. هل هذا الشيء يمثل الحرف [${letter}] أو شكله (${positionInfo?.letterForm || letter}) أو كلمته المقترحة أو يبدأ به؟
+3. قدم تعليقاً تربوياً مشجعاً جداً ومفرحاً للطفل مع التشكيل التام بالحركات.
 4. اذكر عدد النجوم المستحقة (من 3 إلى 5 نجوم).
 5. أرجع النتيجة فقط بصيغة JSON:
 {
-  "recognizedObject": "اسم الشيء المكتشف (مثال: بَطَّة)",
+  "recognizedObject": "اسم الشيء المكتشف (مثال: ${positionInfo?.exampleWord || 'بَطَّة'})",
   "startsWithTargetLetter": true,
   "targetLetter": "${letter}",
-  "confidenceScore": 90,
+  "confidenceScore": 92,
   "feedback": "تعليق تربوي مشجع ومشكل بالحركات",
-  "badgeEarned": "اسم وسام مميز إن كانت الرسمة صحيحة أو قريبة",
+  "badgeEarned": "اسم وسام مميز للطفل",
   "starsCount": 5
 }
 `;
