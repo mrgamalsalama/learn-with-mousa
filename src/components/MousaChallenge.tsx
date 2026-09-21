@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Trophy, Play, Users, Sparkles, Plus, Clock, Award, Flame, CheckCircle2, 
   XCircle, RotateCcw, Volume2, VolumeX, ArrowRight, BookOpen, AlertCircle, 
-  ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye
+  ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye, LogOut
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, ChallengeQuiz, ChallengeRoom, 
@@ -47,10 +47,21 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
   // غرفة اللعب النشطة (سواء كان المعلم هو المضيف أو الطالب لاعب)
   const [activeRoom, setActiveRoom] = useState<ChallengeRoom | null>(null);
+  const [userRoleInRoom, setUserRoleInRoom] = useState<'host' | 'player'>('player');
   const [pinInput, setPinInput] = useState('');
   const [playerNameInput, setPlayerNameInput] = useState(currentUser.name || '');
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  // تحديد دور المستخدم في الغرفة بفصل صارم:
+  // المعلم كمضيف (Host) vs الطالب كلاعب (Player)
+  const isHost = Boolean(
+    activeRoom &&
+    currentUser.role !== 'student' &&
+    (userRoleInRoom === 'host' || activeRoom.host_id === currentUser.id) &&
+    userRoleInRoom !== 'player'
+  );
+  const isPlayer = !isHost;
 
   // حالة السؤال النشط والمؤقت
   const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -89,84 +100,148 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     });
   }, []);
 
-  // اشتراك Realtime في غرفة اللعب المحددة (سحابي + محلي متكامل)
+  // اشتراك Realtime في غرفة اللعب المحددة عبر رمز الغرفة PIN (سحابي + محلي متكامل)
   useEffect(() => {
-    if (!activeRoom) return;
+    if (!activeRoom || !activeRoom.pin) return;
+    const roomPin = activeRoom.pin.trim();
 
-    // استماع للتحديثات المحلية عبر CustomEvent
+    // 1. استماع للتحديثات المحلية عبر CustomEvent
     const handleLocalUpdate = (e: any) => {
       const updated = e.detail as ChallengeRoom;
-      if (updated && (updated.id === activeRoom.id || updated.pin === activeRoom.pin)) {
-        setActiveRoom(updated);
+      if (updated && updated.pin === roomPin) {
+        const incomingStatus = (updated.status === 'in_progress') ? 'question_active' : updated.status;
+        setActiveRoom(prev => {
+          if (!prev) return { ...updated, status: incomingStatus };
+          return {
+            ...updated,
+            status: incomingStatus,
+            questions: (Array.isArray(updated.questions) && updated.questions.length > 0) ? updated.questions : prev.questions
+          };
+        });
       }
     };
     window.addEventListener('challenge_room_updated', handleLocalUpdate);
 
-    // استماع لتحديثات التخزين بين التبويبات المختلفة في نفس المتصفح
+    // 2. استماع لتحديثات التخزين بين التبويبات المختلفة في نفس المتصفح
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'lwm_challenge_rooms' && e.newValue) {
         try {
           const rooms: ChallengeRoom[] = JSON.parse(e.newValue);
-          const found = rooms.find(r => r.id === activeRoom.id || r.pin === activeRoom.pin);
+          const found = rooms.find(r => r.pin === roomPin);
           if (found) {
-            setActiveRoom(found);
+            const incomingStatus = (found.status === 'in_progress') ? 'question_active' : found.status;
+            setActiveRoom(prev => {
+              if (!prev) return { ...found, status: incomingStatus };
+              return {
+                ...found,
+                status: incomingStatus,
+                questions: (Array.isArray(found.questions) && found.questions.length > 0) ? found.questions : prev.questions
+              };
+            });
           }
         } catch {}
       }
     };
     window.addEventListener('storage', handleStorageChange);
 
-    // استماع لقناة البث المحلي BroadcastChannel
+    // 3. استماع لقناة البث المحلي BroadcastChannel
     const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('mousa_challenge_sync') : null;
     if (bc) {
       bc.onmessage = (event) => {
         if (event.data?.type === 'ROOM_UPDATE') {
           const updated = event.data.room as ChallengeRoom;
-          if (updated && (updated.id === activeRoom.id || updated.pin === activeRoom.pin)) {
-            setActiveRoom(updated);
+          if (updated && updated.pin === roomPin) {
+            const incomingStatus = (updated.status === 'in_progress') ? 'question_active' : updated.status;
+            setActiveRoom(prev => {
+              if (!prev) return { ...updated, status: incomingStatus };
+              return {
+                ...updated,
+                status: incomingStatus,
+                questions: (Array.isArray(updated.questions) && updated.questions.length > 0) ? updated.questions : prev.questions
+              };
+            });
           }
         }
       };
     }
 
-    // استماع للتحديثات السحابية عبر Supabase Realtime Channel
+    // 4. استماع للتحديثات السحابية عبر Supabase Realtime Channel: 'room-sync-' + roomPin
+    const channelName = `room-sync-${roomPin}`;
     const channel = supabase
-      .channel(`room_${activeRoom.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'challenge_rooms',
-          filter: `id=eq.${activeRoom.id}`
+          filter: `pin=eq.${roomPin}`
         },
         (payload) => {
           if (payload.new) {
             const data: any = payload.new;
-            const formatted: ChallengeRoom = {
-              id: data.id,
-              pin: data.pin,
-              quiz_id: data.quiz_id || activeRoom.quiz_id,
-              quiz_title: data.quiz_title || activeRoom.quiz_title,
-              host_id: data.host_id,
-              host_name: data.host_name || activeRoom.host_name,
-              target_grade: data.target_grade || activeRoom.target_grade,
-              status: data.status,
-              current_question_index: data.current_question_index,
-              questions: (Array.isArray(data.questions) && data.questions.length > 0) ? data.questions : activeRoom.questions,
-              players: normalizeRoomPlayers(data.players),
-              answers_received: Array.isArray(data.answers_received) ? data.answers_received : activeRoom.answers_received,
-              question_start_time: data.question_start_time || undefined,
-              created_at: data.created_at || activeRoom.created_at,
-              updated_at: data.updated_at
-            };
-            setActiveRoom(formatted);
+            const incomingStatus = (data.status === 'in_progress') ? 'question_active' : data.status;
+            setActiveRoom(prev => {
+              if (!prev) return null;
+              const formatted: ChallengeRoom = {
+                id: data.id || prev.id,
+                pin: data.pin || prev.pin,
+                quiz_id: data.quiz_id || prev.quiz_id,
+                quiz_title: data.quiz_title || prev.quiz_title,
+                host_id: data.host_id || prev.host_id,
+                host_name: data.host_name || prev.host_name,
+                target_grade: data.target_grade || prev.target_grade,
+                status: incomingStatus,
+                current_question_index: (typeof data.current_question_index === 'number') ? data.current_question_index : prev.current_question_index,
+                questions: (Array.isArray(data.questions) && data.questions.length > 0) ? data.questions : prev.questions,
+                players: data.players ? normalizeRoomPlayers(data.players) : prev.players,
+                answers_received: Array.isArray(data.answers_received) ? data.answers_received : prev.answers_received,
+                question_start_time: data.question_start_time || prev.question_start_time,
+                created_at: data.created_at || prev.created_at,
+                updated_at: data.updated_at
+              };
+              return formatted;
+            });
           }
         }
       )
       .subscribe();
 
     channelRef.current = channel;
+
+    // 5. فحص دوري استباقي احتياطي (Polling Fallback) كل 1.5 ثانية للطلاب لضمان المزامنة الفورية
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('challenge_rooms')
+          .select('*')
+          .eq('pin', roomPin)
+          .maybeSingle();
+
+        if (!error && data) {
+          const incomingStatus = (data.status === 'in_progress') ? 'question_active' : data.status;
+          setActiveRoom(prev => {
+            if (!prev) return null;
+            if (
+              prev.status !== incomingStatus ||
+              prev.current_question_index !== data.current_question_index ||
+              (data.answers_received && data.answers_received.length !== prev.answers_received?.length) ||
+              (data.players && Object.keys(data.players).length !== Object.keys(prev.players).length)
+            ) {
+              return {
+                ...prev,
+                status: incomingStatus,
+                current_question_index: (typeof data.current_question_index === 'number') ? data.current_question_index : prev.current_question_index,
+                players: data.players ? normalizeRoomPlayers(data.players) : prev.players,
+                answers_received: Array.isArray(data.answers_received) ? data.answers_received : prev.answers_received,
+                question_start_time: data.question_start_time || prev.question_start_time
+              };
+            }
+            return prev;
+          });
+        }
+      } catch {}
+    }, 1500);
 
     return () => {
       window.removeEventListener('challenge_room_updated', handleLocalUpdate);
@@ -175,12 +250,13 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
+      clearInterval(pollInterval);
     };
-  }, [activeRoom?.id, activeRoom?.pin]);
+  }, [activeRoom?.pin]);
 
   // إدارة المؤقت التنازلي التفاعلي
   useEffect(() => {
-    if (!activeRoom || activeRoom.status !== 'question_active') {
+    if (!activeRoom || (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress')) {
       if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
@@ -220,7 +296,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       if (remaining <= 0) {
         clearInterval(timerRef.current);
         // إذا كان المضيف (المعلم)، ينتقل تلقائياً لكشف النتيجة
-        if (isTeacherOrAdmin && activeRoom.host_id === currentUser.id) {
+        if (isHost) {
           handleRevealAnswer();
         }
       }
@@ -229,7 +305,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [activeRoom?.status, activeRoom?.current_question_index, activeRoom?.question_start_time, soundMuted]);
+  }, [activeRoom?.status, activeRoom?.current_question_index, activeRoom?.question_start_time, soundMuted, isHost]);
 
   // تشغيل الكونفيتي وصوت التتويج عند شاشة النهاية
   useEffect(() => {
@@ -249,6 +325,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
   // بدء غرفة جديدة من كويز محدد
   const handleStartHosting = async (quiz: ChallengeQuiz) => {
+    setUserRoleInRoom('host');
     const generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
     const teacherId = currentUser.id;
 
@@ -481,6 +558,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
       await saveChallengeRoom(updatedRoom);
       setActiveRoom(updatedRoom);
+      setUserRoleInRoom('player');
       setActiveTab('play');
     } catch (err) {
       setJoinError('حدث خطأ أثناء الاتصال بغرفة التحدي، حاول مرة أخرى');
@@ -489,12 +567,31 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     }
   };
 
+  // مغادرة الغرفة أو إنهاؤها
+  const handleLeaveRoom = () => {
+    if (activeRoom && isHost) {
+      if (!window.confirm('هل أنت متأكد من إنهاء جلسة التحدي لجميع الطلاب؟')) {
+        return;
+      }
+    }
+    setActiveRoom(null);
+    setUserRoleInRoom('player');
+    setActiveTab(isTeacherOrAdmin ? 'bank' : 'play');
+  };
+
   // إرسال الإجابة وحساب النقاط وسرعة النقر
   const handleSelectAnswer = async (optionIndex: number) => {
-    if (!activeRoom || hasAnswered || activeRoom.status !== 'question_active') return;
+    if (!activeRoom || hasAnswered) return;
+    if (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress') return;
 
     const currentQ = activeRoom.questions[activeRoom.current_question_index];
     if (!currentQ) return;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    } catch {}
 
     setHasAnswered(true);
     setSelectedOptionIndex(optionIndex);
@@ -521,8 +618,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     const playerId = currentUser.id;
     const currentPlayer = activeRoom.players[playerId] || {
       id: playerId,
-      name: currentUser.name,
-      avatar: '🌟',
+      name: currentUser.name || playerNameInput || 'بطل التحدي',
+      avatar: (currentUser as any).avatar || '🌟',
       score: 0,
       streak: 0,
       isOnline: true,
@@ -554,7 +651,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       ...existingAnswers.filter((a: any) => !(a.playerId === playerId && a.questionIndex === activeRoom.current_question_index)),
       {
         playerId,
-        playerName: currentUser.name,
+        playerName: currentUser.name || playerNameInput || 'بطل التحدي',
         questionIndex: activeRoom.current_question_index,
         optionIndex,
         isCorrect,
@@ -664,21 +761,36 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
   // حساب ترتيب المتصدرين
   const sortedPlayers = Object.values(activeRoom?.players || {}).sort((a, b) => b.score - a.score);
+  const currentPlayer = activeRoom ? activeRoom.players[currentUser.id] : null;
+  const studentRank = sortedPlayers.findIndex(p => p.id === currentUser.id) + 1;
+  const studentScore = currentPlayer?.score || 0;
 
   // إحصائيات إجابات السؤال الحالي
   const currentQ = activeRoom?.questions[activeRoom.current_question_index];
   const optionAnswerCounts = [0, 0, 0, 0];
   let totalAnswersCount = 0;
   if (activeRoom && currentQ) {
-    Object.values(activeRoom.players).forEach(p => {
-      if (p.lastAnswer && p.lastAnswer.questionId === currentQ.id) {
-        const idx = p.lastAnswer.selectedIndex;
-        if (idx >= 0 && idx < 4) {
-          optionAnswerCounts[idx]++;
-          totalAnswersCount++;
+    if (Array.isArray(activeRoom.answers_received) && activeRoom.answers_received.length > 0) {
+      activeRoom.answers_received.forEach((ans: any) => {
+        if (ans.questionIndex === activeRoom.current_question_index) {
+          const idx = ans.optionIndex;
+          if (idx >= 0 && idx < 4) {
+            optionAnswerCounts[idx]++;
+            totalAnswersCount++;
+          }
         }
-      }
-    });
+      });
+    } else {
+      Object.values(activeRoom.players).forEach(p => {
+        if (p.lastAnswer && p.lastAnswer.questionId === currentQ.id) {
+          const idx = p.lastAnswer.selectedIndex;
+          if (idx >= 0 && idx < 4) {
+            optionAnswerCounts[idx]++;
+            totalAnswersCount++;
+          }
+        }
+      });
+    }
   }
 
   // نسخ الرمز
@@ -1300,444 +1412,773 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         {/* ================= 4. غرفة التحدي الحية (Active Room View) ================= */}
         {activeRoom && (
           <div className="flex-1 flex flex-col justify-between max-w-5xl mx-auto w-full h-full py-2">
-            {/* شريط حالة الغرفة ورقم الـ PIN */}
+            {/* شريط حالة الغرفة العلوي - مخصص حسب دور المستخدم (المعلم كـ Host vs الطالب كـ Player) */}
             <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl px-5 py-3 flex items-center justify-between flex-wrap gap-3 shadow-lg shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block font-medium">رَمْزُ الدُّخُولِ (PIN):</span>
+              {isHost ? (
+                /* رأس شاشة المعلم (المضيف) */
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block font-medium">رَمْزُ الدُّخُولِ (PIN):</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-black font-mono tracking-wider text-amber-400">
+                          {activeRoom.pin}
+                        </span>
+                        <button
+                          onClick={handleCopyPin}
+                          className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition"
+                          title="نسخ الرمز السداسي"
+                        >
+                          {copiedPin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="h-8 w-[1px] bg-slate-700 hidden sm:block mx-1" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white max-w-xs truncate">{activeRoom.quiz_title}</h4>
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Users className="w-3 h-3 text-indigo-400" />
+                        <span>{Object.keys(activeRoom.players).length} لاعب منضم</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* أدوات تحكم المعلم في مراحل التحدي */}
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black font-mono tracking-wider text-amber-400">
-                      {activeRoom.pin}
-                    </span>
+                    {activeRoom.status === 'lobby' && (
+                      <button
+                        onClick={handleLaunchChallenge}
+                        disabled={Object.keys(activeRoom.players).length === 0}
+                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>انْطِلاقُ التَّحَدِّي 🚀</span>
+                      </button>
+                    )}
+
+                    {(activeRoom.status === 'question_active' || activeRoom.status === 'in_progress') && (
+                      <button
+                        onClick={handleRevealAnswer}
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>كَشْفُ الإِجَابَةِ 💡</span>
+                      </button>
+                    )}
+
+                    {activeRoom.status === 'question_revealed' && (
+                      <button
+                        onClick={handleShowLeaderboard}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        <span>لَوْحَةُ الصَّدَارَةِ 📊</span>
+                      </button>
+                    )}
+
+                    {activeRoom.status === 'leaderboard' && (
+                      <button
+                        onClick={handleNextQuestion}
+                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>{activeRoom.current_question_index + 1 < activeRoom.questions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
+                      </button>
+                    )}
+
+                    {activeRoom.status === 'finished' && (
+                      <button
+                        onClick={handleLeaveRoom}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>إِنْهَاءُ الجَلْسَةِ 🏁</span>
+                      </button>
+                    )}
+
                     <button
-                      onClick={handleCopyPin}
-                      className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition"
-                      title="نسخ الرمز السداسي"
+                      onClick={handleLeaveRoom}
+                      className="p-2 rounded-xl bg-slate-700 hover:bg-rose-900/60 hover:text-rose-300 text-slate-400 transition"
+                      title="إنهاء التحدي والخروج"
                     >
-                      {copiedPin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <LogOut className="w-4 h-4" />
                     </button>
                   </div>
-                </div>
-                <div className="h-8 w-[1px] bg-slate-700 hidden sm:block mx-1" />
-                <div>
-                  <h4 className="text-xs font-bold text-white max-w-xs truncate">{activeRoom.quiz_title}</h4>
-                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <Users className="w-3 h-3 text-indigo-400" />
-                    <span>{Object.keys(activeRoom.players).length} لاعب منضم</span>
-                  </span>
-                </div>
-              </div>
+                </>
+              ) : (
+                /* رأس شاشة الطالب (اللاعب) */
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-lg shadow-md shrink-0">
+                      {currentPlayer?.avatar || (currentUser as any).avatar || '🌟'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-white">
+                          {currentPlayer?.name || currentUser.name}
+                        </span>
+                        {currentPlayer && currentPlayer.streak > 1 && (
+                          <span className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                            <Flame className="w-3 h-3 text-rose-400 fill-current" />
+                            <span>{currentPlayer.streak} متتالية</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-mono text-amber-400 font-bold">
+                        {studentScore.toLocaleString()} نقطة
+                      </div>
+                    </div>
+                  </div>
 
-              {/* تحكم المضيف (المعلم) */}
-              {isTeacherOrAdmin && activeRoom.host_id === currentUser.id && (
-                <div className="flex items-center gap-2">
-                  {activeRoom.status === 'lobby' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono bg-slate-900/80 border border-slate-700 px-2.5 py-1 rounded-lg text-slate-300">
+                      غرفة: {activeRoom.pin}
+                    </span>
                     <button
-                      onClick={handleLaunchChallenge}
-                      disabled={Object.keys(activeRoom.players).length === 0}
-                      className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 transition flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => setSoundMuted(!soundMuted)}
+                      className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition"
+                      title={soundMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
                     >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>انْطِلاقُ التَّحَدِّي 🚀</span>
+                      {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                     </button>
-                  )}
-
-                  {activeRoom.status === 'question_active' && (
                     <button
-                      onClick={handleRevealAnswer}
-                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1"
+                      onClick={handleLeaveRoom}
+                      className="p-1.5 rounded-lg bg-slate-700 hover:bg-rose-900/60 hover:text-rose-300 text-slate-400 transition text-xs font-bold flex items-center gap-1"
+                      title="مغادرة الغرفة"
                     >
-                      <span>كَشْفُ الإِجَابَةِ 💡</span>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">مغادرة</span>
                     </button>
-                  )}
-
-                  {activeRoom.status === 'question_revealed' && (
-                    <button
-                      onClick={handleShowLeaderboard}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md transition flex items-center gap-1"
-                    >
-                      <BarChart3 className="w-3.5 h-3.5" />
-                      <span>لَوْحَةُ الصَّدَارَةِ 📊</span>
-                    </button>
-                  )}
-
-                  {activeRoom.status === 'leaderboard' && (
-                    <button
-                      onClick={handleNextQuestion}
-                      className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>{activeRoom.current_question_index + 1 < activeRoom.questions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
-                    </button>
-                  )}
-                </div>
+                  </div>
+                </>
               )}
             </div>
 
-            {/* A. شاشة اللوبي / انتظار انضمام الطلاب (Lobby View) */}
-            {activeRoom.status === 'lobby' && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-6">
-                <div className="space-y-2">
-                  <span className="text-xs font-black tracking-widest text-amber-400 uppercase bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full">
-                    شَاشَةُ انْتِظَارِ الأَبْطَالِ 🌟
-                  </span>
-                  <h3 className="text-3xl font-black text-white">
-                    ادخل الرمز <span className="text-amber-400 font-mono tracking-wider">{activeRoom.pin}</span> للمشاركة
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    يمكن للطلاب فتح تبويب «تحدي موسى» وإدخال هذا الرمز السداسي للانضمام فوراً
-                  </p>
-                </div>
-
-                {/* قائمة الأبطال المنضمين حالياً */}
-                <div className="w-full max-w-2xl bg-slate-950/60 border border-slate-800 rounded-3xl p-6 min-h-[160px]">
-                  <div className="text-xs font-bold text-slate-400 mb-3 flex items-center justify-center gap-1.5">
-                    <Users className="w-4 h-4 text-indigo-400" />
-                    <span>الأبطال المستعدون ({Object.keys(activeRoom.players).length}):</span>
-                  </div>
-
-                  {Object.keys(activeRoom.players).length === 0 ? (
-                    <div className="py-8 text-slate-600 text-xs font-bold flex flex-col items-center gap-2">
-                      <Loader2 className="w-6 h-6 animate-spin text-slate-600" />
-                      <span>في انتظار انضمام أول بطل للساحة...</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-center gap-2.5 max-h-48 overflow-y-auto p-1">
-                      {Object.values(activeRoom.players).map(player => (
-                        <div
-                          key={player.id}
-                          className="px-3.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs font-black flex items-center gap-2 shadow-sm animate-in zoom-in-75 duration-200"
-                        >
-                          <span className="text-sm">{player.avatar || '🌟'}</span>
-                          <span>{player.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* نصيحة للمعلم */}
-                {isTeacherOrAdmin && (
-                  <p className="text-xs text-slate-500 font-medium">
-                    💡 بمجرد انضمام جميع طلاب الصف، انقر على زر «انطلاق التحدي 🚀» في الأعلى.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* B. شاشة السؤال النشط (Question Active View) مع المؤقت الدائري */}
-            {activeRoom.status === 'question_active' && currentQ && (
-              <div className="flex-1 flex flex-col justify-between py-2 space-y-4 animate-in fade-in duration-200">
-                {/* رأس السؤال والمؤقت الدائري التفاعلي */}
-                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs font-black text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl">
-                    السؤال {activeRoom.current_question_index + 1} من {activeRoom.questions.length}
-                  </div>
-
-                  {/* المؤقت الدائري التفاعلي التنازلي */}
-                  <div className="relative w-16 h-16 flex items-center justify-center">
-                    <svg className="w-full h-full transform -rotate-90">
-                      <circle
-                        cx="32"
-                        cy="32"
-                        r="26"
-                        stroke="currentColor"
-                        strokeWidth="5"
-                        className="text-slate-800"
-                        fill="transparent"
-                      />
-                      <circle
-                        cx="32"
-                        cy="32"
-                        r="26"
-                        stroke="currentColor"
-                        strokeWidth="5"
-                        strokeDasharray={2 * Math.PI * 26}
-                        strokeDashoffset={
-                          2 * Math.PI * 26 * (1 - timeLeft / (currentQ.timeLimitSeconds || 20))
-                        }
-                        strokeLinecap="round"
-                        className={`transition-all duration-1000 ${
-                          timeLeft <= 5 ? 'text-rose-500 animate-pulse' : timeLeft <= 10 ? 'text-amber-400' : 'text-emerald-400'
-                        }`}
-                        fill="transparent"
-                      />
-                    </svg>
-                    <span className={`absolute text-base font-black font-mono ${
-                      timeLeft <= 5 ? 'text-rose-400 scale-110' : 'text-white'
-                    }`}>
-                      {timeLeft}
-                    </span>
-                  </div>
-
-                  <div className="text-xs font-black text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>{totalAnswersCount} / {Object.keys(activeRoom.players).length} أجابوا</span>
-                  </div>
-                </div>
-
-                {/* نص السؤال المشكول بالكامل في لافتة بارزة */}
-                <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 text-center shadow-xl flex items-center justify-center min-h-[120px]">
-                  <h3 className="text-xl md:text-2xl font-black text-white leading-relaxed">
-                    {currentQ.text}
-                  </h3>
-                </div>
-
-                {/* الخيارات الأربعة بالألوان والأشكال التنافسية */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 flex-1">
-                  {currentQ.options.map((opt, idx) => {
-                    const cfg = SHAPE_CONFIG[opt.shape];
-                    const isSelected = selectedOptionIndex === idx;
-
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleSelectAnswer(idx)}
-                        disabled={hasAnswered}
-                        className={`p-4 md:p-6 rounded-2xl md:rounded-3xl border-2 flex items-center gap-4 transition-all duration-150 text-right relative overflow-hidden group cursor-pointer ${
-                          cfg.bgClass
-                        } ${cfg.borderClass} ${cfg.hoverClass} ${
-                          isSelected ? cfg.activeClass : ''
-                        } ${hasAnswered && !isSelected ? 'opacity-40 grayscale-30' : ''}`}
-                      >
-                        <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-black/20 backdrop-blur-xs flex items-center justify-center text-2xl md:text-3xl shrink-0 shadow-inner">
-                          {cfg.symbol}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-base md:text-lg font-black block leading-relaxed ${cfg.textClass}`}>
-                            {opt.text}
-                          </span>
-                        </div>
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 bg-white/90 text-slate-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">
-                            إجابتك تم تسجيلها ✓
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* رسالة تأكيد إرسال الإجابة للطالب */}
-                {hasAnswered && (
-                  <div className="text-center text-xs font-bold text-amber-300 py-1 flex items-center justify-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>أحسنت! تم تسجيل إجابتك بسرعة، انتظر كشف النتيجة مع موسى...</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* C. شاشة كشف الإجابة الصحيحة وتوضيح موسى التربوي (Question Revealed View) */}
-            {activeRoom.status === 'question_revealed' && currentQ && (
-              <div className="flex-1 flex flex-col justify-center space-y-5 py-4 animate-in zoom-in-95 duration-200">
-                {/* شارة توضيحية لصحة الإجابة للطالب إن كان مشاركاً */}
-                {answerResult && (
-                  <div className={`p-4 rounded-2xl border text-center font-black ${
-                    answerResult.isCorrect
-                      ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200 shadow-lg shadow-emerald-900/30'
-                      : 'bg-rose-950/80 border-rose-500/50 text-rose-200 shadow-lg shadow-rose-900/30'
-                  }`}>
-                    <div className="text-2xl mb-1">{answerResult.isCorrect ? '🎉 إِجَابَةٌ رَائِعَةٌ وَصَحِيحَةٌ!' : '💫 حَظًّا أَوْفَرَ فِي السُّؤَالِ القَادِمِ!'}</div>
-                    <div className="text-xs">
-                      {answerResult.isCorrect ? `حصلت على +${answerResult.points} نقطة لسرعة الإجابة!` : 'لم تحصل على نقاط، ركز في السؤال القادم لتفوز!'}
-                    </div>
-                  </div>
-                )}
-
-                {/* بطاقة الإجابة الصحيحة وشرح موسى */}
-                <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-2xl shadow-inner">
-                      💡
-                    </div>
-                    <div>
-                      <span className="text-xs text-slate-400 font-bold">الإِجَابَةُ الصَّحِيحَةُ المَعْتَمَدَةُ:</span>
-                      <h3 className="text-xl font-black text-white flex items-center gap-2">
-                        <span>{SHAPE_CONFIG[currentQ.options[currentQ.correctIndex].shape].symbol}</span>
-                        <span>{currentQ.options[currentQ.correctIndex].text}</span>
+            {/* ========================================================================= */}
+            {/* فصل صارم بين واجهة المعلم (Host / Display View) وواجهة الطالب (Player View) */}
+            {/* ========================================================================= */}
+            {isHost ? (
+              /* ================= 1. واجهة المعلم (Host / Smartboard Display View) ================= */
+              <div className="flex-1 flex flex-col justify-between py-2">
+                {/* A. شاشة اللوبي للمعلم (Host Lobby) */}
+                {activeRoom.status === 'lobby' && (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-6 max-w-3xl mx-auto w-full animate-in fade-in duration-300">
+                    <div className="space-y-2">
+                      <span className="text-xs font-black tracking-widest text-amber-400 uppercase bg-amber-400/10 border border-amber-400/20 px-3.5 py-1.5 rounded-full inline-block">
+                        شَاشَةُ انْتِظَارِ الأَبْطَالِ (عَرْضُ المُعَلِّمِ) 🌟
+                      </span>
+                      <h3 className="text-3xl sm:text-4xl font-black text-white">
+                        ادخل الرمز <span className="text-amber-400 font-mono tracking-wider">{activeRoom.pin}</span> للمشاركة
                       </h3>
-                    </div>
-                  </div>
-
-                  {currentQ.explanation && (
-                    <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700/60 text-right">
-                      <div className="text-xs font-black text-amber-300 flex items-center gap-1.5 mb-1">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>شَرْحُ الصَّدِيقِ مُوسَى التَّرْبَوِيُّ:</span>
-                      </div>
-                      <p className="text-sm font-bold text-slate-200 leading-relaxed">
-                        {currentQ.explanation}
+                      <p className="text-xs sm:text-sm text-slate-400">
+                        اطلب من الطلاب فتح تبويب «تحدي موسى» وإدخال هذا الرمز السداسي للانضمام إلى المسابقة فوراً
                       </p>
                     </div>
-                  )}
 
-                  {/* توزيع إجابات الطلاب على الخيارات الأربعة */}
-                  <div className="space-y-2 pt-2">
-                    <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف:</span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {/* قائمة الأبطال المنضمين حالياً */}
+                    <div className="w-full bg-slate-950/60 border border-slate-800 rounded-3xl p-6 min-h-[180px]">
+                      <div className="text-xs font-bold text-slate-400 mb-3 flex items-center justify-center gap-2">
+                        <Users className="w-4 h-4 text-indigo-400" />
+                        <span>الأبطال المستعدون في الغرفة ({Object.keys(activeRoom.players).length}):</span>
+                      </div>
+
+                      {Object.keys(activeRoom.players).length === 0 ? (
+                        <div className="py-10 text-slate-600 text-xs font-bold flex flex-col items-center gap-3">
+                          <Loader2 className="w-8 h-8 animate-spin text-slate-600" />
+                          <span>في انتظار انضمام أول بطل للساحة...</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-center gap-2.5 max-h-56 overflow-y-auto p-1">
+                          {Object.values(activeRoom.players).map(player => (
+                            <div
+                              key={player.id}
+                              className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs font-black flex items-center gap-2 shadow-sm animate-in zoom-in-75 duration-200"
+                            >
+                              <span className="text-base">{player.avatar || '🌟'}</span>
+                              <span>{player.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* زر إطلاق التحدي للمعلم */}
+                    <button
+                      onClick={handleLaunchChallenge}
+                      disabled={Object.keys(activeRoom.players).length === 0}
+                      className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/20 transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <Play className="w-5 h-5 fill-current" />
+                      <span>ابْدَأِ التَّحَدِّي الآنَ 🚀 ({Object.keys(activeRoom.players).length} لاعب جاهز)</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* B. شاشة السؤال النشط للمعلم (Host Question Display) - بطاقات عرض فقط دون أزرار إجابة */}
+                {(activeRoom.status === 'question_active' || activeRoom.status === 'in_progress') && currentQ && (
+                  <div className="flex-1 flex flex-col justify-between py-2 space-y-5 animate-in fade-in duration-200 max-w-4xl mx-auto w-full">
+                    {/* رأس السؤال والمؤقت الدائري التفاعلي الكبير وعداد الطلاب المجيبين */}
+                    <div className="flex items-center justify-between gap-4 flex-wrap bg-slate-950/60 border border-slate-800 rounded-2xl px-6 py-3">
+                      <div className="text-xs font-black text-slate-300 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
+                        السُّؤَالُ {activeRoom.current_question_index + 1} مِنْ {activeRoom.questions.length}
+                      </div>
+
+                      {/* المؤقت الدائري التفاعلي التنازلي للمعلم والشاشة الرئيسية */}
+                      <div className="relative w-20 h-20 flex items-center justify-center">
+                        <svg className="w-full h-full transform -rotate-90">
+                          <circle
+                            cx="40"
+                            cy="40"
+                            r="32"
+                            stroke="currentColor"
+                            strokeWidth="6"
+                            className="text-slate-800"
+                            fill="transparent"
+                          />
+                          <circle
+                            cx="40"
+                            cy="40"
+                            r="32"
+                            stroke="currentColor"
+                            strokeWidth="6"
+                            strokeDasharray={2 * Math.PI * 32}
+                            strokeDashoffset={
+                              2 * Math.PI * 32 * (1 - timeLeft / (currentQ.timeLimitSeconds || 20))
+                            }
+                            strokeLinecap="round"
+                            className={`transition-all duration-1000 ${
+                              timeLeft <= 5 ? 'text-rose-500 animate-pulse' : timeLeft <= 10 ? 'text-amber-400' : 'text-emerald-400'
+                            }`}
+                            fill="transparent"
+                          />
+                        </svg>
+                        <span className={`absolute text-xl font-black font-mono ${
+                          timeLeft <= 5 ? 'text-rose-400 scale-110' : 'text-white'
+                        }`}>
+                          {timeLeft}
+                        </span>
+                      </div>
+
+                      {/* عداد الطلاب الذين أجابوا */}
+                      <div className="text-xs font-black text-slate-300 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-indigo-400" />
+                        <span>{totalAnswersCount} / {Object.keys(activeRoom.players).length} أبطال أجابوا</span>
+                      </div>
+                    </div>
+
+                    {/* نص السؤال المشكول بالكامل في لافتة بارزة على الشاشة الكبيرة */}
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 text-center shadow-xl flex items-center justify-center min-h-[140px]">
+                      <h3 className="text-2xl md:text-3xl font-black text-white leading-relaxed">
+                        {currentQ.text}
+                      </h3>
+                    </div>
+
+                    {/* بطاقات الخيارات الأربعة - للعرض فقط على شاشة المعلم/السبورة الذكية (Display Only - No Answering) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       {currentQ.options.map((opt, idx) => {
-                        const count = optionAnswerCounts[idx];
-                        const pct = totalAnswersCount > 0 ? Math.round((count / totalAnswersCount) * 100) : 0;
-                        const cfg = SHAPE_CONFIG[opt.shape];
-                        const isCorrect = idx === currentQ.correctIndex;
+                        const shape = opt.shape || DEFAULT_SHAPES[idx] || 'triangle';
+                        const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
 
                         return (
                           <div
                             key={idx}
-                            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center ${
-                              isCorrect ? 'bg-emerald-950/60 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
-                            }`}
+                            className={`p-4 rounded-2xl border-2 flex items-center gap-4 text-right select-none shadow-md ${cfg.bgClass} ${cfg.borderClass}`}
                           >
-                            <span className="text-sm">{cfg.symbol}</span>
-                            <span className="text-sm font-black text-white mt-1">{count} إجابة</span>
-                            <span className="text-[10px] text-slate-400 font-bold">{pct}%</span>
+                            <div className="w-12 h-12 rounded-2xl bg-black/25 flex items-center justify-center text-3xl shrink-0 shadow-inner">
+                              {cfg.symbol}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
+                                {opt.text}
+                              </span>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {/* D. شاشة لوحة الصدارة بعد كل سؤال (Leaderboard View) */}
-            {activeRoom.status === 'leaderboard' && (
-              <div className="flex-1 flex flex-col justify-center max-w-xl mx-auto w-full py-4 space-y-4 animate-in fade-in duration-300">
-                <div className="text-center space-y-1">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-black">
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    <span>لَوْحَةُ الصَّدَارَةِ وَالتَّرْتِيبِ الحَالِيِّ 🏅</span>
-                  </div>
-                  <h3 className="text-2xl font-black text-white">
-                    أَبْطَالُ تِلْكَ الجَوْلَةِ
-                  </h3>
-                </div>
-
-                <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-4 md:p-6 space-y-2.5 shadow-2xl max-h-80 overflow-y-auto">
-                  {sortedPlayers.length === 0 ? (
-                    <div className="text-center py-6 text-slate-500 text-xs">لا يوجد لاعبين حتى الآن</div>
-                  ) : (
-                    sortedPlayers.slice(0, 7).map((player, idx) => (
-                      <div
-                        key={player.id}
-                        className={`p-3 rounded-2xl flex items-center justify-between border transition ${
-                          idx === 0
-                            ? 'bg-gradient-to-r from-amber-500/20 via-amber-600/10 to-transparent border-amber-500/40 text-amber-300'
-                            : idx === 1
-                            ? 'bg-gradient-to-r from-slate-400/20 to-transparent border-slate-400/40 text-slate-200'
-                            : idx === 2
-                            ? 'bg-gradient-to-r from-amber-700/20 to-transparent border-amber-700/40 text-amber-500'
-                            : 'bg-slate-900/60 border-slate-800 text-slate-300'
-                        }`}
+                    {/* شريط التحكم السفلي للمعلم */}
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs text-slate-500 font-medium">
+                        💡 تنبيه: الطلاب يجيبون الآن عبر هواتفهم/أجهزتهم بالأشكال التنافسية الأربعة.
+                      </span>
+                      <button
+                        onClick={handleRevealAnswer}
+                        className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="w-7 h-7 rounded-xl bg-slate-950/80 font-mono font-black text-xs flex items-center justify-center">
-                            {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
-                          </span>
-                          <span className="text-sm font-black">{player.name}</span>
-                          {player.streak > 1 && (
-                            <span className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                              <Flame className="w-3 h-3 text-rose-400 fill-current" />
-                              <span>{player.streak} متتالية!</span>
-                            </span>
-                          )}
-                        </div>
+                        <span>كَشْفُ الإِجَابَةِ المعتمدة 💡</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                        <div className="text-left font-mono font-black text-sm text-white">
-                          {player.score.toLocaleString()} <span className="text-[10px] text-slate-400 font-sans font-normal">نقطة</span>
+                {/* C. شاشة كشف الإجابة الصحيحة للمعلم مع الإحصائيات (Host Revealed View) */}
+                {activeRoom.status === 'question_revealed' && currentQ && (
+                  <div className="flex-1 flex flex-col justify-center space-y-5 py-4 animate-in zoom-in-95 duration-200 max-w-4xl mx-auto w-full">
+                    {/* بطاقة الإجابة الصحيحة وشرح موسى */}
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-3xl shadow-inner">
+                          💡
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-400 font-bold">الإِجَابَةُ الصَّحِيحَةُ المَعْتَمَدَةُ:</span>
+                          <h3 className="text-2xl font-black text-white flex items-center gap-2">
+                            <span>{SHAPE_CONFIG[currentQ.options[currentQ.correctIndex].shape]?.symbol}</span>
+                            <span>{currentQ.options[currentQ.correctIndex].text}</span>
+                          </h3>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
+
+                      {currentQ.explanation && (
+                        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700/60 text-right">
+                          <div className="text-xs font-black text-amber-300 flex items-center gap-1.5 mb-1">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>شَرْحُ الصَّدِيقِ مُوسَى التَّرْبَوِيُّ:</span>
+                          </div>
+                          <p className="text-base font-bold text-slate-200 leading-relaxed">
+                            {currentQ.explanation}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* توزيع إجابات الطلاب على الخيارات الأربعة */}
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف الحالية:</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          {currentQ.options.map((opt, idx) => {
+                            const count = optionAnswerCounts[idx];
+                            const pct = totalAnswersCount > 0 ? Math.round((count / totalAnswersCount) * 100) : 0;
+                            const shape = opt.shape || DEFAULT_SHAPES[idx] || 'triangle';
+                            const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
+                            const isCorrect = idx === currentQ.correctIndex;
+
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center text-center ${
+                                  isCorrect ? 'bg-emerald-950/60 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
+                                }`}
+                              >
+                                <span className="text-2xl">{cfg.symbol}</span>
+                                <span className="text-base font-black text-white mt-1">{count} إجابة</span>
+                                <span className="text-xs text-slate-400 font-bold">{pct}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleShowLeaderboard}
+                        className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        <span>الانْتِقَالُ إِلَى لَوْحَةِ الصَّدَارَةِ 📊</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* D. لوحة الصدارة للمعلم (Host Leaderboard View) */}
+                {activeRoom.status === 'leaderboard' && (
+                  <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full py-4 space-y-5 animate-in fade-in duration-300">
+                    <div className="text-center space-y-1">
+                      <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-black">
+                        <BarChart3 className="w-4 h-4" />
+                        <span>لَوْحَةُ الصَّدَارَةِ وَالتَّرْتِيبِ الحَالِيِّ 🏅</span>
+                      </div>
+                      <h3 className="text-3xl font-black text-white">
+                        أَبْطَالُ تِلْكَ الجَوْلَةِ
+                      </h3>
+                    </div>
+
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 space-y-3 shadow-2xl max-h-96 overflow-y-auto">
+                      {sortedPlayers.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500 text-xs">لا يوجد لاعبين حتى الآن</div>
+                      ) : (
+                        sortedPlayers.slice(0, 10).map((player, idx) => (
+                          <div
+                            key={player.id}
+                            className={`p-3.5 rounded-2xl flex items-center justify-between border transition ${
+                              idx === 0
+                                ? 'bg-gradient-to-r from-amber-500/20 via-amber-600/10 to-transparent border-amber-500/40 text-amber-300'
+                                : idx === 1
+                                ? 'bg-gradient-to-r from-slate-400/20 to-transparent border-slate-400/40 text-slate-200'
+                                : idx === 2
+                                ? 'bg-gradient-to-r from-amber-700/20 to-transparent border-amber-700/40 text-amber-500'
+                                : 'bg-slate-900/60 border-slate-800 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="w-8 h-8 rounded-xl bg-slate-950/80 font-mono font-black text-xs flex items-center justify-center">
+                                {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                              </span>
+                              <span className="text-base font-black">{player.name}</span>
+                              {player.streak > 1 && (
+                                <span className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                  <Flame className="w-3 h-3 text-rose-400 fill-current" />
+                                  <span>{player.streak} متتالية!</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-left font-mono font-black text-base text-white">
+                              {player.score.toLocaleString()} <span className="text-[10px] text-slate-400 font-sans font-normal">نقطة</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleNextQuestion}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>{activeRoom.current_question_index + 1 < activeRoom.questions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* E. منصة التتويج النهائية للمعلم (Host Podium Finish) */}
+                {activeRoom.status === 'finished' && (
+                  <div className="flex-1 flex flex-col items-center justify-center py-4 space-y-6 text-center animate-in zoom-in-95 duration-500">
+                    <div className="space-y-1">
+                      <span className="text-xs font-black tracking-widest text-amber-400 uppercase bg-amber-400/10 border border-amber-400/20 px-3.5 py-1.5 rounded-full inline-block">
+                        مِنَصَّةُ الأَبْطَالِ وَالتَّتْوِيجِ 🏆
+                      </span>
+                      <h3 className="text-3xl md:text-4xl font-black text-white">
+                        نِهَايَةُ تَحَدِّي مُوسَى!
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        مبارك لجميع الأبطال المشاركين على هذا الأداء الرائع والحماسي!
+                      </p>
+                    </div>
+
+                    {/* منصة المراكز الثلاثة الأولى (Podium) */}
+                    <div className="flex items-end justify-center gap-2 md:gap-4 w-full max-w-lg pt-8 pb-4">
+                      {/* المركز الثاني */}
+                      {sortedPlayers[1] ? (
+                        <div className="flex-1 flex flex-col items-center">
+                          <div className="text-2xl mb-1">🥈</div>
+                          <span className="text-xs font-black text-slate-300 truncate max-w-[90px]">{sortedPlayers[1].name}</span>
+                          <span className="text-[11px] font-mono text-slate-400 font-bold mb-2">{sortedPlayers[1].score} نقطة</span>
+                          <div className="w-full bg-slate-700/80 border-t-4 border-slate-400 rounded-t-2xl h-28 flex items-center justify-center text-xl font-black text-slate-300 shadow-lg">
+                            2
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 h-20 bg-slate-800/40 rounded-t-2xl" />
+                      )}
+
+                      {/* المركز الأول البطل الذهبي */}
+                      {sortedPlayers[0] ? (
+                        <div className="flex-1 flex flex-col items-center -mt-6">
+                          <div className="text-4xl mb-1 animate-bounce">👑</div>
+                          <span className="text-sm font-black text-amber-300 truncate max-w-[110px]">{sortedPlayers[0].name}</span>
+                          <span className="text-xs font-mono text-amber-400 font-bold mb-2">{sortedPlayers[0].score} نقطة</span>
+                          <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 rounded-t-2xl h-40 flex items-center justify-center text-3xl font-black text-slate-950 shadow-2xl shadow-amber-500/30">
+                            🥇 1
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 h-32 bg-slate-800/40 rounded-t-2xl" />
+                      )}
+
+                      {/* المركز الثالث */}
+                      {sortedPlayers[2] ? (
+                        <div className="flex-1 flex flex-col items-center">
+                          <div className="text-2xl mb-1">🥉</div>
+                          <span className="text-xs font-black text-amber-600 truncate max-w-[90px]">{sortedPlayers[2].name}</span>
+                          <span className="text-[11px] font-mono text-slate-400 font-bold mb-2">{sortedPlayers[2].score} نقطة</span>
+                          <div className="w-full bg-amber-900/60 border-t-4 border-amber-600 rounded-t-2xl h-20 flex items-center justify-center text-xl font-black text-amber-500 shadow-lg">
+                            3
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 h-16 bg-slate-800/40 rounded-t-2xl" />
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        onClick={handleLeaveRoom}
+                        className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg transition cursor-pointer"
+                      >
+                        العَوْدَةُ لِبَنْكِ التَّحَدِّيَاتِ 📚
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            confetti({
+                              particleCount: 100,
+                              spread: 70,
+                              origin: { y: 0.6 }
+                            });
+                          } catch {}
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-slate-700 transition cursor-pointer"
+                      >
+                        🎉 إطلاق الاحتفالات مجدداً
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-
-            {/* E. شاشة التتويج والمنصة الختامية (Podium Finish View) */}
-            {activeRoom.status === 'finished' && (
-              <div className="flex-1 flex flex-col items-center justify-center py-4 space-y-6 text-center animate-in zoom-in-95 duration-500">
-                <div className="space-y-1">
-                  <span className="text-xs font-black tracking-widest text-amber-400 uppercase bg-amber-400/10 border border-amber-400/20 px-3.5 py-1.5 rounded-full inline-block">
-                    مِنَصَّةُ الأَبْطَالِ وَالتَّتْوِيجِ 🏆
-                  </span>
-                  <h3 className="text-3xl md:text-4xl font-black text-white">
-                    نِهَايَةُ تَحَدِّي مُوسَى!
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    مبارك لجميع الأبطال المشاركين على هذا الأداء الرائع والحماسي!
-                  </p>
-                </div>
-
-                {/* منصة المراكز الثلاثة الأولى (Podium) */}
-                <div className="flex items-end justify-center gap-2 md:gap-4 w-full max-w-lg pt-8 pb-4">
-                  {/* المركز الثاني */}
-                  {sortedPlayers[1] ? (
-                    <div className="flex-1 flex flex-col items-center">
-                      <div className="text-2xl mb-1">🥈</div>
-                      <span className="text-xs font-black text-slate-300 truncate max-w-[90px]">{sortedPlayers[1].name}</span>
-                      <span className="text-[11px] font-mono text-slate-400 font-bold mb-2">{sortedPlayers[1].score} نقطة</span>
-                      <div className="w-full bg-slate-700/80 border-t-4 border-slate-400 rounded-t-2xl h-28 flex items-center justify-center text-xl font-black text-slate-300 shadow-lg">
-                        2
+            ) : (
+              /* ================= 2. واجهة الطالب (Player / Controller View) ================= */
+              <div className="flex-1 flex flex-col justify-between py-2">
+                {/* A. شاشة انتظار الطالب (Waiting Screen) */}
+                {activeRoom.status === 'lobby' && (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-6 max-w-md mx-auto w-full animate-in fade-in zoom-in-95 duration-300">
+                    <div className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-amber-500 via-indigo-600 to-purple-600 p-1 shadow-2xl shadow-indigo-500/20">
+                      <div className="w-full h-full bg-slate-900 rounded-[22px] flex items-center justify-center text-5xl">
+                        🚀
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex-1 h-20 bg-slate-800/40 rounded-t-2xl" />
-                  )}
 
-                  {/* المركز الأول البطل الذهبي */}
-                  {sortedPlayers[0] ? (
-                    <div className="flex-1 flex flex-col items-center -mt-6">
-                      <div className="text-4xl mb-1 animate-bounce">👑</div>
-                      <span className="text-sm font-black text-amber-300 truncate max-w-[110px]">{sortedPlayers[0].name}</span>
-                      <span className="text-xs font-mono text-amber-400 font-bold mb-2">{sortedPlayers[0].score} نقطة</span>
-                      <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 rounded-t-2xl h-40 flex items-center justify-center text-3xl font-black text-slate-950 shadow-2xl shadow-amber-500/30">
-                        🥇 1
+                    <div className="space-y-3">
+                      <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3.5 py-1.5 rounded-full inline-block">
+                        أَهْلاً بِكَ يَا {currentUser.name || playerNameInput || 'بَطَلَ التَّحَدِّي'}! 🌟
+                      </span>
+
+                      {/* الرسالة التشجيعية المطلوبة بالضبط */}
+                      <h3 className="text-2xl sm:text-3xl font-black text-white leading-relaxed">
+                        أنت في اللعبة يا بطل! انتظر إشارة المعلم للبدء 🚀
+                      </h3>
+
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        أنت متصل الآن بغرفة التحدي <span className="text-amber-400 font-mono font-bold">{activeRoom.pin}</span>. استعد لاختيار الأشكال التنافسية بأعلى سرعة فور انطلاق السؤال!
+                      </p>
+                    </div>
+
+                    <div className="w-full bg-slate-950/60 border border-slate-800 rounded-2xl p-4 flex items-center justify-center gap-3 text-xs text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span>في انتظار إشارة المعلم لانطلاق الجولة الأولى...</span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500">
+                      يوجد معك {Object.keys(activeRoom.players).length} أبطال مستعدون للتنافس في هذه الغرفة
+                    </div>
+                  </div>
+                )}
+
+                {/* B. شاشة السؤال والتحكم للطالب (Player Controller View) */}
+                {(activeRoom.status === 'question_active' || activeRoom.status === 'in_progress') && currentQ && (
+                  <div className="flex-1 flex flex-col justify-between py-2 space-y-4 animate-in fade-in duration-200 max-w-2xl mx-auto w-full">
+                    {/* رأس مصغر: رقم السؤال والوقت المتبقي */}
+                    <div className="flex items-center justify-between px-2">
+                      <span className="text-xs font-black text-slate-300 bg-slate-800 px-3.5 py-1.5 rounded-full border border-slate-700">
+                        السُّؤَالُ {activeRoom.current_question_index + 1} مِنْ {activeRoom.questions.length}
+                      </span>
+                      <div className={`px-3.5 py-1.5 rounded-full font-mono font-black text-xs flex items-center gap-1.5 border ${
+                        timeLeft <= 5 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse' : 'bg-slate-800 text-amber-400 border-slate-700'
+                      }`}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{timeLeft} ثانية</span>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex-1 h-32 bg-slate-800/40 rounded-t-2xl" />
-                  )}
 
-                  {/* المركز الثالث */}
-                  {sortedPlayers[2] ? (
-                    <div className="flex-1 flex flex-col items-center">
-                      <div className="text-2xl mb-1">🥉</div>
-                      <span className="text-xs font-black text-amber-600 truncate max-w-[90px]">{sortedPlayers[2].name}</span>
-                      <span className="text-[11px] font-mono text-slate-400 font-bold mb-2">{sortedPlayers[2].score} نقطة</span>
-                      <div className="w-full bg-amber-900/60 border-t-4 border-amber-600 rounded-t-2xl h-20 flex items-center justify-center text-xl font-black text-amber-500 shadow-lg">
-                        3
+                    {!hasAnswered ? (
+                      /* أزرار الإجابة التنافسية الأربعة الكبيرة (🔺 أحمر، 🔷 أزرق، 🟡 أصفر، 🟩 أخضر) */
+                      <div className="flex-1 flex flex-col justify-center space-y-3">
+                        <div className="text-center mb-1">
+                          <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>اختر الشكل واللون المطابق لإجابتك بسرعة! ⚡</span>
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4 flex-1 max-h-[480px]">
+                          {currentQ.options.map((opt, idx) => {
+                            const shape = opt.shape || DEFAULT_SHAPES[idx] || 'triangle';
+                            const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
+
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleSelectAnswer(idx)}
+                                className={`w-full h-full min-h-[140px] sm:min-h-[170px] rounded-3xl p-4 flex flex-col items-center justify-center text-center transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${
+                                  idx === 0 
+                                    ? 'bg-rose-600 hover:bg-rose-500 border-rose-700 text-white shadow-rose-900/30' 
+                                    : idx === 1 
+                                    ? 'bg-blue-600 hover:bg-blue-500 border-blue-700 text-white shadow-blue-900/30' 
+                                    : idx === 2 
+                                    ? 'bg-amber-500 hover:bg-amber-400 border-amber-600 text-slate-950 shadow-amber-900/30' 
+                                    : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-700 text-white shadow-emerald-900/30'
+                                }`}
+                              >
+                                <div className="text-5xl sm:text-6xl md:text-7xl mb-2 filter drop-shadow-md group-hover:scale-110 transition-transform duration-150">
+                                  {cfg.symbol}
+                                </div>
+                                <span className="text-base sm:text-lg font-black tracking-wide">
+                                  {cfg.name} ({cfg.colorName})
+                                </span>
+                                <span className="text-[11px] opacity-80 mt-1 font-bold line-clamp-1 px-2">
+                                  {opt.text}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 h-16 bg-slate-800/40 rounded-t-2xl" />
-                  )}
-                </div>
+                    ) : (
+                      /* شاشة تأكيد بعد النقر: «تم استلام إجابتك! في انتظار بقية الأبطال» */
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-5 animate-in zoom-in-95 duration-200">
+                        <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border-2 border-emerald-500/40 text-emerald-400 flex items-center justify-center text-4xl shadow-xl shadow-emerald-500/20 animate-bounce">
+                          <Check className="w-10 h-10 stroke-[3]" />
+                        </div>
 
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setActiveRoom(null);
-                      setActiveTab('bank');
-                    }}
-                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg transition"
-                  >
-                    العَوْدَةُ لِبَنْكِ التَّحَدِّيَاتِ 📚
-                  </button>
-                  <button
-                    onClick={() => {
-                      try {
-                        confetti({
-                          particleCount: 100,
-                          spread: 70,
-                          origin: { y: 0.6 }
-                        });
-                      } catch {}
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-slate-700 transition"
-                  >
-                    🎉 إطلاق الاحتفالات مجدداً
-                  </button>
-                </div>
+                        <div className="space-y-2">
+                          <h3 className="text-2xl sm:text-3xl font-black text-white">
+                            تم استلام إجابتك! في انتظار بقية الأبطال ⏳
+                          </h3>
+                          <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
+                            أحسنت يا بطل في سرعة البديهة! يتم الآن احتساب نقاطك وسرعة إجابتك بدقة.
+                          </p>
+                        </div>
+
+                        {selectedOptionIndex !== null && currentQ.options[selectedOptionIndex] && (
+                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
+                            <span className="text-xl">
+                              {SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.symbol}
+                            </span>
+                            <span className="text-xs font-black text-amber-300">
+                              إجابتك المسجلة: {SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.name} ({SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.colorName})
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
+                          <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                          <span>في انتظار إعلان المعلم للنتيجة الصحيحة...</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* C. شاشة كشف النتيجة للطالب (Player Result Feedback) */}
+                {activeRoom.status === 'question_revealed' && currentQ && (
+                  <div className="flex-1 flex flex-col justify-center space-y-5 py-4 animate-in zoom-in-95 duration-200 max-w-lg mx-auto w-full">
+                    {/* شارة توضيحية فورية خاصة بالطالب */}
+                    {answerResult ? (
+                      <div className={`p-5 rounded-3xl border text-center font-black shadow-xl ${
+                        answerResult.isCorrect
+                          ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200 shadow-emerald-900/30'
+                          : 'bg-rose-950/80 border-rose-500/50 text-rose-200 shadow-rose-900/30'
+                      }`}>
+                        <div className="text-3xl mb-1.5">{answerResult.isCorrect ? '🎉 إِجَابَةٌ رَائِعَةٌ وَصَحِيحَةٌ!' : '💫 حَظًّا أَوْفَرَ فِي السُّؤَالِ القَادِمِ!'}</div>
+                        <div className="text-sm">
+                          {answerResult.isCorrect ? `حصلت على +${answerResult.points} نقطة لسرعة البديهة!` : 'لم تحصل على نقاط، ركز في السؤال القادم للتعويض!'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-5 rounded-3xl bg-slate-800 border border-slate-700 text-center font-black text-slate-300">
+                        انتهى الوقت قبل تسجيل الإجابة! استعد للسؤال القادم.
+                      </div>
+                    )}
+
+                    {/* بطاقة الإجابة الصحيحة وشرح موسى */}
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-5 shadow-xl space-y-3 text-right">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
+                          💡
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-400 font-bold block">الإِجَابَةُ الصَّحِيحَةُ:</span>
+                          <span className="text-base font-black text-white">
+                            {SHAPE_CONFIG[currentQ.options[currentQ.correctIndex].shape]?.symbol} {currentQ.options[currentQ.correctIndex].text}
+                          </span>
+                        </div>
+                      </div>
+
+                      {currentQ.explanation && (
+                        <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs font-medium text-slate-200 leading-relaxed">
+                          <span className="font-bold text-amber-300 block mb-0.5">معلومة من موسى:</span>
+                          {currentQ.explanation}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-center text-xs text-slate-500 font-bold flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span>في انتظار انتقال المعلم إلى لوحة الصدارة...</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* D. شاشة لوحة الصدارة للطالب مع ترتيبه الخاص (Player Leaderboard Rank) */}
+                {activeRoom.status === 'leaderboard' && (
+                  <div className="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full py-4 space-y-4 animate-in fade-in duration-300">
+                    {/* شارة الترتيب الخاص بالطالب */}
+                    <div className="p-4 rounded-3xl bg-gradient-to-r from-indigo-900/60 via-purple-900/60 to-slate-900 border border-indigo-500/40 text-center shadow-xl">
+                      <span className="text-xs text-indigo-300 font-bold block mb-1">تَرْتِيبُكَ فِي هَذِهِ الجَوْلَةِ 🏅</span>
+                      <div className="text-2xl font-black text-amber-300">
+                        المركز #{studentRank > 0 ? studentRank : '-'}
+                      </div>
+                      <span className="text-xs font-mono text-slate-300 mt-1 block">
+                        مجموع نقاطك: {studentScore.toLocaleString()} نقطة
+                      </span>
+                    </div>
+
+                    {/* قائمة المتصدرين */}
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-4 space-y-2 shadow-xl max-h-72 overflow-y-auto">
+                      <span className="text-xs font-bold text-slate-400 block px-1">المتصدرون:</span>
+                      {sortedPlayers.slice(0, 5).map((player, idx) => {
+                        const isCurrent = player.id === currentUser.id;
+                        return (
+                          <div
+                            key={player.id}
+                            className={`p-2.5 rounded-xl flex items-center justify-between border text-xs font-black ${
+                              isCurrent
+                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                                : 'bg-slate-900/60 border-slate-800 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}</span>
+                              <span>{player.name} {isCurrent && '(أنت)'}</span>
+                            </div>
+                            <span className="font-mono text-white">{player.score.toLocaleString()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-center text-xs text-slate-500 font-bold flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span>استعد... المعلم سينتقل للسؤال القادم قريباً! ⚡</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* E. منصة التتويج النهائية للطالب (Player Podium) */}
+                {activeRoom.status === 'finished' && (
+                  <div className="flex-1 flex flex-col items-center justify-center py-4 space-y-6 text-center animate-in zoom-in-95 duration-500 max-w-md mx-auto w-full">
+                    <div className="w-20 h-20 rounded-3xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center text-4xl shadow-xl">
+                      {studentRank === 1 ? '👑' : studentRank <= 3 ? '🏆' : '🌟'}
+                    </div>
+
+                    <div className="space-y-2">
+                      <h3 className="text-3xl font-black text-white">
+                        {studentRank === 1 ? 'مبارك يا بطل! أنت المركز الأول 🥇' : studentRank <= 3 ? 'رائع جداً! أنت على منصة التتويج 🏅' : 'أحسنت الأداء يا بطل! 👏'}
+                      </h3>
+                      <p className="text-sm text-amber-300 font-black">
+                        أنهيت التحدي في المركز #{studentRank > 0 ? studentRank : '-'} برصيد {studentScore.toLocaleString()} نقطة!
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleLeaveRoom}
+                      className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg transition cursor-pointer"
+                    >
+                      العودة للرئيسية 🚀
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

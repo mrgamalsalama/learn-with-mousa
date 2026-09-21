@@ -506,6 +506,7 @@ export interface ChallengeQuiz {
 export type ChallengeRoomStatus = 
   | 'lobby'           // شاشة انتظار الطلاب
   | 'question_active' // السؤال معروض والعداد شغال
+  | 'in_progress'     // مسابقة جارية متوافقة مع قواعد البيانات
   | 'question_revealed' // كشف الإجابة الصحيحة وشرح موسى
   | 'leaderboard'     // عرض ترتيب النقاط بعد السؤال
   | 'finished';       // نهاية المسابقة والتتويج (منصة التتويج Podium)
