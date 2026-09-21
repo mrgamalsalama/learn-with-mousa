@@ -12,7 +12,7 @@ import {
   getChallengeQuizzes, saveChallengeQuiz, deleteChallengeQuiz, 
   getChallengeRooms, saveChallengeRoom, syncChallengeRoomFromCloud, 
   syncChallengeQuizzesFromCloud, getChallengeRoomByPin, normalizeRoomPlayers,
-  submitChallengeAnswerToCloudAndLocal
+  submitChallengeAnswerToCloudAndLocal, isLocalApiAvailable, disableLocalApi
 } from '../storage';
 import { supabase } from '../supabaseClient';
 import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService';
@@ -145,9 +145,9 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         host_name: incoming.host_name || incoming.settings?.host_name || prev?.host_name,
         target_grade: incoming.target_grade || incoming.settings?.target_grade || prev?.target_grade,
         status: incomingStatus,
-        current_question_index: typeof incoming.current_question_index === 'number'
-          ? incoming.current_question_index
-          : (typeof prev?.current_question_index === 'number' ? prev.current_question_index : 0),
+        current_question_index: (incoming.current_question_index !== undefined && incoming.current_question_index !== null)
+          ? Number(incoming.current_question_index)
+          : (prev?.current_question_index !== undefined ? Number(prev.current_question_index) : 0),
         question_start_time: incoming.settings?.question_start_time || incoming.question_start_time || prev?.question_start_time,
         questions: questionsToUse,
         players: mergedPlayers,
@@ -248,6 +248,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     channelRef.current = channel;
 
     // 5. فحص دوري استباقي احتياطي (Polling Fallback) كل 800 مللي ثانية عبر السحابة وخادم الشبكة لضمان المزامنة الفورية
+    let canPollLocalServer = isLocalApiAvailable();
+
     const pollInterval = setInterval(async () => {
       // أ) فحص سحابي عبر Supabase
       try {
@@ -262,16 +264,24 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         }
       } catch {}
 
-      // ب) فحص عبر خادم الشبكة المحلي (Fast Local Network Fallback)
-      try {
-        const resp = await fetch(`/api/challenge/rooms/${roomPin}`);
-        if (resp.ok) {
-          const json = await resp.json();
-          if (json?.room) {
-            setActiveRoom(prev => mergeIncomingRoom(json.room, prev));
+      // ب) فحص عبر خادم الشبكة المحلي (فقط في حال توفره وتجنباً لأخطاء 404 على Vercel)
+      if (canPollLocalServer && isLocalApiAvailable()) {
+        try {
+          const resp = await fetch(`/api/challenge/rooms/${roomPin}`);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json?.room) {
+              setActiveRoom(prev => mergeIncomingRoom(json.room, prev));
+            }
+          } else if (resp.status === 404) {
+            canPollLocalServer = false;
+            disableLocalApi();
           }
+        } catch {
+          canPollLocalServer = false;
+          disableLocalApi();
         }
-      } catch {}
+      }
     }, 800);
 
     return () => {
@@ -285,6 +295,13 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     };
   }, [activeRoom?.pin]);
 
+  // إعادة ضبط حالة إجابة الطالب فور انتقال الغرفة لسؤال جديد
+  useEffect(() => {
+    setSelectedOptionIndex(null);
+    setHasAnswered(false);
+    setAnswerResult(null);
+  }, [activeRoom?.current_question_index]);
+
   // إدارة المؤقت التنازلي التفاعلي
   useEffect(() => {
     if (!activeRoom || (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress')) {
@@ -297,7 +314,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
         ? activeRoom.settings.questions
         : []);
-    const qIndex = typeof activeRoom.current_question_index === 'number' ? activeRoom.current_question_index : 0;
+    const qIndex = Number(activeRoom.current_question_index || 0);
     const currentQ = roomQuestions[qIndex];
     if (!currentQ) return;
 
@@ -583,8 +600,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         if (localRoom && (localRoom.status === 'lobby' || localRoom.status === 'question_active')) {
           console.log('Using Local Room State fallback for PIN:', enteredPin.trim());
           room = localRoom;
-        } else {
-          // فحص خادم الشبكة المحلي (Local Network Server Fallback)
+        } else if (isLocalApiAvailable()) {
+          // فحص خادم الشبكة المحلي (فقط في حال توفره)
           try {
             const resp = await fetch(`/api/challenge/rooms/${enteredPin.trim()}`);
             if (resp.ok) {
@@ -596,8 +613,12 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                   players: normalizeRoomPlayers(json.room.players)
                 };
               }
+            } else if (resp.status === 404) {
+              disableLocalApi();
             }
-          } catch {}
+          } catch {
+            disableLocalApi();
+          }
         }
       }
 
@@ -866,7 +887,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     : ((Array.isArray(activeRoom?.settings?.questions) && activeRoom.settings.questions.length > 0)
       ? activeRoom.settings.questions
       : []);
-  const currentQIndex = typeof activeRoom?.current_question_index === 'number' ? activeRoom.current_question_index : 0;
+  const currentQIndex = Number(activeRoom?.current_question_index || 0);
   const currentQ = roomQuestions[currentQIndex];
   const optionAnswerCounts = [0, 0, 0, 0];
   let totalAnswersCount = 0;
@@ -1576,13 +1597,21 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     )}
 
                     {activeRoom.status === 'question_revealed' && (
-                      <button
-                        onClick={handleShowLeaderboard}
-                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
-                      >
-                        <BarChart3 className="w-3.5 h-3.5" />
-                        <span>لَوْحَةُ الصَّدَارَةِ 📊</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleShowLeaderboard}
+                          className="px-3.5 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 text-indigo-300" />
+                          <span>لَوْحَةُ الصَّدَارَةِ 📊</span>
+                        </button>
+                        <button
+                          onClick={handleNextQuestion}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>{currentQIndex + 1 < roomQuestions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
+                        </button>
+                      </div>
                     )}
 
                     {activeRoom.status === 'leaderboard' && (
@@ -1590,7 +1619,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         onClick={handleNextQuestion}
                         className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
                       >
-                        <span>{activeRoom.current_question_index + 1 < activeRoom.questions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
+                        <span>{currentQIndex + 1 < roomQuestions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
                       </button>
                     )}
 
@@ -1727,7 +1756,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     {/* رأس السؤال والمؤقت الدائري التفاعلي الكبير وعداد الطلاب المجيبين */}
                     <div className="flex items-center justify-between gap-4 flex-wrap bg-slate-950/60 border border-slate-800 rounded-2xl px-6 py-3">
                       <div className="text-xs font-black text-slate-300 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
-                        السُّؤَالُ {activeRoom.current_question_index + 1} مِنْ {activeRoom.questions.length}
+                        السُّؤَالُ {currentQIndex + 1} مِنْ {roomQuestions.length}
                       </div>
 
                       {/* المؤقت الدائري التفاعلي التنازلي للمعلم والشاشة الرئيسية */}
@@ -1888,13 +1917,22 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                       <button
+                        type="button"
                         onClick={handleShowLeaderboard}
-                        className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+                        className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
                       >
-                        <BarChart3 className="w-4 h-4" />
-                        <span>الانْتِقَالُ إِلَى لَوْحَةِ الصَّدَارَةِ 📊</span>
+                        <BarChart3 className="w-4 h-4 text-indigo-400" />
+                        <span>لَوْحَةُ الصَّدَارَةِ 📊</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleNextQuestion}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>{currentQIndex + 1 < roomQuestions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
                       </button>
                     </div>
                   </div>
@@ -1956,7 +1994,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         onClick={handleNextQuestion}
                         className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
                       >
-                        <span>{activeRoom.current_question_index + 1 < activeRoom.questions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
+                        <span>{currentQIndex + 1 < roomQuestions.length ? 'السُّؤَالُ التَّالِي ❯' : 'مِنَصَّةُ التَّتْوِيجِ 🏆'}</span>
                       </button>
                     </div>
                   </div>
@@ -2245,7 +2283,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
                     <div className="text-center text-xs text-slate-500 font-bold flex items-center justify-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                      <span>في انتظار انتقال المعلم إلى لوحة الصدارة...</span>
+                      <span>في انتظار انتقال المعلم للسؤال التالي أو لوحة الصدارة...</span>
                     </div>
                   </div>
                 )}

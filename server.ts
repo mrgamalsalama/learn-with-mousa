@@ -2,6 +2,11 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || 'https://zlopmqrmfhkifhpfefew.supabase.co').replace(/\/rest\/v1\/?$/, '');
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpsb3BtcXJtZmhraWZocGZlZmV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNzMyOTcsImV4cCI6MjEwNDY0OTI5N30.JYdgZPLwUsclBDHfPk5ctZAJ1lwSddOVvGj4GruIlc4';
+const supabaseServer = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let genAIClient: GoogleGenAI | null = null;
 
@@ -51,9 +56,48 @@ async function startServer() {
     return {};
   };
 
-  app.get('/api/challenge/rooms/:pin', (req, res) => {
+  app.get('/api/challenge/rooms/:pin', async (req, res) => {
     const pin = (req.params.pin || '').trim();
-    const room = localChallengeRooms.get(pin);
+    let room = localChallengeRooms.get(pin);
+    if (!room) {
+      // محاولة استرداد الغرفة من Supabase في حال إعادة تشغيل الخادم
+      try {
+        const { data, error } = await supabaseServer
+          .from('challenge_rooms')
+          .select('*')
+          .eq('pin', pin)
+          .maybeSingle();
+
+        if (!error && data) {
+          const settings = data.settings || {};
+          const roomQuestions = (Array.isArray(data.questions) && data.questions.length > 0)
+            ? data.questions
+            : (Array.isArray(settings.questions) ? settings.questions : []);
+
+          room = {
+            id: data.id,
+            pin: data.pin,
+            quiz_id: data.quiz_id || settings.quiz_id,
+            quiz_title: data.quiz_title || settings.quiz_title,
+            host_id: data.host_id,
+            host_name: data.host_name || settings.host_name,
+            target_grade: data.target_grade || settings.target_grade,
+            status: data.status,
+            current_question_index: Number(data.current_question_index || 0),
+            question_start_time: settings.question_start_time,
+            questions: roomQuestions,
+            players: normalizePlayers(data.players),
+            answers_received: Array.isArray(data.answers_received) ? data.answers_received : [],
+            created_at: data.created_at,
+            updated_at: data.updated_at
+          };
+          localChallengeRooms.set(pin, room);
+        }
+      } catch (err) {
+        console.warn('Could not fetch room from Supabase on cache miss:', err);
+      }
+    }
+
     if (!room) {
       return res.status(404).json({ error: 'Room not found' });
     }

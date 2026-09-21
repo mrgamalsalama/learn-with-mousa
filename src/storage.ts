@@ -2463,6 +2463,24 @@ export const getChallengeRoomById = (roomId: string): ChallengeRoom | null => {
   return rooms.find(r => r.id === roomId) || null;
 };
 
+// حالة توفر خادم الشبكة المحلي لتفادي طلبات 404 على بيئات النشر السحابية مثل Vercel
+let localApiAvailable: boolean | null = null;
+
+export const isLocalApiAvailable = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (localApiAvailable !== null) return localApiAvailable;
+  const host = window.location.hostname;
+  if (host.includes('vercel.app') || host.includes('netlify.app') || host.includes('github.io')) {
+    localApiAvailable = false;
+    return false;
+  }
+  return true;
+};
+
+export const disableLocalApi = () => {
+  localApiAvailable = false;
+};
+
 // قناة البث المحلي التفاعلية عبر التبويبات المتعددة
 const challengeBroadcastChannel = typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('mousa_challenge_sync')
@@ -2497,13 +2515,17 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
     challengeBroadcastChannel?.postMessage({ type: 'ROOM_UPDATE', room: roomToSave });
   } catch {}
 
-  // 3. مزامنة الغرفة مع خادم الشبكة المحلي (Local Network Server Fallback)
-  if (typeof window !== 'undefined') {
+  // 3. مزامنة الغرفة مع خادم الشبكة المحلي (فقط في حال توفره وتجنباً لأخطاء 404 على Vercel)
+  if (typeof window !== 'undefined' && isLocalApiAvailable()) {
     fetch('/api/challenge/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(roomToSave)
-    }).catch(() => {});
+    })
+      .then(res => {
+        if (!res.ok && res.status === 404) disableLocalApi();
+      })
+      .catch(() => disableLocalApi());
   }
 
   // 4. المزامنة السحابية غير المعطلة مع Supabase مع دمج الإجابات واللاعبين لحمايتهم من المسح
@@ -2514,9 +2536,11 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
     // التحقق من بيانات السحابة لدمج أي إجابات أو لاعبين مسجلين حديثاً
     const { data: cloudData } = await supabase
       .from('challenge_rooms')
-      .select('answers_received, players')
+      .select('answers_received, players, settings, quiz_id, quiz_title, host_id, host_name')
       .eq('pin', roomToSave.pin)
       .maybeSingle();
+
+    const cloudSettings = (cloudData?.settings && typeof cloudData.settings === 'object') ? cloudData.settings : {};
 
     if (cloudData) {
       const cloudAnswers = Array.isArray(cloudData.answers_received) ? cloudData.answers_received : [];
@@ -2533,19 +2557,28 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
       mergedPlayers = { ...cloudPlayers, ...mergedPlayers };
     }
 
+    const effectiveQuestions = (Array.isArray(roomToSave.questions) && roomToSave.questions.length > 0)
+      ? roomToSave.questions
+      : (Array.isArray(cloudSettings.questions) && cloudSettings.questions.length > 0
+        ? cloudSettings.questions
+        : (roomToSave.settings?.questions || []));
+
     const updatePayload: any = {
       status: roomToSave.status,
-      current_question_index: roomToSave.current_question_index,
+      current_question_index: Number(roomToSave.current_question_index || 0),
       players: Object.values(mergedPlayers),
       answers_received: finalAnswers,
+      quiz_id: roomToSave.quiz_id || cloudData?.quiz_id || cloudSettings.quiz_id || null,
+      quiz_title: roomToSave.quiz_title || cloudData?.quiz_title || cloudSettings.quiz_title || null,
       settings: {
+        ...cloudSettings,
         ...(roomToSave.settings || {}),
-        question_start_time: roomToSave.question_start_time,
-        questions: roomToSave.questions,
-        quiz_id: roomToSave.quiz_id,
-        quiz_title: roomToSave.quiz_title,
-        target_grade: roomToSave.target_grade,
-        host_name: roomToSave.host_name
+        question_start_time: roomToSave.question_start_time || cloudSettings.question_start_time || Date.now(),
+        questions: effectiveQuestions,
+        quiz_id: roomToSave.quiz_id || cloudSettings.quiz_id,
+        quiz_title: roomToSave.quiz_title || cloudSettings.quiz_title,
+        target_grade: roomToSave.target_grade || cloudSettings.target_grade,
+        host_name: roomToSave.host_name || cloudSettings.host_name
       }
     };
 
@@ -2581,19 +2614,25 @@ export const submitChallengeAnswerToCloudAndLocal = async (
   const cleanPin = (pin || '').trim();
   if (!cleanPin) return null;
 
-  // 1. الإرسال السريع لخادم الشبكة المحلي
+  // 1. الإرسال السريع لخادم الشبكة المحلي (فقط في حال توفره وتجنباً لأخطاء 404)
   let localServerRoom: ChallengeRoom | null = null;
-  try {
-    const res = await fetch(`/api/challenge/rooms/${cleanPin}/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(answer)
-    });
-    if (res.ok) {
-      const json = await res.json();
-      localServerRoom = json.room;
+  if (isLocalApiAvailable()) {
+    try {
+      const res = await fetch(`/api/challenge/rooms/${cleanPin}/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(answer)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        localServerRoom = json.room;
+      } else if (res.status === 404) {
+        disableLocalApi();
+      }
+    } catch {
+      disableLocalApi();
     }
-  } catch {}
+  }
 
   // 2. التحديث في localStorage
   const rooms = getChallengeRooms();
@@ -2756,15 +2795,19 @@ export const syncChallengeRoomFromCloud = async (roomIdOrPin: string): Promise<C
   const local = getChallengeRoomById(clean) || getChallengeRoomByPin(clean);
   if (local) return local;
 
-  // Fallback 2: خادم الشبكة المحلي
-  if (clean.length === 6 && /^\d+$/.test(clean)) {
+  // Fallback 2: خادم الشبكة المحلي (فقط في حال توفره وتجنباً لأخطاء 404)
+  if (clean.length === 6 && /^\d+$/.test(clean) && isLocalApiAvailable()) {
     try {
       const resp = await fetch(`/api/challenge/rooms/${clean}`);
       if (resp.ok) {
         const json = await resp.json();
         if (json?.room) return json.room;
+      } else if (resp.status === 404) {
+        disableLocalApi();
       }
-    } catch {}
+    } catch {
+      disableLocalApi();
+    }
   }
 
   return null;
