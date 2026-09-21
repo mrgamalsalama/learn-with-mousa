@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Trophy, Play, Users, Sparkles, Plus, Clock, Award, Flame, CheckCircle2, 
   XCircle, RotateCcw, Volume2, VolumeX, ArrowRight, BookOpen, AlertCircle, 
   ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye, LogOut,
-  Sliders, Zap, Upload, ArrowUp, ArrowDown, Send, Cloud, Vote, CheckSquare, MessageSquare
+  Sliders, Zap, Upload, ArrowUp, ArrowDown, Send, Cloud, Vote, CheckSquare, MessageSquare,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, ChallengeQuiz, ChallengeRoom, 
@@ -110,6 +111,30 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [answerResult, setAnswerResult] = useState<{ isCorrect: boolean; points: number } | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = () => {
+    if (!isFullscreen) {
+      if (containerRef.current?.requestFullscreen) {
+        containerRef.current.requestFullscreen().catch(() => {});
+      }
+      setIsFullscreen(true);
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // نمط سير التحدي: تحكم يدوي للمعلم خطوة بخطوة vs تحدٍّ تلقائي متتابع
   const [progressionMode, setProgressionMode] = useState<'teacher_paced' | 'auto_continuous'>('teacher_paced');
@@ -130,6 +155,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [manualQuestionText, setManualQuestionText] = useState('');
   const [manualExplanation, setManualExplanation] = useState('');
   const [manualOptions, setManualOptions] = useState<string[]>(['', '', '', '']);
+  const [manualWordCloudHint, setManualWordCloudHint] = useState('');
   const [manualCorrectIndex, setManualCorrectIndex] = useState<number>(0);
   const [manualCorrectAnswerText, setManualCorrectAnswerText] = useState<string>('');
   const [manualTimeLimit, setManualTimeLimit] = useState<number>(20);
@@ -1070,15 +1096,32 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           shape: DEFAULT_SHAPES[idx % DEFAULT_SHAPES.length]
         }))
       };
-    } else if (manualQuestionType === 'word_cloud' || manualQuestionType === 'poll') {
-      const validOpts = manualOptions.filter(o => o.trim());
+    } else if (manualQuestionType === 'word_cloud') {
+      if (!manualQuestionText.trim()) return;
+      const suggestions = manualWordCloudHint
+        .split(/[,،\n]/)
+        .map(w => w.trim())
+        .filter(Boolean);
       newQ = {
-        id: `q_${manualQuestionType}_${Date.now()}`,
-        type: manualQuestionType,
+        id: `q_cloud_${Date.now()}`,
+        type: 'word_cloud',
         text: manualQuestionText,
         timeLimitSeconds: manualTimeLimit,
         correctIndex: 0,
-        explanation: manualExplanation || 'شكراً لمشاركتكم وتفاعلكم الرائع!',
+        explanation: manualExplanation || 'سحابة كلمات تفاعلية رائعة بمشاركاتكم وتفاعلكم الذكي!',
+        options: [], // سحابة الكلمات بدون خيارات مسبقة، إدخال حر من أجهزة الطلاب
+        acceptableAnswers: suggestions
+      };
+    } else if (manualQuestionType === 'poll') {
+      const validOpts = manualOptions.filter(o => o.trim());
+      if (validOpts.length < 2) return;
+      newQ = {
+        id: `q_poll_${Date.now()}`,
+        type: 'poll',
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: -1, // لا يوجد خيار وحيد صحيح، تصويت حر بين الخيارات
+        explanation: manualExplanation || 'شكراً لمشاركتكم وتصويتكم في استطلاع الرأي!',
         options: validOpts.map((optText, idx) => ({
           id: String(idx),
           text: optText,
@@ -1108,6 +1151,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     setManualQuestionText('');
     setManualExplanation('');
     setManualOptions(['', '', '', '']);
+    setManualWordCloudHint('');
     setManualCorrectAnswerText('');
     setManualCorrectIndex(0);
   };
@@ -1198,8 +1242,12 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           const idx = Number(ans.optionIndex);
           if (idx >= 0 && idx < 4) {
             optionAnswerCounts[idx]++;
+          }
+          if (ans.playerId && !countedPlayerIds.has(String(ans.playerId))) {
             totalAnswersCount++;
-            if (ans.playerId) countedPlayerIds.add(String(ans.playerId));
+            countedPlayerIds.add(String(ans.playerId));
+          } else if (!ans.playerId) {
+            totalAnswersCount++;
           }
         }
       });
@@ -1212,14 +1260,135 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
             const idx = Number(p.lastAnswer.selectedIndex);
             if (idx >= 0 && idx < 4) {
               optionAnswerCounts[idx]++;
-              totalAnswersCount++;
-              countedPlayerIds.add(String(p.id));
             }
+            totalAnswersCount++;
+            countedPlayerIds.add(String(p.id));
           }
         }
       });
     }
   }
+
+  // إحصائيات سحابة الكلمات التفاعلية (Word Cloud) للسؤال الحالي
+  const wordCloudStats = useMemo(() => {
+    if (!activeRoom || !currentQ || currentQ.type !== 'word_cloud') {
+      return { words: [] as { word: string; count: number; players: string[] }[], totalSubmissions: 0, uniqueCount: 0 };
+    }
+    const qIdx = Number(currentQIndex);
+    const freqMap = new Map<string, { word: string; count: number; players: string[] }>();
+    let totalSubmissions = 0;
+
+    const processWord = (raw: string, playerName?: string) => {
+      if (!raw || typeof raw !== 'string') return;
+      const tokens = raw.split(/[,،\n]/).map(t => t.trim()).filter(Boolean);
+      tokens.forEach(token => {
+        const clean = token.replace(/["'«»()[\]{}.,!؟]/g, '').trim();
+        if (!clean) return;
+        const key = clean.toLowerCase();
+        totalSubmissions++;
+        if (!freqMap.has(key)) {
+          freqMap.set(key, { word: clean, count: 1, players: playerName ? [playerName] : [] });
+        } else {
+          const item = freqMap.get(key)!;
+          item.count += 1;
+          if (playerName && !item.players.includes(playerName)) {
+            item.players.push(playerName);
+          }
+        }
+      });
+    };
+
+    if (Array.isArray(activeRoom.answers_received)) {
+      activeRoom.answers_received.forEach((a: any) => {
+        if (Number(a.questionIndex) === qIdx) {
+          processWord(a.textAnswer || a.selectedText || '', a.playerName);
+        }
+      });
+    }
+
+    if (activeRoom.players) {
+      Object.values(activeRoom.players).forEach((p: any) => {
+        if (p?.lastAnswer && (p.lastAnswer.questionId === currentQ.id || Number(p.lastAnswer.questionIndex) === qIdx)) {
+          if (p.lastAnswer.textAnswer) {
+            processWord(p.lastAnswer.textAnswer, p.name);
+          }
+        }
+      });
+    }
+
+    const words = Array.from(freqMap.values()).sort((a, b) => b.count - a.count);
+    return {
+      words,
+      totalSubmissions,
+      uniqueCount: words.length
+    };
+  }, [activeRoom?.answers_received, activeRoom?.players, currentQIndex, currentQ]);
+
+  // إحصائيات استطلاع الرأي (Poll) للسؤال الحالي
+  const pollStats = useMemo(() => {
+    if (!activeRoom || !currentQ || currentQ.type !== 'poll') {
+      return { optionsWithVotes: [] as any[], totalVotes: 0, highestVoteIndex: -1 };
+    }
+    const qIdx = Number(currentQIndex);
+    const options = currentQ.options || [];
+    const counts = options.map(() => 0);
+    let totalVotes = 0;
+    const countedPlayers = new Set<string>();
+
+    if (Array.isArray(activeRoom.answers_received)) {
+      activeRoom.answers_received.forEach((a: any) => {
+        if (Number(a.questionIndex) === qIdx) {
+          const idx = Number(a.optionIndex);
+          if (idx >= 0 && idx < counts.length) {
+            counts[idx]++;
+            totalVotes++;
+            if (a.playerId) countedPlayers.add(String(a.playerId));
+          }
+        }
+      });
+    }
+
+    if (activeRoom.players) {
+      Object.values(activeRoom.players).forEach((p: any) => {
+        if (p?.id && !countedPlayers.has(String(p.id)) && p.lastAnswer) {
+          if (p.lastAnswer.questionId === currentQ.id || Number(p.lastAnswer.questionIndex) === qIdx) {
+            const idx = Number(p.lastAnswer.selectedIndex);
+            if (idx >= 0 && idx < counts.length) {
+              counts[idx]++;
+              totalVotes++;
+              countedPlayers.add(String(p.id));
+            }
+          }
+        }
+      });
+    }
+
+    let maxVotes = -1;
+    let highestVoteIndex = -1;
+    counts.forEach((c, i) => {
+      if (c > maxVotes && c > 0) {
+        maxVotes = c;
+        highestVoteIndex = i;
+      }
+    });
+
+    const optionsWithVotes = options.map((opt, idx) => {
+      const count = counts[idx] || 0;
+      const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+      return {
+        ...opt,
+        count,
+        pct,
+        isWinner: idx === highestVoteIndex && count > 0
+      };
+    });
+
+    return {
+      optionsWithVotes,
+      totalVotes,
+      highestVoteIndex
+    };
+  }, [activeRoom?.answers_received, activeRoom?.players, currentQIndex, currentQ]);
 
   // 1. الانتقال التلقائي للأسئلة في وضع «التحدي المتتابع التلقائي» (auto_continuous)
   useEffect(() => {
@@ -1279,7 +1448,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-100 font-sans select-none overflow-hidden rounded-2xl border border-slate-800 shadow-2xl relative">
+    <div
+      ref={containerRef}
+      className={`flex flex-col bg-slate-900 text-slate-100 font-sans select-none overflow-hidden transition-all duration-200 ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 w-screen h-screen rounded-none border-0 shadow-none'
+          : 'h-full w-full rounded-2xl border border-slate-800 shadow-2xl relative'
+      }`}
+    >
       {/* شريط الرأس العلوي */}
       <header className="bg-slate-950/80 backdrop-blur-md px-4 py-3 border-b border-slate-800 flex items-center justify-between z-20 shrink-0">
         <div className="flex items-center gap-3">
@@ -1307,6 +1483,30 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
             title={soundMuted ? 'تشغيل المؤثرات الصوتية' : 'كتم المؤثرات الصوتية'}
           >
             {soundMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+          </button>
+
+          {/* زر ملء الشاشة للسبورة الذكية والعرض الصفي الكامل */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className={`p-2 rounded-xl border transition-colors flex items-center gap-1.5 text-xs font-bold ${
+              isFullscreen
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+            }`}
+            title={isFullscreen ? 'إنهاء ملء الشاشة' : 'ملء الشاشة بالكامل'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-4 h-4 text-amber-400" />
+                <span className="hidden sm:inline">إنهاء ملء الشاشة</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-4 h-4 text-slate-300" />
+                <span className="hidden sm:inline">ملء الشاشة</span>
+              </>
+            )}
           </button>
 
           {/* تبويبات التنقل السريع */}
@@ -1942,12 +2142,74 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                   </div>
                 )}
 
-                {(manualQuestionType === 'classic' || manualQuestionType === 'poll' || manualQuestionType === 'word_cloud') && (
+                {manualQuestionType === 'word_cloud' && (
+                  <div className="p-4 rounded-2xl bg-sky-950/30 border border-sky-500/30 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-black text-sky-300">
+                      <Cloud className="w-4 h-4 text-sky-400" />
+                      <span>إِعْدَادُ سَحَابَةِ الكَلِمَاتِ الحَيَّةِ:</span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      سحابة الكلمات تسمح لجميع الطلاب بكتابة كلماتهم وتعبيراتهم بحرية من أجهزتهم لتتطاير وتظهر مباشرة بحجم يتناسب مع تكرارها على الشاشة. لا تحتاج لتحديد خيارات مسبقة.
+                    </p>
+                    <div className="space-y-1.5 pt-1">
+                      <label className="block text-[11px] font-bold text-sky-200">
+                        كلمات مقترحة أو تلميحات أولية للطلاب (اختياري - مفصولة بفواصل):
+                      </label>
+                      <input
+                        type="text"
+                        value={manualWordCloudHint}
+                        onChange={(e) => setManualWordCloudHint(e.target.value)}
+                        placeholder="مثال: الشجاعة، الصدق، الأمانة، الوفاء..."
+                        className="w-full py-2.5 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder:text-slate-500 font-bold text-xs focus:outline-hidden focus:border-sky-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {manualQuestionType === 'poll' && (
+                  <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <div className="flex items-center gap-2 text-xs font-black text-indigo-300">
+                        <Vote className="w-4 h-4 text-indigo-400" />
+                        <span>خِيَارَاتُ اسْتِطْلاعِ الرَّأْيِ وَالتَّصْوِيتِ (2 - 4 خيارات):</span>
+                      </div>
+                      <span className="text-[11px] text-indigo-200/80 font-medium">
+                        (تصويت ديمقراطي حر دون إجابة صحيحة واحدة)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {manualOptions.map((opt, idx) => {
+                        const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+                        return (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-xl border border-slate-700 bg-slate-900/70 flex items-center gap-2"
+                          >
+                            <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm text-white shadow-xs ${style.bg}`}>
+                              {idx + 1}
+                            </span>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => {
+                                const updated = [...manualOptions];
+                                updated[idx] = e.target.value;
+                                setManualOptions(updated);
+                              }}
+                              placeholder={`خيار التصويت ${idx + 1}`}
+                              className="flex-1 bg-transparent text-white text-xs font-bold focus:outline-hidden placeholder:text-slate-500"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {manualQuestionType === 'classic' && (
                   <div className="space-y-2.5">
                     <span className="block text-xs font-black text-slate-300">
-                      {manualQuestionType === 'classic'
-                        ? 'الخِيَارَاتُ الأَرْبَعَةُ التَّنَافُسِيَّةُ (حَدِّدِ الإِجَابَةَ الصَّحِيحَةَ):'
-                        : 'خِيَارَاتُ الاسْتِطْلاعِ أَوِ التَّصْوِيتِ:'}
+                      الخِيَارَاتُ الأَرْبَعَةُ التَّنَافُسِيَّةُ (حَدِّدِ الإِجَابَةَ الصَّحِيحَةَ):
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {manualOptions.map((opt, idx) => {
@@ -1957,7 +2219,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                           <div
                             key={idx}
                             className={`p-3 rounded-xl border flex items-center gap-2 ${
-                              manualCorrectIndex === idx && manualQuestionType === 'classic'
+                              manualCorrectIndex === idx
                                 ? 'bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/40'
                                 : 'bg-slate-900/60 border-slate-700'
                             }`}
@@ -1981,15 +2243,13 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                               placeholder={`الخيار ${idx + 1} (${cfg.name} - ${cfg.colorName})`}
                               className="flex-1 bg-transparent text-white text-xs font-bold focus:outline-hidden"
                             />
-                            {manualQuestionType === 'classic' && (
-                              <input
-                                type="radio"
-                                name="correctOption"
-                                checked={manualCorrectIndex === idx}
-                                onChange={() => setManualCorrectIndex(idx)}
-                                className="w-4 h-4 text-emerald-500 accent-emerald-500 cursor-pointer"
-                              />
-                            )}
+                            <input
+                              type="radio"
+                              name="correctOption"
+                              checked={manualCorrectIndex === idx}
+                              onChange={() => setManualCorrectIndex(idx)}
+                              className="w-4 h-4 text-emerald-500 accent-emerald-500 cursor-pointer"
+                            />
                           </div>
                         );
                       })}
@@ -2016,7 +2276,9 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                   disabled={
                     !manualQuestionText.trim() ||
                     (manualQuestionType === 'type_answer' && !manualCorrectAnswerText.trim()) ||
-                    (manualQuestionType === 'classic' && manualOptions.some(o => !o.trim()))
+                    (manualQuestionType === 'classic' && manualOptions.some(o => !o.trim())) ||
+                    (manualQuestionType === 'poll' && manualOptions.filter(o => o.trim()).length < 2) ||
+                    (manualQuestionType === 'puzzle' && manualOptions.filter(o => o.trim()).length < 2)
                   }
                   className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5"
                 >
@@ -2229,6 +2491,19 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     )}
 
                     <button
+                      type="button"
+                      onClick={toggleFullscreen}
+                      className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${
+                        isFullscreen
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-slate-300 hover:text-white'
+                      }`}
+                      title={isFullscreen ? 'تصغير الشاشة' : 'ملء الشاشة بالكامل'}
+                    >
+                      {isFullscreen ? <Minimize2 className="w-4 h-4 text-amber-400" /> : <Maximize2 className="w-4 h-4 text-slate-300" />}
+                    </button>
+
+                    <button
                       onClick={handleLeaveRoom}
                       className="p-2 rounded-xl bg-slate-700 hover:bg-rose-900/60 hover:text-rose-300 text-slate-400 transition"
                       title="إنهاء التحدي والخروج"
@@ -2272,6 +2547,18 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       title={soundMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
                     >
                       {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleFullscreen}
+                      className={`p-1.5 rounded-lg border transition ${
+                        isFullscreen
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-slate-300 hover:text-white'
+                      }`}
+                      title={isFullscreen ? 'تصغير الشاشة' : 'ملء الشاشة بالكامل'}
+                    >
+                      {isFullscreen ? <Minimize2 className="w-4 h-4 text-amber-400" /> : <Maximize2 className="w-4 h-4 text-slate-300" />}
                     </button>
                     <button
                       onClick={handleLeaveRoom}
@@ -2501,6 +2788,134 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                             </span>
                           </div>
                         ))}
+                      </div>
+                    ) : currentQ.type === 'word_cloud' ? (
+                      /* عرض سحابة الكلمات الحية التفاعلية على شاشة المعلم / السبورة */
+                      <div className="p-6 rounded-3xl border-2 border-sky-500/40 bg-slate-900/90 shadow-xl space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+                              <Cloud className="w-5 h-5 animate-pulse" />
+                            </span>
+                            <div>
+                              <h4 className="text-sm font-black text-sky-300">سَحَابَةُ الكَلِمَاتِ الحَيَّةِ (مُبَاشِرٌ)</h4>
+                              <p className="text-[11px] text-slate-400">الكلمات تتطاير وتكبر تلقائياً مع تكرار مشاركات الطلاب</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black bg-sky-950 px-3 py-1.5 rounded-xl border border-sky-800 text-sky-200">
+                              {wordCloudStats.totalSubmissions} كلمة مستلمة
+                            </span>
+                            <span className="text-xs font-black bg-indigo-950 px-3 py-1.5 rounded-xl border border-indigo-800 text-indigo-200">
+                              {wordCloudStats.uniqueCount} كلمة مميزة
+                            </span>
+                          </div>
+                        </div>
+
+                        {wordCloudStats.words.length === 0 ? (
+                          <div className="min-h-[180px] rounded-2xl border-2 border-dashed border-sky-500/30 bg-sky-950/20 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                            <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-3xl animate-bounce">
+                              ☁️
+                            </div>
+                            <p className="text-sm font-bold text-sky-300">
+                              في انتظار مشاركات الأبطال... اطلب من الطلاب كتابة كلماتهم الآن!
+                            </p>
+                            {currentQ.acceptableAnswers && currentQ.acceptableAnswers.length > 0 && (
+                              <div className="flex items-center gap-1.5 flex-wrap justify-center pt-2">
+                                <span className="text-[11px] text-slate-400">أمثلة مقترحة:</span>
+                                {currentQ.acceptableAnswers.map((ans, aIdx) => (
+                                  <span key={aIdx} className="text-[10px] bg-slate-800 text-sky-300 px-2 py-0.5 rounded-md border border-slate-700">
+                                    {ans}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="min-h-[180px] p-6 rounded-2xl bg-slate-950/80 border border-sky-500/30 flex flex-wrap items-center justify-center gap-3.5 transition-all">
+                            {wordCloudStats.words.map((item, wIdx) => {
+                              const maxCount = wordCloudStats.words[0]?.count || 1;
+                              const ratio = item.count / maxCount;
+                              const sizeClass =
+                                ratio >= 0.8 ? 'text-2xl sm:text-3xl font-black py-2.5 px-5' :
+                                ratio >= 0.5 ? 'text-xl sm:text-2xl font-black py-2 px-4' :
+                                ratio >= 0.3 ? 'text-base sm:text-lg font-bold py-1.5 px-3.5' : 'text-xs sm:text-sm font-semibold py-1 px-3';
+                              const palette = [
+                                'from-sky-400 to-blue-500 text-white border-sky-300/40 shadow-sky-500/20',
+                                'from-emerald-400 to-teal-500 text-white border-emerald-300/40 shadow-emerald-500/20',
+                                'from-amber-400 to-orange-500 text-slate-950 border-amber-300/40 shadow-amber-500/20',
+                                'from-fuchsia-400 to-purple-500 text-white border-fuchsia-300/40 shadow-fuchsia-500/20',
+                                'from-rose-400 to-pink-500 text-white border-rose-300/40 shadow-rose-500/20',
+                                'from-indigo-400 to-cyan-500 text-white border-indigo-300/40 shadow-indigo-500/20'
+                              ];
+                              const theme = palette[wIdx % palette.length];
+
+                              return (
+                                <div
+                                  key={wIdx}
+                                  className={`rounded-2xl bg-gradient-to-r border shadow-lg flex items-center gap-2 transform hover:scale-105 transition duration-200 animate-in zoom-in-75 ${theme} ${sizeClass}`}
+                                >
+                                  <span>{item.word}</span>
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-black/30 font-mono font-black shrink-0">
+                                    {item.count}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : currentQ.type === 'poll' ? (
+                      /* عرض استطلاع الرأي الحي بنسب التصويت المباشرة على شاشة المعلم / السبورة */
+                      <div className="p-6 rounded-3xl border-2 border-indigo-500/40 bg-slate-900/90 shadow-xl space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
+                              <Vote className="w-5 h-5 animate-pulse" />
+                            </span>
+                            <div>
+                              <h4 className="text-sm font-black text-indigo-300">اسْتِطْلاعُ الرَّأْيِ الحَيُّ (تَصْوِيتٌ مُبَاشِرٌ)</h4>
+                              <p className="text-[11px] text-slate-400">تحديث فوري لخيارات الطلاب ونسب الأصوات دون إجابة صحيحة واحدة</p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-black bg-indigo-950 px-3.5 py-1.5 rounded-xl border border-indigo-800 text-indigo-200">
+                            إجمالي الأصوات: {pollStats.totalVotes}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                          {pollStats.optionsWithVotes.map((opt, idx) => {
+                            const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-4 rounded-2xl border-2 flex flex-col justify-between text-right shadow-md relative overflow-hidden ${style.bg} ${style.border}`}
+                              >
+                                <div className="flex items-center justify-between gap-2 mb-2 relative z-10">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="w-9 h-9 rounded-xl bg-black/30 flex items-center justify-center font-black text-base text-white shrink-0 shadow-inner">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-base sm:text-lg font-black text-white">
+                                      {opt.text}
+                                    </span>
+                                  </div>
+                                  <div className="text-left shrink-0">
+                                    <span className="text-sm font-black text-white block">{opt.count} صوت</span>
+                                    <span className="text-xs font-bold text-white/80">{opt.pct}%</span>
+                                  </div>
+                                </div>
+
+                                <div className="w-full bg-black/40 h-3 rounded-full overflow-hidden relative z-10 border border-white/10">
+                                  <div
+                                    className="h-full bg-white transition-all duration-500 rounded-full"
+                                    style={{ width: `${opt.pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -2732,6 +3147,108 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                             ) : (
                               <div className="text-center text-xs text-slate-500 py-3">لا توجد إجابات نصية مسجلة بعد</div>
                             )}
+                          </div>
+                        </div>
+                      ) : currentQ.type === 'word_cloud' ? (
+                        <div className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                              <Cloud className="w-4 h-4 text-sky-400" />
+                              <span>سَحَابَةُ الكَلِمَاتِ النِّهَائِيَّةُ لِهَذَا السُّؤَالِ:</span>
+                            </span>
+                            <span className="text-xs font-bold text-sky-200">
+                              {wordCloudStats.totalSubmissions} مشاركة ({wordCloudStats.uniqueCount} كلمة فريدة)
+                            </span>
+                          </div>
+                          {wordCloudStats.words.length === 0 ? (
+                            <div className="p-6 rounded-2xl bg-slate-900/60 text-center text-xs text-slate-400">
+                              لم يتم تسجيل كلمات في هذا السؤال
+                            </div>
+                          ) : (
+                            <div className="p-6 rounded-3xl bg-slate-950/80 border-2 border-sky-500/40 flex flex-wrap items-center justify-center gap-3">
+                              {wordCloudStats.words.map((item, wIdx) => {
+                                const maxCount = wordCloudStats.words[0]?.count || 1;
+                                const ratio = item.count / maxCount;
+                                const sizeClass =
+                                  ratio >= 0.8 ? 'text-2xl sm:text-3xl font-black py-2.5 px-5' :
+                                  ratio >= 0.5 ? 'text-xl sm:text-2xl font-black py-2 px-4' :
+                                  ratio >= 0.3 ? 'text-base sm:text-lg font-bold py-1.5 px-3.5' : 'text-xs sm:text-sm font-semibold py-1 px-3';
+                                const colorStyles = [
+                                  'from-sky-400 to-blue-500 text-white shadow-sky-500/30 border-sky-400/40',
+                                  'from-emerald-400 to-teal-500 text-white shadow-emerald-500/30 border-emerald-400/40',
+                                  'from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/30 border-amber-300/40',
+                                  'from-fuchsia-400 to-purple-500 text-white shadow-fuchsia-500/30 border-fuchsia-400/40',
+                                  'from-rose-400 to-pink-500 text-white shadow-rose-500/30 border-rose-400/40',
+                                  'from-indigo-400 to-cyan-500 text-white shadow-indigo-500/30 border-indigo-400/40'
+                                ];
+                                const color = colorStyles[wIdx % colorStyles.length];
+
+                                return (
+                                  <div
+                                    key={wIdx}
+                                    className={`rounded-2xl bg-gradient-to-r border shadow-lg flex items-center gap-2 ${color} ${sizeClass}`}
+                                  >
+                                    <span>«{item.word}»</span>
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-black/30 font-mono font-black">
+                                      {item.count}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : currentQ.type === 'poll' ? (
+                        <div className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                              <Vote className="w-4 h-4 text-indigo-400" />
+                              <span>نَتَائِجُ وَنِسَبُ اسْتِطْلاعِ الرَّأْيِ النِّهَائِيَّةُ:</span>
+                            </span>
+                            <span className="text-xs font-bold text-indigo-200">
+                              إجمالي الأصوات: {pollStats.totalVotes} صوت
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            {pollStats.optionsWithVotes.map((opt, idx) => {
+                              const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-4 rounded-2xl border-2 flex flex-col justify-between text-right shadow-md relative overflow-hidden ${
+                                    opt.isWinner ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''
+                                  } ${style.bg} ${style.border}`}
+                                >
+                                  <div className="flex items-center justify-between gap-2 mb-2 relative z-10">
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-8 h-8 rounded-xl bg-black/30 flex items-center justify-center font-black text-sm text-white shrink-0">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="text-base sm:text-lg font-black text-white">
+                                        {opt.text}
+                                      </span>
+                                    </div>
+                                    <div className="text-left shrink-0">
+                                      <span className="text-sm font-black text-white block">{opt.count} صوت</span>
+                                      <span className="text-xs font-bold text-white/80">{opt.pct}%</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="w-full bg-black/40 h-3 rounded-full overflow-hidden relative z-10 border border-white/10">
+                                    <div
+                                      className="h-full bg-white transition-all duration-500 rounded-full"
+                                      style={{ width: `${opt.pct}%` }}
+                                    />
+                                  </div>
+
+                                  {opt.isWinner && (
+                                    <div className="mt-2 text-center text-xs font-black text-amber-200 bg-black/30 py-1 rounded-lg">
+                                      🌟 الخيار الأكثر تفضيلاً بين الطلاب!
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       ) : (
@@ -3222,19 +3739,105 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                               </button>
                             </div>
                           </div>
+                        ) : currentQ?.type === 'word_cloud' ? (
+                          /* 4. نمط سحابة الكلمات التفاعلية للطالب (Word Cloud Submission) */
+                          <div className="flex-1 flex flex-col justify-center space-y-4 max-w-lg mx-auto w-full">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-sky-300 bg-sky-400/10 border border-sky-400/20 px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                                <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                                <span>سَحَابَةُ الكَلِمَاتِ: اكتب كلمتك لتتطاير على شاشة الصف! ☁️</span>
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-800/90 border border-sky-500/40 rounded-3xl p-6 shadow-2xl space-y-4">
+                              <input
+                                type="text"
+                                value={studentTextAnswer}
+                                onChange={(e) => setStudentTextAnswer(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && studentTextAnswer.trim()) {
+                                    handleSelectAnswer(0, { textAnswer: studentTextAnswer.trim() });
+                                  }
+                                }}
+                                placeholder="اكتب كلمة أو فكرة هنا لتنضم للسحابة..."
+                                autoFocus
+                                className="w-full py-4 px-5 rounded-2xl bg-slate-950 border-2 border-sky-500/60 focus:border-sky-400 text-white placeholder:text-slate-500 font-black text-lg text-center focus:outline-hidden shadow-inner"
+                              />
+
+                              {/* كلمات مقترحة سريعة إن وجدت كخيارات مساعدة */}
+                              {currentQ.acceptableAnswers && currentQ.acceptableAnswers.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-[11px] text-slate-400 font-bold block text-right">أفكار مقترحة سريعة:</span>
+                                  <div className="flex items-center gap-2 flex-wrap justify-center">
+                                    {currentQ.acceptableAnswers.map((sug, sIdx) => (
+                                      <button
+                                        key={sIdx}
+                                        type="button"
+                                        onClick={() => setStudentTextAnswer(sug)}
+                                        className="text-xs font-bold px-3 py-1 rounded-xl bg-slate-900 border border-sky-500/30 text-sky-300 hover:bg-sky-950 transition"
+                                      >
+                                        + {sug}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAnswer(0, { textAnswer: studentTextAnswer.trim() })}
+                                disabled={!studentTextAnswer.trim()}
+                                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-40 text-white font-black text-base shadow-lg shadow-sky-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Send className="w-4 h-4" />
+                                <span>أَرْسِلْ كَلِمَتَكَ لِلسَّحَابَةِ الآنَ ☁️</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : currentQ?.type === 'poll' ? (
+                          /* 5. نمط استطلاع الرأي والتصويت للطالب (Poll Voting) */
+                          <div className="flex-1 flex flex-col justify-center space-y-3">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-indigo-300 bg-indigo-400/10 border border-indigo-400/20 px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                                <Vote className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>اسْتِطْلاعُ رَأْيٍ: انقر على الخيار الذي يعبّر عن رأيك! 🗳️</span>
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 flex-1">
+                              {(currentQ?.options || []).map((opt, idx) => {
+                                const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => handleSelectAnswer(idx)}
+                                    className={`w-full min-h-[110px] sm:min-h-[130px] rounded-3xl p-5 flex items-center gap-4 text-right transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${style.bg} ${style.border}`}
+                                  >
+                                    <div className="w-12 h-12 rounded-2xl bg-black/30 border border-white/20 flex items-center justify-center text-xl font-black text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                      {idx + 1}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
+                                        {opt.text}
+                                      </span>
+                                    </div>
+                                    <div className="text-white/80 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Check className="w-6 h-6" />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         ) : (
-                          /* 4. نمط كلاسيكي (Classic 4-choices) واستطلاع رأي (Poll) وسحابة كلمات (Word Cloud) */
+                          /* 6. نمط الاختيار الكلاسيكي (Classic 4-choices) */
                           <div className="flex-1 flex flex-col justify-center space-y-3">
                             <div className="text-center mb-1">
                               <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
                                 <Sparkles className="w-3.5 h-3.5" />
-                                <span>
-                                  {currentQ?.type === 'poll'
-                                    ? 'استطلاع رأي: صوّت لخيارك المفضل!'
-                                    : currentQ?.type === 'word_cloud'
-                                    ? 'سحابة كلمات: شارك برأيك لتظهر كلمتك في السحابة!'
-                                    : 'اختر الحرف الصحيح بأسرع ما يمكن! ⚡'}
-                                </span>
+                                <span>اختر الحرف الصحيح بأسرع ما يمكن! ⚡</span>
                               </span>
                             </div>
 
@@ -3285,7 +3888,21 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                           </p>
                         </div>
 
-                        {currentQ.type === 'type_answer' ? (
+                        {currentQ.type === 'word_cloud' ? (
+                          <div className="px-5 py-3 rounded-2xl bg-sky-950/70 border border-sky-500/50 flex items-center gap-2.5 shadow-md text-sky-200">
+                            <Cloud className="w-5 h-5 text-sky-400" />
+                            <span className="text-xs font-black">
+                              تمت إضافة كلمتك: «{lastSubmittedAnswerDetail?.textAnswer || studentTextAnswer || 'مشاركتك'}» لتتطاير في سحابة الصف ☁️
+                            </span>
+                          </div>
+                        ) : currentQ.type === 'poll' ? (
+                          <div className="px-5 py-3 rounded-2xl bg-indigo-950/70 border border-indigo-500/50 flex items-center gap-2.5 shadow-md text-indigo-200">
+                            <Vote className="w-5 h-5 text-indigo-400" />
+                            <span className="text-xs font-black">
+                              تم تسجيل صوتك بنجاح في الاستطلاع 🗳️
+                            </span>
+                          </div>
+                        ) : currentQ.type === 'type_answer' ? (
                           <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
                             <span className="text-xs font-black text-amber-300">
                               إجابتك المكتوبة: «{studentTextAnswer || lastSubmittedAnswerDetail?.textAnswer || 'مسجلة'}»
@@ -3318,7 +3935,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
                         <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
                           <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                          <span>في انتظار إعلان المعلم للنتيجة الصحيحة...</span>
+                          <span>في انتظار إعلان المعلم للنتيجة...</span>
                         </div>
                       </div>
                     )}
@@ -3329,7 +3946,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                 {activeRoom.status === 'question_revealed' && currentQ && (
                   <div className="flex-1 flex flex-col justify-center space-y-5 py-4 animate-in zoom-in-95 duration-200 max-w-lg mx-auto w-full">
                     {/* شارة توضيحية فورية خاصة بالطالب */}
-                    {answerResult ? (
+                    {currentQ.type === 'word_cloud' || currentQ.type === 'poll' ? (
+                      <div className="p-5 rounded-3xl border text-center font-black shadow-xl bg-gradient-to-r from-sky-950/80 to-indigo-950/80 border-sky-500/50 text-sky-200 shadow-indigo-900/30">
+                        <div className="text-3xl mb-1.5">🌟 شُكْراً لِمُشَارَكَتِكَ الفَعَّالَةِ!</div>
+                        <div className="text-sm">
+                          حصلت على +1000 نقطة لمشاركتك وإثراء الحوار مع زملائك في الصف!
+                        </div>
+                      </div>
+                    ) : answerResult ? (
                       <div className={`p-5 rounded-3xl border text-center font-black shadow-xl ${
                         answerResult.isCorrect
                           ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200 shadow-emerald-900/30'

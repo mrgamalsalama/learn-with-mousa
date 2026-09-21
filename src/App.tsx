@@ -2173,7 +2173,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+        <main className={hodTab === 'challenge' ? "w-full px-2 sm:px-4 py-2 space-y-3" : "max-w-6xl mx-auto px-4 py-8 space-y-6"}>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setHodTab('overview')}
@@ -2420,7 +2420,7 @@ export default function App() {
           )}
 
           {hodTab === 'challenge' && (
-            <div className="h-[750px] w-full">
+            <div className="w-full h-[calc(100vh-140px)] min-h-[720px]">
               <MousaChallenge
                 currentUser={currentUser}
                 initialGrade={hodGrades[0] || 'grade-1'}
@@ -2460,7 +2460,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className="max-w-6xl mx-auto px-4 py-8">
+        <main className={teacherTab === 'challenge' ? "w-full px-2 sm:px-4 py-2" : "max-w-6xl mx-auto px-4 py-8"}>
           <div className="flex flex-wrap gap-2 mb-6">
             <button
               onClick={() => setTeacherTab('activities')}
@@ -3286,7 +3286,7 @@ export default function App() {
           )}
 
           {teacherTab === 'challenge' && (
-            <div className="h-[750px] w-full">
+            <div className="w-full h-[calc(100vh-140px)] min-h-[720px]">
               <MousaChallenge
                 currentUser={currentUser}
                 initialGrade={teacherAllowedGrades[0] || 'grade-1'}
@@ -3711,7 +3711,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className="max-w-5xl mx-auto px-4 py-8">
+        <main className={studentTab === 'challenge' ? "w-full px-2 sm:px-4 py-2" : "max-w-5xl mx-auto px-4 py-8"}>
           <div className="flex flex-wrap gap-2 mb-6">
             <button
               onClick={() => setStudentTab('ai_studio')}
@@ -4729,7 +4729,7 @@ export default function App() {
           )}
 
           {studentTab === 'challenge' && (
-            <div className="h-[750px] w-full">
+            <div className="w-full h-[calc(100vh-140px)] min-h-[720px]">
               <MousaChallenge
                 currentUser={currentUser}
                 initialGrade={currentUser.grade || 'grade-1'}

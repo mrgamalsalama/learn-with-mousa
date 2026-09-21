@@ -122,6 +122,22 @@ async function startServer() {
       return res.json({ status: 'ok', room: localChallengeRooms.get(cleanPin) });
     }
 
+    // دمج الإجابات دون مسح إجابات الطلاب السابقة
+    const existingAnswers = Array.isArray(existing.answers_received) ? existing.answers_received : [];
+    const incomingAnswers = Array.isArray(room.answers_received) ? room.answers_received : [];
+    const answerMap = new Map<string, any>();
+    existingAnswers.forEach((a: any) => {
+      if (a && a.playerId !== undefined) {
+        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      }
+    });
+    incomingAnswers.forEach((a: any) => {
+      if (a && a.playerId !== undefined) {
+        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      }
+    });
+    const mergedAnswers = Array.from(answerMap.values());
+
     // دمج اللاعبين دون فقدان أي بطل منضم مع الحفاظ على أعلى رصيد نقاط مسجل
     const existingPlayers = normalizePlayers(existing.players);
     const incomingPlayers = normalizePlayers(room.players);
@@ -161,22 +177,6 @@ async function startServer() {
         isOnline: true
       };
     });
-
-    // دمج الإجابات دون مسح إجابات الطلاب السابقة
-    const existingAnswers = Array.isArray(existing.answers_received) ? existing.answers_received : [];
-    const incomingAnswers = Array.isArray(room.answers_received) ? room.answers_received : [];
-    const answerMap = new Map<string, any>();
-    existingAnswers.forEach((a: any) => {
-      if (a && a.playerId !== undefined) {
-        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
-      }
-    });
-    incomingAnswers.forEach((a: any) => {
-      if (a && a.playerId !== undefined) {
-        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
-      }
-    });
-    const mergedAnswers = Array.from(answerMap.values());
 
     const isHost = room.senderRole === 'host' || !room.senderRole;
     const mergedRoom = {
