@@ -120,6 +120,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [aiTopic, setAiTopic] = useState('');
   const [aiCount, setAiCount] = useState<number>(4);
   const [aiTimeLimit, setAiTimeLimit] = useState<number>(20);
+  const [aiQuestionTypeSelection, setAiQuestionTypeSelection] = useState<string>('mixed');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [newQuizTitle, setNewQuizTitle] = useState('');
   const [newQuizQuestions, setNewQuizQuestions] = useState<ChallengeQuestion[]>([]);
@@ -963,11 +964,22 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     if (!aiTopic.trim()) return;
     setIsGeneratingAi(true);
     try {
+      // تحديد الأنماط المطلوبة بناءً على اختيار المعلم
+      let targetTypes: ChallengeQuestionType[] | undefined = undefined;
+      if (aiQuestionTypeSelection === 'mixed') {
+        targetTypes = ['classic', 'true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
+      } else if (aiQuestionTypeSelection === 'interactive_only') {
+        targetTypes = ['true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
+      } else {
+        targetTypes = [aiQuestionTypeSelection as ChallengeQuestionType];
+      }
+
       const generated = await generateAIChallengeQuestions({
         topic: aiTopic,
         grade: selectedGrade,
         count: aiCount,
-        timeLimitSeconds: aiTimeLimit
+        timeLimitSeconds: aiTimeLimit,
+        questionTypes: targetTypes
       });
 
       if (generated && generated.length > 0) {
@@ -1692,6 +1704,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       <option value={3}>3 أسئلة سريعة</option>
                       <option value={4}>4 أسئلة (مثالي)</option>
                       <option value={5}>5 أسئلة شاملة</option>
+                      <option value={6}>6 أسئلة غنية</option>
                     </select>
                   </div>
 
@@ -1708,6 +1721,59 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       <option value={20}>20 ثانية (متوازن)</option>
                       <option value={30}>30 ثانية (للتفكير الهادئ)</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* نمط الأسئلة المراد توليدها بالذكاء الاصطناعي */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-black text-slate-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>الأَنْمَاطُ التَّفَاعُلِيَّةُ المَطْلُوبُ تَوْلِيدُهَا:</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {aiQuestionTypeSelection === 'mixed'
+                        ? 'توليد مشكل يشمل جميع الأنماط'
+                        : aiQuestionTypeSelection === 'interactive_only'
+                        ? 'الأنماط الحديثة فقط (بدون الكلاسيكي)'
+                        : 'نمط محدد مخصص'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
+                    {[
+                      { id: 'mixed', label: 'شامل كل الأنماط 🌟', icon: Sparkles, badge: 'موصى به' },
+                      { id: 'interactive_only', label: 'أنماط حديثة فقط 🚀', icon: Zap },
+                      { id: 'classic', label: 'كلاسيكي (4 خيارات)', icon: CheckSquare },
+                      { id: 'true_false', label: 'صح أم خطأ', icon: CheckCircle2 },
+                      { id: 'puzzle', label: 'سباق الترتيب', icon: Sliders },
+                      { id: 'type_answer', label: 'اكتب الإجابة', icon: MessageSquare },
+                      { id: 'word_cloud', label: 'سحابة كلمات', icon: Cloud },
+                      { id: 'poll', label: 'استطلاع رأي', icon: Vote }
+                    ].map(item => {
+                      const Icon = item.icon;
+                      const isSelected = aiQuestionTypeSelection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setAiQuestionTypeSelection(item.id)}
+                          className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer relative ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-indigo-600/40 to-purple-600/30 border-indigo-400 text-amber-300 ring-2 ring-indigo-500/50 shadow-md'
+                              : 'bg-slate-900/70 border-slate-700/80 text-slate-400 hover:text-white hover:border-slate-600'
+                          }`}
+                        >
+                          <Icon className={`w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-slate-400'}`} />
+                          <span className="text-[10.5px] font-bold leading-tight">{item.label}</span>
+                          {item.badge && (
+                            <span className="absolute -top-1.5 -right-1 px-1 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full">
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2011,6 +2077,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                           <span className="text-white bg-slate-900 px-2 py-0.5 rounded border border-slate-700 font-mono">
                             {q.correctAnswerText || q.acceptableAnswers?.[0] || 'غير محدد'}
                           </span>
+                        </div>
+                      ) : q.type === 'word_cloud' ? (
+                        <div className="p-2.5 rounded-lg bg-sky-950/40 border border-sky-500/40 text-sky-300 text-xs font-bold flex items-center gap-2">
+                          <Cloud className="w-4 h-4 text-sky-400" />
+                          <span>سحابة كلمات تفاعلية مفتوحة لإجابات الطلاب التشاركية (بدون خيارات مسبقة).</span>
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-2 pt-1">

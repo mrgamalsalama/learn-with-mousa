@@ -944,9 +944,12 @@ export async function generateAIChallengeQuestions(params: {
     return fallbackQuestions.slice(0, count);
   }
 
-  const allowedTypesStr = (questionTypes && questionTypes.length > 0)
-    ? questionTypes.join(', ')
-    : 'classic, true_false, puzzle, type_answer, word_cloud, poll';
+  const allowedTypes: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[] =
+    (questionTypes && questionTypes.length > 0)
+      ? questionTypes
+      : ['classic', 'true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
+
+  const allowedTypesStr = allowedTypes.join(', ');
 
   const prompt = `
 أنت «موسى» الخبير التربوي وصانع المسابقات التفاعلية الحية للأطفال في منصة "تعلَّم مع موسى".
@@ -954,23 +957,25 @@ export async function generateAIChallengeQuestions(params: {
 الصف الدراسي: [${grade}].
 عدد الأسئلة المطلوبة: [${count}].
 زمن الإجابة لكل سؤال: [${timeLimitSeconds}] ثانية.
-الأنماط التفاعلية المسموح بتوليدها وتوزيعها بذكاء: [${allowedTypesStr}].
+الأنماط التفاعلية المطلوب التوليد منها فقط: [${allowedTypesStr}].
+${allowedTypes.length === 1 ? `ملاحظة هامة: يجب أن تكون جميع الأسئلة المتولدة من نمط [${allowedTypes[0]}] حصراً!` : `ملاحظة هامة: قم بالتنويع الذكي بين الأنماط المطلوبة المحددة ([${allowedTypesStr}]) لتكون المسابقة حماسية ومشوقة!`}
 
 قواعد الأنماط التفاعلية بدقة:
-1. نمط "classic": 4 خيارات بأشكال (triangle, diamond, circle, square)، خيار واحد صحيح (correctIndex من 0 إلى 3).
-2. نمط "true_false": خياران عملاقان فقط:
+1. نمط "classic": سؤال اختيار من متعدد كلاسيكي بـ 4 خيارات بأشكال (triangle, diamond, circle, square)، خيار واحد صحيح (correctIndex من 0 إلى 3).
+2. نمط "true_false": عبارة صحيحة أو خاطئة مع خيارين فقط:
    - الخيار 0: "صَحِيحٌ (صَوَابٌ) ✅" مع شكل "diamond"
    - الخيار 1: "خَاطِئٌ (خَطَأٌ) ❌" مع شكل "triangle"
    و correctIndex إما 0 للصحيح أو 1 للخاطئ.
-3. نمط "puzzle": سؤال سباق ترتيب (تكوين جملة أو ترتيب أحداث أو خطوات). يحتوي على 4 عناصر في options بالترتيب الأولي المشوش، وحقل correctOrder يحتوي على مصفوفة أرقام الترتيب الصحيح [0, 1, 2, 3] بحسب الفهارس الأصلية للخيارات.
-4. نمط "type_answer": سؤال كتابة إملائية سريعة، options تكون فارغة []، مع حقل correctAnswerText (الكلمة أو العبارة المطلوبة) وحقل acceptableAnswers (مصفوفة بدائل مقبولة مع وبدون التشكيل).
-5. نمط "word_cloud": عصف ذهني وإبداعي (مثل: "صِفِ القِرَاءَةَ بِكَلِمَةٍ وَاحِدَةٍ")، options فارغة []، لا يوجد خاسر (everyone participates).
-6. نمط "poll": استطلاع رأي تصويتي، يحتوي على 2 أو 3 أو 4 خيارات، لا يوجد correctIndex (أو correctIndex = -1).
+3. نمط "puzzle": سؤال سباق ترتيب (تكوين جملة أو ترتيب أحداث أو خطوات إملائية/نحوية). يحتوي على 4 عناصر في options بالترتيب الأولي المشوش، وحقل correctOrder يحتوي على مصفوفة أرقام الترتيب الصحيح [0, 1, 2, 3] بحسب الفهارس الأصلية للخيارات.
+4. نمط "type_answer": سؤال كتابة إملائية ونحوية مباشرة (مثل: كتابة كلمة منونة، أو تحويل جمع، أو كتابة همزة)، options تكون فارغة []، مع حقل correctAnswerText (الكلمة أو العبارة المطلوبة) وحقل acceptableAnswers (مصفوفة بدائل مقبولة مع وبدون التشكيل لتسهيل التقييم).
+5. نمط "word_cloud": عصف ذهني وإبداعي (مثل: "صِفِ القِرَاءَةَ بِكَلِمَةٍ وَاحِدَةٍ" أو "اذْكُرْ صِفَةً جَمِيلَةً لِلْأُمِّ")، options فارغة []، correctIndex = 0.
+6. نمط "poll": استطلاع رأي تصويتي مشوق متعلق بموضوع الدرس، يحتوي على 3 أو 4 خيارات بأشكال، correctIndex = 0.
 
-المطلوب:
-- توليد ${count} أسئلة متنوعة وشائقة مناسبة لعمر وصف الطلاب مشكولة 100% بالحركات التامة.
+المطلوب الصارم:
+- توليد ${count} أسئلة متنوعة متوافقة بدقة مع الأنماط المطلوبة: [${allowedTypesStr}].
+- جميع النصوص والخيارات يجب أن تكون مشكولة بالحركات التامة بنسبة 100%.
 - تقديم توضيح تربوي تشجيعي بصوت موسى (explanation) لكل سؤال.
-- أخرج النتيجة فقط بصيغة مصفوفة JSON مطابقة للمخطط التالي:
+- أخرج النتيجة فقط بصيغة مصفوفة JSON صالحة ومباشرة بدون نصوص خارجها مطابقة للمخطط التالي:
 [
   {
     "id": "q_1",
@@ -1005,7 +1010,7 @@ export async function generateAIChallengeQuestions(params: {
     "timeLimitSeconds": ${timeLimitSeconds},
     "correctIndex": 0,
     "correctOrder": [0, 1, 2, 3],
-    "explanation": "أحسنتم ترتيب الجملة!",
+    "explanation": "أحسنتم ترتيب الجملة بشكل سليم!",
     "options": [
       { "id": "0", "text": "الكلمة الأولى", "shape": "triangle" },
       { "id": "1", "text": "الكلمة الثانية", "shape": "diamond" },
@@ -1020,8 +1025,8 @@ export async function generateAIChallengeQuestions(params: {
     "timeLimitSeconds": ${timeLimitSeconds},
     "correctIndex": 0,
     "correctAnswerText": "الكلمة",
-    "acceptableAnswers": ["الكلمة", "كلمة"],
-    "explanation": "كتابة صحيحة ومتقنة!",
+    "acceptableAnswers": ["الكلمة", "كلمة", "كَلِمَةٌ"],
+    "explanation": "كتابة صحيحة ومتقنة يا بطل!",
     "options": []
   }
 ]
