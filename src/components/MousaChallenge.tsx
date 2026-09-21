@@ -11,7 +11,8 @@ import {
 import { 
   getChallengeQuizzes, saveChallengeQuiz, deleteChallengeQuiz, 
   getChallengeRooms, saveChallengeRoom, syncChallengeRoomFromCloud, 
-  syncChallengeQuizzesFromCloud, getChallengeRoomByPin, normalizeRoomPlayers
+  syncChallengeQuizzesFromCloud, getChallengeRoomByPin, normalizeRoomPlayers,
+  submitChallengeAnswerToCloudAndLocal
 } from '../storage';
 import { supabase } from '../supabaseClient';
 import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService';
@@ -105,19 +106,62 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     if (!activeRoom || !activeRoom.pin) return;
     const roomPin = activeRoom.pin.trim();
 
+    // دالة دمج موحدة فائقة الدقة لحماية الإجابات واللاعبين من الفقدان أو المسح
+    const mergeIncomingRoom = (incoming: any, prev: ChallengeRoom | null): ChallengeRoom => {
+      if (!incoming) return prev as ChallengeRoom;
+      const incomingStatus = (incoming.status === 'in_progress') ? 'question_active' : (incoming.status || prev?.status || 'lobby');
+      const settingsQuestions = incoming.settings?.questions;
+      const questionsToUse = (Array.isArray(incoming.questions) && incoming.questions.length > 0)
+        ? incoming.questions
+        : ((Array.isArray(settingsQuestions) && settingsQuestions.length > 0)
+          ? settingsQuestions
+          : (prev?.questions || []));
+
+      // دمج اللاعبين
+      const mergedPlayers = {
+        ...(prev?.players || {}),
+        ...normalizeRoomPlayers(incoming.players)
+      };
+
+      // دمج الإجابات بدقة حسب playerId ورقم السؤال
+      const prevAnswers = Array.isArray(prev?.answers_received) ? prev.answers_received : [];
+      const incomingAnswers = Array.isArray(incoming.answers_received) ? incoming.answers_received : [];
+      const ansMap = new Map<string, any>();
+      prevAnswers.forEach((a: any) => {
+        if (a && a.playerId !== undefined) ansMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      });
+      incomingAnswers.forEach((a: any) => {
+        if (a && a.playerId !== undefined) ansMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      });
+      const finalAnswers = Array.from(ansMap.values());
+
+      return {
+        ...(prev || {}),
+        id: incoming.id || prev?.id,
+        pin: incoming.pin || prev?.pin || roomPin,
+        quiz_id: incoming.quiz_id || incoming.settings?.quiz_id || prev?.quiz_id,
+        quiz_title: incoming.quiz_title || incoming.settings?.quiz_title || prev?.quiz_title,
+        host_id: incoming.host_id || prev?.host_id,
+        host_name: incoming.host_name || incoming.settings?.host_name || prev?.host_name,
+        target_grade: incoming.target_grade || incoming.settings?.target_grade || prev?.target_grade,
+        status: incomingStatus,
+        current_question_index: typeof incoming.current_question_index === 'number'
+          ? incoming.current_question_index
+          : (typeof prev?.current_question_index === 'number' ? prev.current_question_index : 0),
+        question_start_time: incoming.settings?.question_start_time || incoming.question_start_time || prev?.question_start_time,
+        questions: questionsToUse,
+        players: mergedPlayers,
+        answers_received: finalAnswers,
+        created_at: incoming.created_at || prev?.created_at || new Date().toISOString(),
+        updated_at: incoming.updated_at || new Date().toISOString()
+      };
+    };
+
     // 1. استماع للتحديثات المحلية عبر CustomEvent
     const handleLocalUpdate = (e: any) => {
       const updated = e.detail as ChallengeRoom;
       if (updated && updated.pin === roomPin) {
-        const incomingStatus = (updated.status === 'in_progress') ? 'question_active' : updated.status;
-        setActiveRoom(prev => {
-          if (!prev) return { ...updated, status: incomingStatus };
-          return {
-            ...updated,
-            status: incomingStatus,
-            questions: (Array.isArray(updated.questions) && updated.questions.length > 0) ? updated.questions : prev.questions
-          };
-        });
+        setActiveRoom(prev => mergeIncomingRoom(updated, prev));
       }
     };
     window.addEventListener('challenge_room_updated', handleLocalUpdate);
@@ -129,15 +173,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           const rooms: ChallengeRoom[] = JSON.parse(e.newValue);
           const found = rooms.find(r => r.pin === roomPin);
           if (found) {
-            const incomingStatus = (found.status === 'in_progress') ? 'question_active' : found.status;
-            setActiveRoom(prev => {
-              if (!prev) return { ...found, status: incomingStatus };
-              return {
-                ...found,
-                status: incomingStatus,
-                questions: (Array.isArray(found.questions) && found.questions.length > 0) ? found.questions : prev.questions
-              };
-            });
+            setActiveRoom(prev => mergeIncomingRoom(found, prev));
           }
         } catch {}
       }
@@ -151,13 +187,37 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         if (event.data?.type === 'ROOM_UPDATE') {
           const updated = event.data.room as ChallengeRoom;
           if (updated && updated.pin === roomPin) {
-            const incomingStatus = (updated.status === 'in_progress') ? 'question_active' : updated.status;
+            setActiveRoom(prev => mergeIncomingRoom(updated, prev));
+          }
+        } else if (event.data?.type === 'ROOM_ANSWER' && event.data.pin === roomPin) {
+          const ans = event.data.answer;
+          if (ans) {
             setActiveRoom(prev => {
-              if (!prev) return { ...updated, status: incomingStatus };
+              if (!prev) return null;
+              const existing = Array.isArray(prev.answers_received) ? [...prev.answers_received] : [];
+              const filtered = existing.filter((a: any) => !(a.playerId === ans.playerId && Number(a.questionIndex) === Number(ans.questionIndex)));
+              const updatedAnswers = [...filtered, ans];
+              const players = { ...prev.players };
+              if (players[ans.playerId]) {
+                players[ans.playerId] = {
+                  ...players[ans.playerId],
+                  score: (players[ans.playerId].score || 0) + (ans.points || 0),
+                  streak: ans.isCorrect ? ((players[ans.playerId].streak || 0) + 1) : 0,
+                  lastAnswer: {
+                    questionId: `q_${ans.questionIndex}`,
+                    selectedIndex: ans.optionIndex,
+                    questionIndex: ans.questionIndex,
+                    isCorrect: ans.isCorrect,
+                    timeTakenMs: 1000,
+                    pointsEarned: ans.points,
+                    answeredAt: ans.answeredAt || Date.now()
+                  }
+                };
+              }
               return {
-                ...updated,
-                status: incomingStatus,
-                questions: (Array.isArray(updated.questions) && updated.questions.length > 0) ? updated.questions : prev.questions
+                ...prev,
+                players,
+                answers_received: updatedAnswers
               };
             });
           }
@@ -179,35 +239,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         },
         (payload) => {
           if (payload.new) {
-            const data: any = payload.new;
-            const incomingStatus = (data.status === 'in_progress') ? 'question_active' : data.status;
-            setActiveRoom(prev => {
-              if (!prev) return null;
-              const settingsQuestions = data.settings?.questions;
-              const extractedQuestions = (Array.isArray(data.questions) && data.questions.length > 0)
-                ? data.questions
-                : ((Array.isArray(settingsQuestions) && settingsQuestions.length > 0) ? settingsQuestions : prev.questions);
-
-              const formatted: ChallengeRoom = {
-                ...prev,
-                id: data.id || prev.id,
-                pin: data.pin || prev.pin,
-                quiz_id: data.quiz_id || data.settings?.quiz_id || prev.quiz_id,
-                quiz_title: data.quiz_title || data.settings?.quiz_title || prev.quiz_title,
-                host_id: data.host_id || prev.host_id,
-                host_name: data.host_name || data.settings?.host_name || prev.host_name,
-                target_grade: data.target_grade || data.settings?.target_grade || prev.target_grade,
-                status: incomingStatus,
-                current_question_index: (typeof data.current_question_index === 'number') ? data.current_question_index : prev.current_question_index,
-                questions: (Array.isArray(extractedQuestions) && extractedQuestions.length > 0) ? extractedQuestions : prev.questions,
-                players: data.players ? normalizeRoomPlayers(data.players) : prev.players,
-                answers_received: Array.isArray(data.answers_received) ? data.answers_received : prev.answers_received,
-                question_start_time: data.settings?.question_start_time || prev.question_start_time,
-                created_at: data.created_at || prev.created_at,
-                updated_at: data.updated_at
-              };
-              return formatted;
-            });
+            setActiveRoom(prev => mergeIncomingRoom(payload.new, prev));
           }
         }
       )
@@ -215,7 +247,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
     channelRef.current = channel;
 
-    // 5. فحص دوري استباقي احتياطي (Polling Fallback) كل 1 ثانية عبر السحابة وخادم الشبكة لضمان المزامنة الفورية
+    // 5. فحص دوري استباقي احتياطي (Polling Fallback) كل 800 مللي ثانية عبر السحابة وخادم الشبكة لضمان المزامنة الفورية
     const pollInterval = setInterval(async () => {
       // أ) فحص سحابي عبر Supabase
       try {
@@ -226,33 +258,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           .maybeSingle();
 
         if (!error && data) {
-          const incomingStatus = (data.status === 'in_progress') ? 'question_active' : data.status;
-          setActiveRoom(prev => {
-            if (!prev) return null;
-            const settingsQuestions = data.settings?.questions;
-            const questionsToUse = (Array.isArray(data.questions) && data.questions.length > 0)
-              ? data.questions
-              : ((Array.isArray(settingsQuestions) && settingsQuestions.length > 0) ? settingsQuestions : prev.questions);
-
-            if (
-              prev.status !== incomingStatus ||
-              prev.current_question_index !== data.current_question_index ||
-              (data.answers_received && data.answers_received.length !== prev.answers_received?.length) ||
-              (data.players && Object.keys(data.players).length !== Object.keys(prev.players).length) ||
-              (!prev.questions || prev.questions.length === 0)
-            ) {
-              return {
-                ...prev,
-                status: incomingStatus,
-                current_question_index: (typeof data.current_question_index === 'number') ? data.current_question_index : prev.current_question_index,
-                questions: (Array.isArray(questionsToUse) && questionsToUse.length > 0) ? questionsToUse : prev.questions,
-                players: data.players ? normalizeRoomPlayers(data.players) : prev.players,
-                answers_received: Array.isArray(data.answers_received) ? data.answers_received : prev.answers_received,
-                question_start_time: data.settings?.question_start_time || prev.question_start_time
-              };
-            }
-            return prev;
-          });
+          setActiveRoom(prev => mergeIncomingRoom(data, prev));
         }
       } catch {}
 
@@ -262,29 +268,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         if (resp.ok) {
           const json = await resp.json();
           if (json?.room) {
-            const lr = json.room;
-            const incomingStatus = (lr.status === 'in_progress') ? 'question_active' : lr.status;
-            setActiveRoom(prev => {
-              if (!prev) return lr;
-              if (
-                prev.status !== incomingStatus ||
-                prev.current_question_index !== lr.current_question_index ||
-                (!prev.questions || prev.questions.length === 0)
-              ) {
-                return {
-                  ...prev,
-                  ...lr,
-                  status: incomingStatus,
-                  questions: (Array.isArray(lr.questions) && lr.questions.length > 0) ? lr.questions : prev.questions,
-                  players: lr.players ? normalizeRoomPlayers(lr.players) : prev.players
-                };
-              }
-              return prev;
-            });
+            setActiveRoom(prev => mergeIncomingRoom(json.room, prev));
           }
         }
       } catch {}
-    }, 1000);
+    }, 800);
 
     return () => {
       window.removeEventListener('challenge_room_updated', handleLocalUpdate);
@@ -304,13 +292,28 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       return;
     }
 
-    const currentQ = activeRoom.questions[activeRoom.current_question_index];
+    const roomQuestions = (Array.isArray(activeRoom.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
+    const qIndex = typeof activeRoom.current_question_index === 'number' ? activeRoom.current_question_index : 0;
+    const currentQ = roomQuestions[qIndex];
     if (!currentQ) return;
 
-    // إعادة تهيئة حالة إجابة الطالب عند السؤال الجديد
-    setSelectedOptionIndex(null);
-    setHasAnswered(false);
-    setAnswerResult(null);
+    // فحص ما إذا كان الطالب قد أجاب بالفعل على هذا السؤال
+    const studentAlreadyAnswered = activeRoom.answers_received?.find(
+      (a: any) => a.playerId === currentUser.id && Number(a.questionIndex) === Number(qIndex)
+    );
+    if (studentAlreadyAnswered) {
+      setHasAnswered(true);
+      setSelectedOptionIndex(Number(studentAlreadyAnswered.optionIndex));
+      setAnswerResult({ isCorrect: studentAlreadyAnswered.isCorrect, points: studentAlreadyAnswered.points });
+    } else {
+      setSelectedOptionIndex(null);
+      setHasAnswered(false);
+      setAnswerResult(null);
+    }
 
     const timeLimit = currentQ.timeLimitSeconds || 20;
     const startTime = activeRoom.question_start_time || Date.now();
@@ -447,8 +450,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   // كشف الإجابة الصحيحة وشرح موسى
   const handleRevealAnswer = async () => {
     if (!activeRoom) return;
+    const roomQuestions = (Array.isArray(activeRoom.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
     const updated: ChallengeRoom = {
       ...activeRoom,
+      questions: roomQuestions,
       status: 'question_revealed'
     };
     const saved = await saveChallengeRoom(updated);
@@ -458,8 +467,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   // الانتقال للوحة الصدارة
   const handleShowLeaderboard = async () => {
     if (!activeRoom) return;
+    const roomQuestions = (Array.isArray(activeRoom.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
     const updated: ChallengeRoom = {
       ...activeRoom,
+      questions: roomQuestions,
       status: 'leaderboard'
     };
     const saved = await saveChallengeRoom(updated);
@@ -469,10 +484,16 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   // الانتقال للسؤال التالي أو إنهاء المسابقة
   const handleNextQuestion = async () => {
     if (!activeRoom) return;
-    const nextIndex = activeRoom.current_question_index + 1;
-    if (nextIndex < activeRoom.questions.length) {
+    const roomQuestions = (Array.isArray(activeRoom.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
+    const nextIndex = (typeof activeRoom.current_question_index === 'number' ? activeRoom.current_question_index : 0) + 1;
+    if (nextIndex < roomQuestions.length) {
       const updated: ChallengeRoom = {
         ...activeRoom,
+        questions: roomQuestions,
         status: 'question_active',
         current_question_index: nextIndex,
         question_start_time: Date.now()
@@ -483,6 +504,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       // نهاية التحدي والتتويج
       const updated: ChallengeRoom = {
         ...activeRoom,
+        questions: roomQuestions,
         status: 'finished'
       };
       const saved = await saveChallengeRoom(updated);
@@ -636,8 +658,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     if (!activeRoom || hasAnswered) return;
     if (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress') return;
 
-    const currentQ = activeRoom.questions?.[activeRoom.current_question_index];
-    const qId = currentQ?.id || `q_${activeRoom.current_question_index || 0}`;
+    const roomQuestions = (Array.isArray(activeRoom.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
+    const qIndex = typeof activeRoom.current_question_index === 'number' ? activeRoom.current_question_index : 0;
+    const currentQ = roomQuestions[qIndex];
+    const qId = currentQ?.id || `q_${qIndex}`;
 
     try {
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -654,7 +682,6 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     const timeTakenMs = Math.max(100, Date.now() - startTime);
 
     // حساب النقاط بناءً على الصحة والسرعة
-    // الحد الأقصى: 1000 نقطة للسؤال + بونص سرعة
     let points = 0;
     if (isCorrect) {
       const fractionRemaining = Math.max(0, (timeLimit * 1000 - timeTakenMs) / (timeLimit * 1000));
@@ -698,28 +725,44 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       }
     };
 
+    const answerRecord = {
+      playerId,
+      playerName: currentUser.name || playerNameInput || 'بطل التحدي',
+      questionIndex: qIndex,
+      optionIndex,
+      isCorrect,
+      points,
+      answeredAt: Date.now()
+    };
+
     const existingAnswers = Array.isArray(activeRoom.answers_received) ? [...activeRoom.answers_received] : [];
     const updatedAnswers = [
-      ...existingAnswers.filter((a: any) => !(a.playerId === playerId && a.questionIndex === activeRoom.current_question_index)),
-      {
-        playerId,
-        playerName: currentUser.name || playerNameInput || 'بطل التحدي',
-        questionIndex: activeRoom.current_question_index,
-        optionIndex,
-        isCorrect,
-        points,
-        answeredAt: Date.now()
-      }
+      ...existingAnswers.filter((a: any) => !(a.playerId === playerId && Number(a.questionIndex) === Number(qIndex))),
+      answerRecord
     ];
 
     const updatedRoom: ChallengeRoom = {
       ...activeRoom,
+      questions: roomQuestions,
       players: updatedPlayers,
       answers_received: updatedAnswers
     };
 
-    await saveChallengeRoom(updatedRoom);
     setActiveRoom(updatedRoom);
+
+    // إرسال الإجابة عبر طبقات المزامنة السحابية والمحلية وخادم الشبكة فوراً
+    await submitChallengeAnswerToCloudAndLocal(activeRoom.pin, answerRecord, {
+      score: newScore,
+      streak: newStreak,
+      lastAnswer: {
+        questionId: qId,
+        selectedIndex: optionIndex,
+        questionIndex: qIndex,
+        isCorrect,
+        pointsEarned: points,
+        answeredAt: Date.now()
+      } as any
+    });
   };
 
   // ================= توليد الأسئلة وإنشاء التحديات =================
@@ -818,27 +861,42 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const studentScore = currentPlayer?.score || 0;
 
   // إحصائيات إجابات السؤال الحالي
-  const currentQ = activeRoom?.questions[activeRoom.current_question_index];
+  const roomQuestions = (Array.isArray(activeRoom?.questions) && activeRoom.questions.length > 0)
+    ? activeRoom.questions
+    : ((Array.isArray(activeRoom?.settings?.questions) && activeRoom.settings.questions.length > 0)
+      ? activeRoom.settings.questions
+      : []);
+  const currentQIndex = typeof activeRoom?.current_question_index === 'number' ? activeRoom.current_question_index : 0;
+  const currentQ = roomQuestions[currentQIndex];
   const optionAnswerCounts = [0, 0, 0, 0];
   let totalAnswersCount = 0;
   if (activeRoom && currentQ) {
-    if (Array.isArray(activeRoom.answers_received) && activeRoom.answers_received.length > 0) {
+    const qIdx = Number(currentQIndex);
+    const countedPlayerIds = new Set<string>();
+
+    if (Array.isArray(activeRoom.answers_received)) {
       activeRoom.answers_received.forEach((ans: any) => {
-        if (ans.questionIndex === activeRoom.current_question_index) {
-          const idx = ans.optionIndex;
+        if (Number(ans.questionIndex) === qIdx) {
+          const idx = Number(ans.optionIndex);
           if (idx >= 0 && idx < 4) {
             optionAnswerCounts[idx]++;
             totalAnswersCount++;
+            if (ans.playerId) countedPlayerIds.add(String(ans.playerId));
           }
         }
       });
-    } else {
-      Object.values(activeRoom.players).forEach(p => {
-        if (p.lastAnswer && p.lastAnswer.questionId === currentQ.id) {
-          const idx = p.lastAnswer.selectedIndex;
-          if (idx >= 0 && idx < 4) {
-            optionAnswerCounts[idx]++;
-            totalAnswersCount++;
+    }
+
+    if (activeRoom.players) {
+      Object.values(activeRoom.players).forEach((p: any) => {
+        if (p?.id && !countedPlayerIds.has(String(p.id)) && p.lastAnswer) {
+          if (p.lastAnswer.questionId === currentQ.id || Number(p.lastAnswer.questionIndex) === qIdx) {
+            const idx = Number(p.lastAnswer.selectedIndex);
+            if (idx >= 0 && idx < 4) {
+              optionAnswerCounts[idx]++;
+              totalAnswersCount++;
+              countedPlayerIds.add(String(p.id));
+            }
           }
         }
       });
@@ -1747,16 +1805,27 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     </div>
 
                     {/* شريط التحكم السفلي للمعلم */}
-                    <div className="flex items-center justify-between pt-2">
-                      <span className="text-xs text-slate-500 font-medium">
-                        💡 تنبيه: الطلاب يجيبون الآن عبر هواتفهم/أجهزتهم بالأشكال التنافسية الأربعة.
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                      <span className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>💡 الطلاب يجيبون الآن عبر هواتفهم/أجهزتهم بالأشكال التنافسية الأربعة.</span>
                       </span>
-                      <button
-                        onClick={handleRevealAnswer}
-                        className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <span>كَشْفُ الإِجَابَةِ المعتمدة 💡</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRevealAnswer}
+                          className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span>كَشْفُ الإِجَابَةِ 💡</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleNextQuestion}
+                          className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-lg shadow-indigo-600/20 transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span>السُّؤَالُ التَّالِي ❯</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2022,7 +2091,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     {/* رأس مصغر: رقم السؤال والوقت المتبقي */}
                     <div className="flex items-center justify-between px-2">
                       <span className="text-xs font-black text-slate-300 bg-slate-800 px-3.5 py-1.5 rounded-full border border-slate-700">
-                        السُّؤَالُ {(activeRoom.current_question_index || 0) + 1} مِنْ {Math.max(1, activeRoom.questions?.length || 1)}
+                        السُّؤَالُ {(activeRoom.current_question_index || 0) + 1} مِنْ {Math.max(1, roomQuestions.length || activeRoom.questions?.length || 1)}
                       </span>
                       <div className={`px-3.5 py-1.5 rounded-full font-mono font-black text-xs flex items-center gap-1.5 border ${
                         timeLeft <= 5 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse' : 'bg-slate-800 text-amber-400 border-slate-700'
@@ -2032,13 +2101,25 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       </div>
                     </div>
 
+                    {/* نص السؤال بوضوح كامل وتشكيل للطالب */}
+                    {currentQ && (
+                      <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 sm:p-5 text-center shadow-lg">
+                        <span className="text-xs font-bold text-amber-400 block mb-1">
+                          سُؤَالُ الجَوْلَةِ {((activeRoom.current_question_index || 0) + 1)}:
+                        </span>
+                        <h3 className="text-xl sm:text-2xl font-black text-white leading-relaxed">
+                          {currentQ.text}
+                        </h3>
+                      </div>
+                    )}
+
                     {!hasAnswered ? (
                       /* أزرار الإجابة التنافسية الأربعة الكبيرة (🔺 أحمر، 🔷 أزرق، 🟡 أصفر، 🟩 أخضر) */
                       <div className="flex-1 flex flex-col justify-center space-y-3">
                         <div className="text-center mb-1">
                           <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5" />
-                            <span>اختر الشكل واللون المطابق لإجابتك بسرعة! ⚡</span>
+                            <span>اختر الإجابة الصحيحة بسرعة! ⚡</span>
                           </span>
                         </div>
 
@@ -2067,14 +2148,14 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                                     : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-700 text-white shadow-emerald-900/30'
                                 }`}
                               >
-                                <div className="text-5xl sm:text-6xl md:text-7xl mb-2 filter drop-shadow-md group-hover:scale-110 transition-transform duration-150">
+                                <div className="text-4xl sm:text-5xl md:text-6xl mb-1 filter drop-shadow-md group-hover:scale-105 transition-transform duration-150">
                                   {cfg.symbol}
                                 </div>
-                                <span className="text-base sm:text-lg font-black tracking-wide">
+                                <span className="text-xs sm:text-sm font-bold opacity-90 block mb-1">
                                   {cfg.name} ({cfg.colorName})
                                 </span>
                                 {opt.text && (
-                                  <span className="text-[11px] opacity-80 mt-1 font-bold line-clamp-1 px-2">
+                                  <span className="text-base sm:text-xl md:text-2xl font-black text-white block px-2 leading-snug">
                                     {opt.text}
                                   </span>
                                 )}

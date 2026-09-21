@@ -2506,16 +2506,38 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
     }).catch(() => {});
   }
 
-  // 4. المزامنة السحابية غير المعطلة مع Supabase باستخدام الأعمدة الأساسية لتفادي خطأ 400
+  // 4. المزامنة السحابية غير المعطلة مع Supabase مع دمج الإجابات واللاعبين لحمايتهم من المسح
   try {
-    const playersArray = Object.values(roomToSave.players || {});
-    const answersArray = Array.isArray(roomToSave.answers_received) ? roomToSave.answers_received : [];
+    let finalAnswers = Array.isArray(roomToSave.answers_received) ? [...roomToSave.answers_received] : [];
+    let mergedPlayers = normalizeRoomPlayers(roomToSave.players);
+
+    // التحقق من بيانات السحابة لدمج أي إجابات أو لاعبين مسجلين حديثاً
+    const { data: cloudData } = await supabase
+      .from('challenge_rooms')
+      .select('answers_received, players')
+      .eq('pin', roomToSave.pin)
+      .maybeSingle();
+
+    if (cloudData) {
+      const cloudAnswers = Array.isArray(cloudData.answers_received) ? cloudData.answers_received : [];
+      const ansMap = new Map<string, any>();
+      cloudAnswers.forEach((a: any) => {
+        if (a && a.playerId !== undefined) ansMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      });
+      finalAnswers.forEach((a: any) => {
+        if (a && a.playerId !== undefined) ansMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      });
+      finalAnswers = Array.from(ansMap.values());
+
+      const cloudPlayers = normalizeRoomPlayers(cloudData.players);
+      mergedPlayers = { ...cloudPlayers, ...mergedPlayers };
+    }
 
     const updatePayload: any = {
       status: roomToSave.status,
       current_question_index: roomToSave.current_question_index,
-      players: playersArray,
-      answers_received: answersArray,
+      players: Object.values(mergedPlayers),
+      answers_received: finalAnswers,
       settings: {
         ...(roomToSave.settings || {}),
         question_start_time: roomToSave.question_start_time,
@@ -2540,6 +2562,145 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
   }
 
   return roomToSave;
+};
+
+// وظيفة مخصصة وسريعة لتسجيل إجابة الطالب وتحديث رصيده دون المساس بحالة الغرفة
+export const submitChallengeAnswerToCloudAndLocal = async (
+  pin: string,
+  answer: {
+    playerId: string;
+    playerName: string;
+    questionIndex: number;
+    optionIndex: number;
+    isCorrect: boolean;
+    points: number;
+    answeredAt?: number;
+  },
+  playerUpdate: Partial<ChallengePlayer>
+): Promise<ChallengeRoom | null> => {
+  const cleanPin = (pin || '').trim();
+  if (!cleanPin) return null;
+
+  // 1. الإرسال السريع لخادم الشبكة المحلي
+  let localServerRoom: ChallengeRoom | null = null;
+  try {
+    const res = await fetch(`/api/challenge/rooms/${cleanPin}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(answer)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      localServerRoom = json.room;
+    }
+  } catch {}
+
+  // 2. التحديث في localStorage
+  const rooms = getChallengeRooms();
+  const roomIndex = rooms.findIndex(r => r.pin === cleanPin);
+  let updatedRoom: ChallengeRoom | null = null;
+
+  if (roomIndex >= 0) {
+    const room = rooms[roomIndex];
+    const existingAnswers = Array.isArray(room.answers_received) ? [...room.answers_received] : [];
+    const filteredAnswers = existingAnswers.filter(
+      (a: any) => !(a.playerId === answer.playerId && Number(a.questionIndex) === Number(answer.questionIndex))
+    );
+    const newAnswers = [...filteredAnswers, answer];
+
+    const players = normalizeRoomPlayers(room.players);
+    if (players[answer.playerId]) {
+      players[answer.playerId] = {
+        ...players[answer.playerId],
+        ...playerUpdate,
+        score: (players[answer.playerId].score || 0) + answer.points,
+        streak: answer.isCorrect ? ((players[answer.playerId].streak || 0) + 1) : 0,
+        lastAnswer: {
+          selectedIndex: answer.optionIndex,
+          questionIndex: answer.questionIndex,
+          isCorrect: answer.isCorrect,
+          pointsEarned: answer.points,
+          answeredAt: answer.answeredAt || Date.now()
+        } as any
+      };
+    }
+
+    updatedRoom = {
+      ...room,
+      players,
+      answers_received: newAnswers
+    };
+    rooms[roomIndex] = updatedRoom;
+    localStorage.setItem(CHALLENGE_ROOMS_KEY, JSON.stringify(rooms));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('challenge_room_updated', { detail: updatedRoom }));
+    }
+  }
+
+  // 3. البث الفوري عبر BroadcastChannel
+  try {
+    challengeBroadcastChannel?.postMessage({
+      type: 'ROOM_ANSWER',
+      pin: cleanPin,
+      answer,
+      room: updatedRoom || localServerRoom
+    });
+  } catch {}
+
+  // 4. المزامنة السحابية غير المعطلة مع Supabase - فقط إرسال answers_received و players
+  try {
+    const { data: cloudData } = await supabase
+      .from('challenge_rooms')
+      .select('answers_received, players')
+      .eq('pin', cleanPin)
+      .maybeSingle();
+
+    const cloudAnswers = Array.isArray(cloudData?.answers_received) ? [...cloudData.answers_received] : [];
+    const filteredCloudAnswers = cloudAnswers.filter(
+      (a: any) => !(a.playerId === answer.playerId && Number(a.questionIndex) === Number(answer.questionIndex))
+    );
+    const finalCloudAnswers = [...filteredCloudAnswers, answer];
+
+    const cloudPlayers = normalizeRoomPlayers(cloudData?.players);
+    const currentPlayer = cloudPlayers[answer.playerId] || {
+      id: answer.playerId,
+      name: answer.playerName,
+      score: 0,
+      streak: 0,
+      isOnline: true,
+      joinedAt: Date.now()
+    };
+
+    cloudPlayers[answer.playerId] = {
+      ...currentPlayer,
+      ...playerUpdate,
+      joinedAt: currentPlayer.joinedAt || Date.now(),
+      score: (currentPlayer.score || 0) + answer.points,
+      streak: answer.isCorrect ? ((currentPlayer.streak || 0) + 1) : 0,
+      lastAnswer: {
+        questionId: `q_${answer.questionIndex}`,
+        selectedIndex: answer.optionIndex,
+        questionIndex: answer.questionIndex,
+        isCorrect: answer.isCorrect,
+        timeTakenMs: 1000,
+        pointsEarned: answer.points,
+        answeredAt: answer.answeredAt || Date.now()
+      } as any
+    };
+
+    await supabase
+      .from('challenge_rooms')
+      .update({
+        answers_received: finalCloudAnswers,
+        players: Object.values(cloudPlayers)
+      })
+      .eq('pin', cleanPin);
+  } catch (e) {
+    console.warn('Supabase answer submit fallback note:', e);
+  }
+
+  return updatedRoom || localServerRoom;
 };
 
 export const syncChallengeRoomFromCloud = async (roomIdOrPin: string): Promise<ChallengeRoom | null> => {

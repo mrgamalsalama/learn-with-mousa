@@ -514,6 +514,7 @@ export type ChallengeRoomStatus =
 export interface ChallengePlayerAnswer {
   questionId: string;
   selectedIndex: number;
+  questionIndex?: number;
   isCorrect: boolean;
   timeTakenMs: number; // الزمن بالمللي ثانية لاحتساب سرعة النقر
   pointsEarned: number;

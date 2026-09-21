@@ -37,6 +37,20 @@ async function startServer() {
   // Local Room State Fallback (ذاكرة تخزين غرف التحدي المحلية لضمان اللعب عبر الشبكة دون انقطاع)
   const localChallengeRooms = new Map<string, any>();
 
+  // مساعد تطبيع اللاعبين
+  const normalizePlayers = (raw: any): Record<string, any> => {
+    if (!raw) return {};
+    if (Array.isArray(raw)) {
+      const map: Record<string, any> = {};
+      raw.forEach((p: any) => {
+        if (p && p.id) map[p.id] = p;
+      });
+      return map;
+    }
+    if (typeof raw === 'object') return raw;
+    return {};
+  };
+
   app.get('/api/challenge/rooms/:pin', (req, res) => {
     const pin = (req.params.pin || '').trim();
     const room = localChallengeRooms.get(pin);
@@ -52,8 +66,125 @@ async function startServer() {
       return res.status(400).json({ error: 'Room PIN is required' });
     }
     const cleanPin = String(room.pin).trim();
-    localChallengeRooms.set(cleanPin, { ...room, pin: cleanPin });
-    res.json({ status: 'ok', room });
+    const existing = localChallengeRooms.get(cleanPin);
+
+    if (!existing) {
+      localChallengeRooms.set(cleanPin, {
+        ...room,
+        pin: cleanPin,
+        players: normalizePlayers(room.players),
+        answers_received: Array.isArray(room.answers_received) ? room.answers_received : []
+      });
+      return res.json({ status: 'ok', room: localChallengeRooms.get(cleanPin) });
+    }
+
+    // دمج اللاعبين دون فقدان أي بطل منضم
+    const mergedPlayers = {
+      ...normalizePlayers(existing.players),
+      ...normalizePlayers(room.players)
+    };
+
+    // دمج الإجابات دون مسح إجابات الطلاب السابقة
+    const existingAnswers = Array.isArray(existing.answers_received) ? existing.answers_received : [];
+    const incomingAnswers = Array.isArray(room.answers_received) ? room.answers_received : [];
+    const answerMap = new Map<string, any>();
+    existingAnswers.forEach((a: any) => {
+      if (a && a.playerId !== undefined) {
+        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      }
+    });
+    incomingAnswers.forEach((a: any) => {
+      if (a && a.playerId !== undefined) {
+        answerMap.set(`${a.playerId}_${a.questionIndex}`, a);
+      }
+    });
+    const mergedAnswers = Array.from(answerMap.values());
+
+    const isHost = room.senderRole === 'host' || !room.senderRole;
+    const mergedRoom = {
+      ...existing,
+      ...room,
+      pin: cleanPin,
+      status: isHost ? (room.status || existing.status) : existing.status,
+      current_question_index: isHost && typeof room.current_question_index === 'number'
+        ? room.current_question_index
+        : existing.current_question_index,
+      question_start_time: isHost && room.question_start_time ? room.question_start_time : existing.question_start_time,
+      questions: (Array.isArray(room.questions) && room.questions.length > 0) ? room.questions : existing.questions,
+      players: mergedPlayers,
+      answers_received: mergedAnswers
+    };
+
+    localChallengeRooms.set(cleanPin, mergedRoom);
+    res.json({ status: 'ok', room: mergedRoom });
+  });
+
+  // نقطة وصول فائقة السرعة لتسجيل إجابة الطالب
+  app.post('/api/challenge/rooms/:pin/answer', (req, res) => {
+    const pin = (req.params.pin || '').trim();
+    const { playerId, playerName, questionIndex, optionIndex, isCorrect, points, answeredAt } = req.body || {};
+
+    if (!pin || playerId === undefined || questionIndex === undefined || optionIndex === undefined) {
+      return res.status(400).json({ error: 'Missing required answer data' });
+    }
+
+    let room = localChallengeRooms.get(pin);
+    if (!room) {
+      room = {
+        pin,
+        players: {},
+        answers_received: [],
+        current_question_index: Number(questionIndex)
+      };
+    }
+
+    const answers = Array.isArray(room.answers_received) ? [...room.answers_received] : [];
+    const existingIdx = answers.findIndex((a: any) => a.playerId === playerId && Number(a.questionIndex) === Number(questionIndex));
+    const newAnswerRecord = {
+      playerId,
+      playerName: playerName || 'بطل التحدي',
+      questionIndex: Number(questionIndex),
+      optionIndex: Number(optionIndex),
+      isCorrect: Boolean(isCorrect),
+      points: Number(points) || 0,
+      answeredAt: answeredAt || Date.now()
+    };
+
+    if (existingIdx >= 0) {
+      answers[existingIdx] = newAnswerRecord;
+    } else {
+      answers.push(newAnswerRecord);
+    }
+    room.answers_received = answers;
+
+    // تحديث نقاط وسلسلة اللاعب
+    const players = normalizePlayers(room.players);
+    const existingPlayer = players[playerId] || {
+      id: playerId,
+      name: playerName || 'بطل التحدي',
+      score: 0,
+      streak: 0,
+      isOnline: true
+    };
+
+    const newScore = (existingPlayer.score || 0) + (isCorrect ? (Number(points) || 0) : 0);
+    const newStreak = isCorrect ? ((existingPlayer.streak || 0) + 1) : 0;
+    players[playerId] = {
+      ...existingPlayer,
+      score: newScore,
+      streak: newStreak,
+      lastAnswer: {
+        selectedIndex: Number(optionIndex),
+        questionIndex: Number(questionIndex),
+        isCorrect: Boolean(isCorrect),
+        pointsEarned: Number(points) || 0,
+        answeredAt: Date.now()
+      }
+    };
+    room.players = players;
+
+    localChallengeRooms.set(pin, room);
+    res.json({ status: 'ok', room, answer: newAnswerRecord });
   });
 
   // Gemini API Proxy with intelligent fallback across modern models
