@@ -26,6 +26,124 @@ interface TeacherExamsHubProps {
   onExamsUpdated?: (exams: Exam[]) => void;
 }
 
+// تصنيفات المهارات اللغوية من رياض الأطفال حتى الصف الثاني عشر
+export interface SkillCategoryGroup {
+  category: string;
+  badge: string;
+  skills: string[];
+}
+
+export const ARABIC_SKILLS_CATEGORIES: SkillCategoryGroup[] = [
+  {
+    category: 'الوعي الصوتي والتأسيس الهجائي (الروضة والصفوف المبكرة)',
+    badge: '👶 تأسيس وصوتيات',
+    skills: [
+      'الوعي الصوتي ومخارج الحروف الهجائية وأصواتها',
+      'الحركات القصيرة (الفتح والضم والكسر) والمدود الطويلة (الألف والواو والياء)',
+      'التنوين بأنواعه (تنوين الفتح، تنوين الضم، تنوين الكسر)',
+      'التاء المربوطة والتاء المفتوحة والهاء في آخر الكلمة',
+      'اللام الشمسية واللام القمرية وتمييزها نطقاً ورسماً',
+      'الشدة والتضعيف وتحليل الكلمات إلى مقاطع صوتية',
+      'أسماء الإشارة والأسماء الموصولة والضمائر البسيطة'
+    ]
+  },
+  {
+    category: 'الرسم الإملائي والظواهر الكتابية (الابتدائي، المتوسط، الثانوي حتى الصف 12)',
+    badge: '✍️ إملاء ورسم كتابي',
+    skills: [
+      'همزتا الوصل والقطع في الأسماء والأفعال والحروف ومواضعهما',
+      'الهمزة المتوسطة (على الألف، الواو، الياء/النبرة، السطر)',
+      'الهمزة المتطرفة على الحرف والسطر وحالات تنوين النصب',
+      'الألف اللينة المتطرفة في الأفعال والأسماء والحروف (المقصورة والممدودة)',
+      'الحروف التي تُزاد والتي تُحذف رسمًا (واو عمرو، ألف التفريق، حذف ألف ما...)',
+      'علامات الترقيم ومواضع استعمالها وضبط الأعراف الكتابية'
+    ]
+  },
+  {
+    category: 'القواعد النحوية الأساسية (المرحلتان الابتدائية والمتوسطة)',
+    badge: '📚 نحو أساسي',
+    skills: [
+      'أقسام الكلمة (اسم، فعل، حرف) وعلامات التمييز والمذكر والمؤنث',
+      'الجملة الاسمية وركناها (المبتدأ والخبر وأنواعه)',
+      'الأفعال الناسخة (كان وأخواتها، كاد وأخواتها) وإعراب جملها',
+      'الحروف الناسخة (إنّ وأخواتها، لا النافية للجنس)',
+      'الجملة الفعلية (الفعل، الفاعل، نائب الفاعل)',
+      'المفاعيل الخمسة (المفعول به، المطلق، لأجله، فيه/الظرف، ومعه)',
+      'المنصوبات الأخرى (الحال، التمييز، المستثنى، المنادى)',
+      'المجرورات (المجرور بحرف الجر، المجرور بالإضافة)',
+      'التوابع الأربعة (النعت، العطف، التوكيد، البدل)',
+      'إعراب الفعل المضارع (الرفع، النصب، الجزم) والأفعال الخمسة',
+      'الأسماء الخمسة وعلامات الإعراب الأصلية والفرعية'
+    ]
+  },
+  {
+    category: 'القواعد النحوية والصرفية المتقدمة (المتوسط والثانوي حتى الصف 12)',
+    badge: '🎓 نحو وصرف متقدم (حتى الصف 12)',
+    skills: [
+      'الميزان الصرفي والمجرد والمزيد من الأفعال والأسماء',
+      'المشتقات العاملة وغير العاملة (اسم الفاعل، صيغ المبالغة، اسم المفعول)',
+      'الصفة المشبهة، اسم التفضيل وحالاته، اسما الزمان والمكان، اسم الآلة',
+      'المصادر بأنواعها (المصدر الصريح، الميمي، الصناعي، المؤول)',
+      'الممنوع من الصرف لعلة ولعلتين وإعرابه في التنكير والتعريف',
+      'أحكام العدد والمعدود (تذكيره وتأنيثه، إعرابه، وصياغة العدد على وزن فاعل)',
+      'أسلوب الشرط وأدواته الجازمة وغير الجازمة واقتران جوابه بالفاء',
+      'أسلوب الاستثناء بأدواته (إلا، غير، سوى، عدا، خلا، حاشا)',
+      'أسلوب النداء وأحكام المنادى المعرب والمبني والترخيم',
+      'أساليب النحو: التعجب القياسي والسماعي، أسلوبا المدح والذم',
+      'أساليب النحو: القسم وتوكيد الفعل بالنون وجوباً وجوازاً وامتناعاً',
+      'أساليب النحو: الاختصاص، الإغراء والتحذير، والتحذير بـ(إياك)',
+      'الجمل التي لها محل من الإعراب والتي لا محل لها من الإعراب',
+      'تصريف الأفعال المعتلة (المثال، الأجوف، الناقص، اللفيف) والإعلال والإبدال'
+    ]
+  },
+  {
+    category: 'البلاغة والنقد والأدب والتذوق (المرحلة الثانوية حتى الصف 12)',
+    badge: '🎭 بلاغة ونقد (حتى الصف 12)',
+    skills: [
+      'علم البيان: التشبيه (أركانه، أنواعه: المفرد، التمثيلي، الضمني، البليغ)',
+      'علم البيان: الاستعارة (المكنية، التصريحية، التمثيلية) وقيمتها الجمالية',
+      'علم البيان: الكناية (عن صفة، عن موصوف، عن نسبة) وسر بلاغتها',
+      'علم البديع: المحسنات اللفظية (الجناس، السجع، التصريع، حسن التقسيم)',
+      'علم البديع: المحسنات المعنوية (الطباق، المقابلة، التورية، مراعاة النظير)',
+      'علم المعاني: الأسلوب الخبري والأسلوب الإنشائي (الطلبي وغير الطلبي) وأغراضهما',
+      'علم المعاني: أساليب القصر وطرقه، الإيجاز والإطناب والمساواة',
+      'موسيقى الشعر وعلم العروض: بحور الشعر العربي، التفاعيل، القافية والروي',
+      'النقد الأدبي: المذاهب الأدبية والتحليل الفني والجمالي للنصوص الأدبية'
+    ]
+  },
+  {
+    category: 'الفهم والتحليل القرائي والاستيعاب اللغوي والمعاجم (جميع المراحل)',
+    badge: '📖 قراءة ومعاجم وتحليل',
+    skills: [
+      'الفهم المباشر واستخلاص الأفكار الرئيسة والفرعية والتفاصيل الداعمة',
+      'التحليل والاستنتاج واستنباط العلاقات بين الجمل (سبب، نتيجة، تعليل، تفصيل)',
+      'نقد المقروء والتمييز بين الحقيقة والرأي واكتشاف مغالطات النص',
+      'تحديد غرض الكاتب ونبرته والرسائل الصريحة والضمنية الموجهة',
+      'المعاجم العربية وطرق الكشف عن الألفاظ وترتيب الجذور (معاجم الأوائل والأواخر)'
+    ]
+  }
+];
+
+// أنواع الاختبارات والتقييمات التربوية
+export const EXAM_TYPES_CONFIG = [
+  { id: 'diagnostic', label: 'اختبار تشخيصي وتحديد مستوى', icon: '🩺', desc: 'لقياس المعرفة القبلية واكتشاف الفجوات ونقاط القوة والضعف' },
+  { id: 'formative', label: 'تقييم تكويني واختبار قصير (Quiz)', icon: '⚡', desc: 'لقياس الاستيعاب اللحظي للمهارة أثناء الحصة أو الوحدة' },
+  { id: 'periodic', label: 'اختبار شهري / دوري', icon: '📅', desc: 'تقييم منتصف الفصل الدراسي لقياس نواتج التعلم المتعددة' },
+  { id: 'final', label: 'اختبار نهائي شامل', icon: '🏆', desc: 'قياس تراكمي شامل لمخرجات المنهج ومستويات بلوم العليا' },
+  { id: 'remedial', label: 'تدريب علاجي وتثبيت مهارات', icon: '🩹', desc: 'معالجة المفاهيم الشائعة المغلوطة وتثبيت القواعد مع شروحات وافية' },
+  { id: 'enrichment', label: 'تحدي إثرائي للمتفوقين', icon: '🌟', desc: 'أسئلة تفكير عليا واستنباط لغوي ودقة بلاغية وتذوق أدبي' },
+  { id: 'standardized', label: 'اختبار معياري وتجريبي (قياس / وزاري)', icon: '📊', desc: 'محاكاة للاختبارات الوزارية والقدرات والقياس المعياري' },
+  { id: 'skill_drill', label: 'اختبار إتقان مهارة محددة', icon: '🎯', desc: 'تركيز مكثف وتطبيقي على مهارة لغوية معينة' },
+];
+
+export const getGradeLabel = (gradeId: string) => {
+  for (const stage of Object.values(STAGES_CONFIG)) {
+    const found = stage.grades.find((g) => g.id === gradeId);
+    if (found) return found.labelAr;
+  }
+  return gradeId;
+};
+
 export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
   teacherId,
   teacherName,
@@ -65,8 +183,12 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
   const [isSavingQuickSchedule, setIsSavingQuickSchedule] = useState<boolean>(false);
 
   // حالة التوليد الذكي بالـ AI
-  const [aiSkillTopic, setAiSkillTopic] = useState('القواعد والظواهر النحوية والإملاء');
+  const [aiExamType, setAiExamType] = useState<string>('formative');
+  const [aiSkillTopic, setAiSkillTopic] = useState('همزتا الوصل والقطع في الأسماء والأفعال والحروف ومواضعهما');
+  const [customSkillTopic, setCustomSkillTopic] = useState('');
   const [aiQuestionCount, setAiQuestionCount] = useState<number>(5);
+  const [isCustomCountMode, setIsCustomCountMode] = useState<boolean>(false);
+  const [customQuestionCount, setCustomQuestionCount] = useState<number>(10);
   const [aiDifficulty, setAiDifficulty] = useState<string>('متوسط');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
@@ -246,15 +368,33 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
 
   // توليد الأسئلة بالذكاء الاصطناعي
   const handleGenerateAIQuestions = async () => {
+    const finalSkillTopic = aiSkillTopic === 'custom' ? customSkillTopic.trim() : aiSkillTopic;
+    if (!finalSkillTopic) {
+      alert('يرجى تحديد أو كتابة المهارة اللغوية المستهدفة أولاً');
+      return;
+    }
+
+    const finalQuestionCount = isCustomCountMode 
+      ? Math.min(50, Math.max(1, Number(customQuestionCount) || 5))
+      : Math.min(50, Math.max(1, Number(aiQuestionCount) || 5));
+
     setIsGeneratingAI(true);
     try {
       const generated = await generateAIExamQuestions({
         targetGrade,
-        skillTopic: aiSkillTopic,
-        questionCount: aiQuestionCount,
-        difficulty: aiDifficulty
+        skillTopic: finalSkillTopic,
+        questionCount: finalQuestionCount,
+        difficulty: aiDifficulty,
+        examType: aiExamType
       });
       setQuestions([...questions, ...generated]);
+
+      // اقتراح عنوان تلقائي إذا كان حقل العنوان فارغاً
+      if (!examTitle.trim()) {
+        const typeObj = EXAM_TYPES_CONFIG.find(t => t.id === aiExamType);
+        const typeLabel = typeObj ? typeObj.label : 'تقييم لغوي';
+        setExamTitle(`${typeLabel}: ${finalSkillTopic}`);
+      }
     } catch (e: any) {
       alert(`حدث خطأ أثناء التوليد بالذكاء الاصطناعي: ${e?.message || 'يرجى المحاولة مجدداً'}`);
     } finally {
@@ -579,12 +719,21 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
               <select
                 value={gradeFilter}
                 onChange={e => setGradeFilter(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-medium focus:outline-hidden"
+                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-bold focus:outline-hidden"
               >
-                <option value="all">جميع الصفوف</option>
-                {allowedGrades.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
+                <option value="all">جميع المراحل والصفوف (حتى الصف 12)</option>
+                {Object.entries(STAGES_CONFIG).map(([stageKey, stage]) => {
+                  const icon = stageKey === 'kg' ? '👶' : stageKey === 'primary' ? '🎒' : stageKey === 'middle' ? '📘' : '🎓';
+                  return (
+                    <optgroup key={stageKey} label={`${icon} ${stage.nameAr}`}>
+                      {stage.grades.map(g => (
+                        <option key={g.id} value={g.id}>
+                          {g.labelAr}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -627,7 +776,7 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                         <div className="flex-1">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100">
-                              {exam.target_grade}
+                              {getGradeLabel(exam.target_grade)}
                             </span>
                             <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
                               exam.is_active 
@@ -842,77 +991,223 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
 
           {/* لوحة التوليد بالذكاء الاصطناعي (عند اختيارها) */}
           {createMethod === 'ai' && (
-            <div className="bg-gradient-to-br from-amber-50/80 via-white to-emerald-50/60 rounded-3xl p-6 border border-amber-200 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 text-amber-800">
-                <Sparkles className="w-5 h-5 text-amber-600" />
-                <h4 className="text-sm font-black">توليد حزمة أسئلة مشكولة بالذكاء الاصطناعي (Gemini AI Generator)</h4>
+            <div className="bg-gradient-to-br from-amber-50/90 via-white to-emerald-50/70 rounded-3xl p-6 border border-amber-200 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+                <div className="flex items-center gap-2.5 text-amber-900">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 flex items-center justify-center font-bold">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black">مولّد بنوك الأسئلة الذكية المشكولة (Gemini AI Generator)</h4>
+                    <p className="text-[11px] text-amber-700/80 font-medium">تغطية تخصصية للمهارات من رياض الأطفال حتى الصف 12 مع ضبط تام بالحركات والتغذية الراجعة</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-100/80 text-amber-800 border border-amber-300/60">
+                    حتى 50 سؤالاً
+                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100/80 text-emerald-800 border border-emerald-300/60">
+                    تشكيل تام 100%
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* شبكة خيارات التوليد */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 1. نوع الاختبار المستهدف */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">المهارة اللغوية المستهدفة:</label>
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1.5">
+                    <span>نوع التقييم أو الاختبار:</span>
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 font-black px-1.5 py-0.5 rounded-md border border-indigo-200">جديد</span>
+                  </label>
+                  <select
+                    value={aiExamType}
+                    onChange={e => setAiExamType(e.target.value)}
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500 shadow-2xs"
+                  >
+                    {EXAM_TYPES_CONFIG.map(type => (
+                      <option key={type.id} value={type.id}>
+                        {type.icon} {type.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    {EXAM_TYPES_CONFIG.find(t => t.id === aiExamType)?.desc}
+                  </p>
+                </div>
+
+                {/* 2. المهارة اللغوية المستهدفة */}
+                <div className="lg:col-span-2">
+                  <label className="text-xs font-bold text-slate-800 flex items-center justify-between mb-1.5">
+                    <span>المهارة اللغوية المستهدفة (تدرج شامل حتى الصف الثاني عشر):</span>
+                    {aiSkillTopic === 'custom' && (
+                      <span className="text-[10px] text-amber-700 font-black bg-amber-100 px-2 py-0.5 rounded-md">كتابة يدوية مخصصة</span>
+                    )}
+                  </label>
                   <select
                     value={aiSkillTopic}
                     onChange={e => setAiSkillTopic(e.target.value)}
-                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-hidden focus:border-emerald-500"
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500 shadow-2xs"
                   >
-                    <option value="الوعي الصوتي والحروف الهجائية">الوعي الصوتي والحروف الهجائية 🔤</option>
-                    <option value="الحركات القصيرة والمدود الطويلة">الحركات القصيرة والمدود الطويلة 🎵</option>
-                    <option value="التنوين بأنواعه (فتح، ضم، كسر)">التنوين بأنواعه (فتح، ضم، كسر) ✍️</option>
-                    <option value="التاء المربوطة والمفتوحة والهاء">التاء المربوطة والمفتوحة والهاء ⚖️</option>
-                    <option value="اللام الشمسية واللام القمرية">اللام الشمسية واللام القمرية ☀️🌙</option>
-                    <option value="القواعد والظواهر النحوية والإملاء">القواعد والظواهر النحوية والإملاء 📚</option>
-                    <option value="الفهم والاستيعاب القرائي">الفهم والاستيعاب القرائي 📖</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">عدد الأسئلة المطلوبة:</label>
-                  <select
-                    value={aiQuestionCount}
-                    onChange={e => setAiQuestionCount(Number(e.target.value))}
-                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-hidden focus:border-emerald-500"
-                  >
-                    <option value={3}>3 أسئلة سريعة</option>
-                    <option value={5}>5 أسئلة متوازنة (موصى بها)</option>
-                    <option value={8}>8 أسئلة شاملة</option>
-                    <option value={10}>10 أسئلة تقييم كامل</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">مستوى الصعوبة والتدرج:</label>
-                  <select
-                    value={aiDifficulty}
-                    onChange={e => setAiDifficulty(e.target.value)}
-                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-hidden focus:border-emerald-500"
-                  >
-                    <option value="ميسر للمبتدئين">ميسر للمبتدئين (فهم مباشر)</option>
-                    <option value="متوسط">متوسط وتفاعلي</option>
-                    <option value="متقدم وتحدي لغوي">متقدم وتحدي لغوي (استنتاج وتطبيق)</option>
+                    {ARABIC_SKILLS_CATEGORIES.map(group => (
+                      <optgroup key={group.category} label={`${group.badge} — ${group.category}`}>
+                        {group.skills.map(sk => (
+                          <option key={sk} value={sk}>
+                            {sk}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <optgroup label="✍️ تخصيص كامل (مهارة غير موجودة بالقائمة)">
+                      <option value="custom">✍️ مهارة أخرى مخصصة (أريد كتابة المهارة يدوياً)...</option>
+                    </optgroup>
                   </select>
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={handleGenerateAIQuestions}
-                  disabled={isGeneratingAI}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 text-white font-black text-xs hover:from-amber-600 hover:to-emerald-700 transition flex items-center gap-2 shadow-md shadow-amber-500/20 disabled:opacity-50"
-                >
-                  {isGeneratingAI ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      جاري صياغة وتشكيل الأسئلة بالـ AI...
-                    </>
+              {/* حقل إدخال المهارة المخصصة يدوياً إذا اختار المعلم مهارة أخرى */}
+              {aiSkillTopic === 'custom' && (
+                <div className="bg-amber-50/80 border border-amber-300 rounded-2xl p-3.5 space-y-1.5 animate-fadeIn">
+                  <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                    اكتب المهارة اللغوية المطلوبة بدقة (يقبل أي مهارة من أي منهج دراسي حتى الصف 12):
+                  </label>
+                  <input
+                    type="text"
+                    value={customSkillTopic}
+                    onChange={e => setCustomSkillTopic(e.target.value)}
+                    placeholder="مثال: التمييز بين الحال وصاحب الحال، أو أسلوب القصر بالنفي والاستثناء، أو بلاغة الاستعارة التصريحية..."
+                    className="w-full text-xs bg-white border border-amber-200 rounded-xl p-2.5 font-bold text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:border-amber-500 shadow-2xs"
+                    autoFocus
+                  />
+                  <p className="text-[10.5px] text-amber-700">
+                    💡 سيقوم الذكاء الاصطناعي ببناء أسئلة تراعي بدقة هذه المهارة وتناسب الصف المختار ({getGradeLabel(targetGrade)}).
+                  </p>
+                </div>
+              )}
+
+              {/* الصف الثاني: عدد الأسئلة والصعوبة والتحكم */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+                {/* عدد الأسئلة المطلوبة (حتى 50) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-800">عدد الأسئلة المطلوبة:</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomCountMode(!isCustomCountMode)}
+                      className="text-[11px] text-emerald-700 hover:text-emerald-800 font-bold underline"
+                    >
+                      {isCustomCountMode ? 'العودة للقوائم السريعة' : 'إدخال رقم مخصص (1-50)'}
+                    </button>
+                  </div>
+
+                  {!isCustomCountMode ? (
+                    <select
+                      value={aiQuestionCount}
+                      onChange={e => {
+                        if (e.target.value === 'custom') {
+                          setIsCustomCountMode(true);
+                        } else {
+                          setAiQuestionCount(Number(e.target.value));
+                        }
+                      }}
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500 shadow-2xs"
+                    >
+                      <option value={3}>3 أسئلة سريعة (كويز صفي)</option>
+                      <option value={5}>5 أسئلة متوازنة (موصى بها)</option>
+                      <option value={8}>8 أسئلة شاملة</option>
+                      <option value={10}>10 أسئلة تقييم شامل</option>
+                      <option value={15}>15 سؤالاً (اختبار وحدة)</option>
+                      <option value={20}>20 سؤالاً (اختبار معياري)</option>
+                      <option value={25}>25 سؤالاً (اختبار فصلي)</option>
+                      <option value={30}>30 سؤالاً (اختبار شامل)</option>
+                      <option value={40}>40 سؤالاً (بنك تقييم مكثف)</option>
+                      <option value={50}>50 سؤالاً (أقصى سعة توليد)</option>
+                      <option value="custom">🔢 تحديد رقم مخصص يدوياً...</option>
+                    </select>
                   ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      توليد الأسئلة وإضافتها للاختبار ✨
-                    </>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={customQuestionCount}
+                        onChange={e => {
+                          const val = parseInt(e.target.value) || 1;
+                          setCustomQuestionCount(Math.min(50, Math.max(1, val)));
+                        }}
+                        className="w-24 text-xs bg-white border border-emerald-300 rounded-xl p-2.5 font-black text-center text-emerald-900 focus:outline-hidden focus:border-emerald-500"
+                      />
+                      <span className="text-xs font-bold text-slate-600">سؤالاً (متاح حتى 50)</span>
+                    </div>
                   )}
-                </button>
+
+                  {/* شريط الأزرار السريعة لأرقام الأسئلة الشائعة */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                    <span className="text-[10px] text-slate-400 font-bold">خيارات سريعة:</span>
+                    {[3, 5, 10, 15, 20, 30, 50].map(cnt => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => {
+                          setIsCustomCountMode(false);
+                          setAiQuestionCount(cnt);
+                          setCustomQuestionCount(cnt);
+                        }}
+                        className={`text-[10px] font-black px-2 py-0.5 rounded-lg border transition ${
+                          (!isCustomCountMode && aiQuestionCount === cnt) || (isCustomCountMode && customQuestionCount === cnt)
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {cnt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* مستوى الصعوبة */}
+                <div>
+                  <label className="text-xs font-bold text-slate-800 block mb-1.5">مستوى الصعوبة والتدرج:</label>
+                  <select
+                    value={aiDifficulty}
+                    onChange={e => setAiDifficulty(e.target.value)}
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500 shadow-2xs"
+                  >
+                    <option value="ميسر للمبتدئين">ميسر للمبتدئين (فهم مباشر واستذكار)</option>
+                    <option value="متوسط">متوسط وتفاعلي (تطبيق واستيعاب)</option>
+                    <option value="متقدم وتحدي لغوي">متقدم وتحدي لغوي (تحليل واستنباط ونقد)</option>
+                    <option value="متدرج تصاعدياً">متدرج تصاعدياً (من الميسر إلى التحدي)</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    الصف المستهدف الحالي: <span className="font-bold text-emerald-800">{getGradeLabel(targetGrade)}</span>
+                  </p>
+                </div>
+
+                {/* زر التوليد والإضافة */}
+                <div className="flex flex-col justify-end">
+                  <button
+                    type="button"
+                    onClick={handleGenerateAIQuestions}
+                    disabled={isGeneratingAI}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 text-white font-black text-xs hover:from-amber-600 hover:to-emerald-700 transition flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50 active:scale-[0.99]"
+                  >
+                    {isGeneratingAI ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        جاري صياغة وتشكيل حزمة الأسئلة بالذكاء الاصطناعي...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        توليد {isCustomCountMode ? customQuestionCount : aiQuestionCount} سؤالاً وإضافتها للاختبار ✨
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-center text-slate-400 mt-1.5">
+                    الأسئلة تولد بنصوص مشكولة وخيارات مصحوبة بتغذية راجعة فورية
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -978,11 +1273,20 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
                 <select
                   value={targetGrade}
                   onChange={e => setTargetGrade(e.target.value as GradeLevel)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-hidden focus:border-emerald-500"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
                 >
-                  {allowedGrades.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
+                  {Object.entries(STAGES_CONFIG).map(([stageKey, stage]) => {
+                    const icon = stageKey === 'kg' ? '👶' : stageKey === 'primary' ? '🎒' : stageKey === 'middle' ? '📘' : '🎓';
+                    return (
+                      <optgroup key={stageKey} label={`${icon} ${stage.nameAr}`}>
+                        {stage.grades.map(g => (
+                          <option key={g.id} value={g.id}>
+                            {g.labelAr}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </select>
               </div>
 
