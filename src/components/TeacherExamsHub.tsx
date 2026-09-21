@@ -291,14 +291,18 @@ export const TeacherExamsHub: React.FC<TeacherExamsHubProps> = ({
   const handleToggleExamActive = async (exam: Exam) => {
     const updated = { ...exam, is_active: !exam.is_active };
     await saveExam(updated);
-    setExams(getExams());
+    const fresh = getExams();
+    setExams(fresh);
+    onExamsUpdated?.(fresh);
   };
 
   // حذف اختبار
   const handleDeleteExam = async (examId: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا الاختبار نهائياً؟ سيتم حذف جميع جلسات الطلاب المرتبطة به.')) {
       await deleteExam(examId);
-      setExams(getExams());
+      const fresh = getExams();
+      setExams(fresh);
+      onExamsUpdated?.(fresh);
       setSessions(getExamSessions());
       if (selectedExamForProctoring === examId) {
         setSelectedExamForProctoring(null);

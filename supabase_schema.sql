@@ -118,7 +118,14 @@ CREATE TABLE IF NOT EXISTS public.exams (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- تحديثات الأعمدة في حال كان الجدول منشأ مسبقاً
+-- تحديثات الأعمدة في حال كان الجدول منشأ مسبقاً بنقص في الأعمدة
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS teacher_name TEXT;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS target_track TEXT DEFAULT 'arabic-a';
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS show_results_immediately BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS questions JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_start TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_end TIMESTAMP WITH TIME ZONE;

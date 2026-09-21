@@ -7,7 +7,7 @@ import {
   Bot, Palette, Brain, Printer, MessageCircle, Star,
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
-  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin
+  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -3686,7 +3686,8 @@ export default function App() {
     );
 
     const studentAvailableExams = examsList.filter(
-      (e) => e.is_active && (!e.target_grade || e.target_grade === currentUser.grade)
+      (e) => (e.is_active !== false && (e.is_active as any) !== 'false') && 
+        (!e.target_grade || (e.target_grade as string) === 'all' || !currentUser.grade || e.target_grade === currentUser.grade)
     );
 
     return (
@@ -3742,7 +3743,11 @@ export default function App() {
               <FileText className="w-4 h-4" /> الأنشطة والواجبات ({studentWorksheets.length})
             </button>
             <button
-              onClick={() => setStudentTab('exams')}
+              onClick={() => {
+                setStudentTab('exams');
+                syncExamsFromCloud().then(e => setExamsList(e));
+                syncExamSessionsFromCloud().then(s => setExamSessionsList(s));
+              }}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                 studentTab === 'exams' 
                   ? 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 text-white shadow-md shadow-teal-600/20' 
@@ -4520,6 +4525,17 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      syncExamsFromCloud().then(e => setExamsList(e));
+                      syncExamSessionsFromCloud().then(s => setExamSessionsList(s));
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-teal-50 text-teal-700 text-xs font-bold rounded-xl border border-teal-200 flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    title="تحديث قائمة الاختبارات سحابياً"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> تحديث الاختبارات
+                  </button>
                   <span className="px-3 py-1.5 bg-teal-50 text-teal-800 text-xs font-bold rounded-xl border border-teal-200">
                     {studentAvailableExams.length} اختبار متاح
                   </span>
@@ -4532,9 +4548,19 @@ export default function App() {
                     <FileCheck2 className="w-7 h-7" />
                   </div>
                   <h4 className="font-bold text-slate-800 text-base mb-1">لا توجد اختبارات أو تقييمات حالياً</h4>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    رائع! لقد أنجزت جميع متطلباتك أو لم يقم معلمك بجدولة اختبار جديد حتى اللحظة.
+                  <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
+                    رائع! لقد أنجزت جميع متطلباتك أو لم يقم معلمك بنشر اختبار جديد لصفك حتى اللحظة.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      syncExamsFromCloud().then(e => setExamsList(e));
+                      syncExamSessionsFromCloud().then(s => setExamSessionsList(s));
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> التحقق من وجود اختبارات جديدة الآن
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

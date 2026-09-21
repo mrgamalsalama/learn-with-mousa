@@ -1465,10 +1465,17 @@ export const getExams = (): Exam[] => {
  */
 export const syncExamsFromCloud = async (): Promise<Exam[]> => {
   try {
-    const { data, error } = await supabase
+    let res = await supabase
       .from('exams')
       .select('*')
       .order('created_at', { ascending: false });
+
+    // في حال تعذر الترتيب بسبب عدم وجود عمود created_at، تتم المحاولة بدون ترتيب
+    if (res.error) {
+      res = await supabase.from('exams').select('*');
+    }
+
+    const { data, error } = res;
 
     if (!error && Array.isArray(data) && data.length > 0) {
       const cloudExams: Exam[] = data.map((e: any) => ({
@@ -1491,9 +1498,11 @@ export const syncExamsFromCloud = async (): Promise<Exam[]> => {
         scheduled_end: e.scheduled_end || null
       }));
 
-      // دمج الاختبارات التأسيسية
+      // دمج الاختبارات: التأسيسية أولاً، ثم المحلية الموجودة، ثم السحابية (السحابية تسبق وتحدث البيانات)
+      const currentLocal = getExams();
       const map = new Map<string, Exam>();
       for (const init of INITIAL_EXAMS) map.set(init.id, init);
+      for (const loc of currentLocal) map.set(loc.id, loc);
       for (const ce of cloudExams) map.set(ce.id, ce);
 
       const merged = Array.from(map.values());
@@ -1507,7 +1516,7 @@ export const syncExamsFromCloud = async (): Promise<Exam[]> => {
 };
 
 /**
- * حفظ أو تحديث اختبار محلياً وسحابياً في Supabase
+ * حفظ أو تحديث اختبار محلياً وسحابياً في Supabase مع تكيف تلقائي للأعمدة المفقودة
  */
 export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }> => {
   const current = getExams();
@@ -1520,7 +1529,7 @@ export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }>
   localStorage.setItem(EXAMS_KEY, JSON.stringify(current));
 
   try {
-    const { error } = await supabase.from('exams').upsert({
+    const payload: Record<string, any> = {
       id: exam.id,
       title: exam.title,
       teacher_id: exam.teacher_id,
@@ -1536,11 +1545,42 @@ export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }>
       is_scheduled: exam.is_scheduled === true,
       scheduled_start: exam.scheduled_start || null,
       scheduled_end: exam.scheduled_end || null
-    });
+    };
 
-    if (error) {
-      console.warn('ملاحظة في حفظ الاختبار سحابياً:', error.message);
-      return { exam, error };
+    let lastError: any = null;
+    let success = false;
+
+    // حلقة محاولات متكيفة: إذا كان جدول exams في سوبابيز يفتقد أي عمود اختياري (مثل description أو is_scheduled)
+    // نقوم باستبعاد العمود المفقود تلقائياً وإعادة الحفظ حتى ينجح تخزين الاختبار وظهوره للطلاب
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { error } = await supabase.from('exams').upsert(payload);
+      if (!error) {
+        success = true;
+        lastError = null;
+        break;
+      }
+
+      lastError = error;
+      const message = error.message || '';
+
+      // استخراج اسم العمود المفقود في سوبابيز
+      // مثال PostgREST: Could not find the 'description' column of 'exams' in the schema cache
+      // مثال Postgres: column "description" of relation "exams" does not exist
+      const match = message.match(/Could not find the '([^']+)' column/i) ||
+                    message.match(/column "([^"]+)" of relation "exams" does not exist/i);
+
+      if (match && match[1] && match[1] in payload) {
+        const missingCol = match[1];
+        console.warn(`العمود (${missingCol}) غير موجود في جدول exams بسوبابيز، جاري إعادة المحاولة بدونه تلقائياً...`);
+        delete payload[missingCol];
+      } else {
+        console.warn('ملاحظة في حفظ الاختبار سحابياً:', message);
+        break;
+      }
+    }
+
+    if (!success && lastError) {
+      return { exam, error: lastError };
     }
     return { exam };
   } catch (err) {
@@ -1644,7 +1684,7 @@ export const saveExamSession = async (session: ExamSession): Promise<{ session: 
   localStorage.setItem(EXAM_SESSIONS_KEY, JSON.stringify(all));
 
   try {
-    const { error } = await supabase.from('exam_sessions').upsert({
+    const payload: Record<string, any> = {
       id: session.id,
       exam_id: session.exam_id,
       student_id: session.student_id,
@@ -1656,11 +1696,35 @@ export const saveExamSession = async (session: ExamSession): Promise<{ session: 
       total_marks: session.total_marks,
       answers: session.answers,
       tab_switch_count: session.tab_switch_count
-    });
+    };
 
-    if (error) {
-      console.warn('ملاحظة في حفظ جلسة الاختبار سحابياً:', error.message);
-      return { session, error };
+    let lastError: any = null;
+    let saved = false;
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error } = await supabase.from('exam_sessions').upsert(payload);
+      if (!error) {
+        saved = true;
+        lastError = null;
+        break;
+      }
+
+      lastError = error;
+      const message = error.message || '';
+      const match = message.match(/Could not find the '([^']+)' column/i) ||
+                    message.match(/column "([^"]+)" of relation "exam_sessions" does not exist/i);
+
+      if (match && match[1] && match[1] in payload) {
+        console.warn(`العمود (${match[1]}) غير موجود في جدول exam_sessions بسوبابيز، جاري الاستبعاد وإعادة المحاولة...`);
+        delete payload[match[1]];
+      } else {
+        break;
+      }
+    }
+
+    if (!saved && lastError) {
+      console.warn('ملاحظة في حفظ جلسة الاختبار سحابياً:', lastError.message);
+      return { session, error: lastError };
     }
     return { session };
   } catch (err) {
