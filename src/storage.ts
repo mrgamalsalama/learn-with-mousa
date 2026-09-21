@@ -2436,9 +2436,26 @@ export const getChallengeRooms = (): ChallengeRoom[] => {
   }
 };
 
+export const normalizeRoomPlayers = (rawPlayers: any): Record<string, ChallengePlayer> => {
+  if (!rawPlayers) return {};
+  if (Array.isArray(rawPlayers)) {
+    const map: Record<string, ChallengePlayer> = {};
+    rawPlayers.forEach((p: any) => {
+      if (p && typeof p === 'object' && p.id) {
+        map[p.id] = p;
+      }
+    });
+    return map;
+  }
+  if (typeof rawPlayers === 'object') {
+    return rawPlayers as Record<string, ChallengePlayer>;
+  }
+  return {};
+};
+
 export const getChallengeRoomByPin = (pin: string): ChallengeRoom | null => {
   const rooms = getChallengeRooms();
-  return rooms.find(r => r.pin === pin) || null;
+  return rooms.find(r => r.pin === pin.trim()) || null;
 };
 
 export const getChallengeRoomById = (roomId: string): ChallengeRoom | null => {
@@ -2446,12 +2463,21 @@ export const getChallengeRoomById = (roomId: string): ChallengeRoom | null => {
   return rooms.find(r => r.id === roomId) || null;
 };
 
+// قناة البث المحلي التفاعلية عبر التبويبات المتعددة
+const challengeBroadcastChannel = typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined'
+  ? new BroadcastChannel('mousa_challenge_sync')
+  : null;
+
 export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeRoom> => {
   const rooms = getChallengeRooms();
-  const index = rooms.findIndex(r => r.id === room.id);
+  const index = rooms.findIndex(r => r.id === room.id || r.pin === room.pin);
   let updated: ChallengeRoom[];
   const now = new Date().toISOString();
-  const roomToSave = { ...room, updated_at: now };
+  const roomToSave: ChallengeRoom = {
+    ...room,
+    players: normalizeRoomPlayers(room.players),
+    updated_at: now
+  };
 
   if (index >= 0) {
     updated = [...rooms];
@@ -2461,73 +2487,118 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
   }
   localStorage.setItem(CHALLENGE_ROOMS_KEY, JSON.stringify(updated));
 
-  // بث التحديث محلياً عبر CustomEvent للمتصفحات/النوافذ في نفس السياق
+  // 1. بث التحديث محلياً عبر CustomEvent للمتصفح الحالي
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('challenge_room_updated', { detail: roomToSave }));
   }
 
-  // المزامنة السحابية مع Supabase وبث الحدث
+  // 2. بث التحديث عبر BroadcastChannel لجميع التبويبات المفتوحة في نفس المتصفح
   try {
-    await supabase.from('challenge_rooms').upsert({
-      id: roomToSave.id,
-      pin: roomToSave.pin,
-      quiz_id: roomToSave.quiz_id,
-      quiz_title: roomToSave.quiz_title,
-      host_id: roomToSave.host_id,
-      host_name: roomToSave.host_name,
-      target_grade: roomToSave.target_grade,
+    challengeBroadcastChannel?.postMessage({ type: 'ROOM_UPDATE', room: roomToSave });
+  } catch {}
+
+  // 3. مزامنة الغرفة مع خادم الشبكة المحلي (Local Network Server Fallback)
+  if (typeof window !== 'undefined') {
+    fetch('/api/challenge/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(roomToSave)
+    }).catch(() => {});
+  }
+
+  // 4. المزامنة السحابية غير المعطلة مع Supabase باستخدام الأعمدة الأساسية لتفادي خطأ 400
+  try {
+    const playersArray = Object.values(roomToSave.players || {});
+    const answersArray = Array.isArray(roomToSave.answers_received) ? roomToSave.answers_received : [];
+
+    const updatePayload: any = {
       status: roomToSave.status,
       current_question_index: roomToSave.current_question_index,
-      questions: roomToSave.questions,
-      players: roomToSave.players,
-      question_start_time: roomToSave.question_start_time || null,
-      created_at: roomToSave.created_at,
-      updated_at: roomToSave.updated_at
-    });
+      players: playersArray,
+      answers_received: answersArray
+    };
+
+    if (roomToSave.question_start_time) {
+      updatePayload.question_start_time = roomToSave.question_start_time;
+    }
+
+    const { error: updateError } = await supabase
+      .from('challenge_rooms')
+      .update(updatePayload)
+      .eq('pin', roomToSave.pin);
+
+    if (updateError) {
+      console.warn('Supabase challenge room update note (local fallback active):', updateError.message);
+    }
   } catch (e) {
-    console.warn('تعذر تحديث غرفة التحدي سحابياً (سيستمر محلياً):', e);
+    console.warn('تعذر تحديث غرفة التحدي سحابياً (سيستمر اللعب محلياً دون انقطاع):', e);
   }
 
   return roomToSave;
 };
 
 export const syncChallengeRoomFromCloud = async (roomIdOrPin: string): Promise<ChallengeRoom | null> => {
+  const clean = (roomIdOrPin || '').trim();
   try {
     let query = supabase.from('challenge_rooms').select('*');
-    if (roomIdOrPin.length === 6 && /^\d+$/.test(roomIdOrPin)) {
-      query = query.eq('pin', roomIdOrPin);
+    if (clean.length === 6 && /^\d+$/.test(clean)) {
+      query = query.eq('pin', clean);
     } else {
-      query = query.eq('id', roomIdOrPin);
+      query = query.eq('id', clean);
     }
     const { data, error } = await query.maybeSingle();
 
     if (!error && data) {
+      const localMatch = getChallengeRoomByPin(data.pin);
+      const quizzes = getChallengeQuizzes();
+      const quizMatch = quizzes.find(q => q.id === data.quiz_id || q.title === data.quiz_title);
+      const roomQuestions = (Array.isArray(data.questions) && data.questions.length > 0)
+        ? data.questions
+        : (localMatch?.questions || quizMatch?.questions || []);
+
       const formatted: ChallengeRoom = {
-        id: data.id,
+        id: data.id || localMatch?.id || `room_${Date.now()}`,
         pin: data.pin,
-        quiz_id: data.quiz_id,
-        quiz_title: data.quiz_title,
+        quiz_id: data.quiz_id || localMatch?.quiz_id || '',
+        quiz_title: data.quiz_title || localMatch?.quiz_title || 'تحدي موسى التفاعلي',
         host_id: data.host_id,
-        host_name: data.host_name,
-        target_grade: data.target_grade,
+        host_name: data.host_name || localMatch?.host_name || 'المعلم',
+        target_grade: data.target_grade || localMatch?.target_grade || 'grade-1',
         status: data.status,
-        current_question_index: data.current_question_index,
-        questions: Array.isArray(data.questions) ? data.questions : [],
-        players: (typeof data.players === 'object' && data.players) ? data.players : {},
+        current_question_index: data.current_question_index || 0,
+        questions: roomQuestions,
+        players: normalizeRoomPlayers(data.players || localMatch?.players),
+        answers_received: Array.isArray(data.answers_received) ? data.answers_received : [],
         question_start_time: data.question_start_time || undefined,
-        created_at: data.created_at,
+        created_at: data.created_at || new Date().toISOString(),
         updated_at: data.updated_at
       };
 
       // حفظ محلي
-      const rooms = getChallengeRooms().filter(r => r.id !== formatted.id);
+      const rooms = getChallengeRooms().filter(r => r.id !== formatted.id && r.pin !== formatted.pin);
       localStorage.setItem(CHALLENGE_ROOMS_KEY, JSON.stringify([formatted, ...rooms]));
       return formatted;
     }
   } catch (err) {
-    console.warn('فشل جلب غرفة التحدي سحابياً:', err);
+    console.warn('فشل جلب غرفة التحدي سحابياً، سيتم فحص الـ Fallback المحلي:', err);
   }
-  return getChallengeRoomById(roomIdOrPin) || getChallengeRoomByPin(roomIdOrPin);
+
+  // Fallback 1: التخزين المحلي في المتصفح
+  const local = getChallengeRoomById(clean) || getChallengeRoomByPin(clean);
+  if (local) return local;
+
+  // Fallback 2: خادم الشبكة المحلي
+  if (clean.length === 6 && /^\d+$/.test(clean)) {
+    try {
+      const resp = await fetch(`/api/challenge/rooms/${clean}`);
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json?.room) return json.room;
+      }
+    } catch {}
+  }
+
+  return null;
 };
 
 export const syncChallengeQuizzesFromCloud = async (): Promise<ChallengeQuiz[]> => {

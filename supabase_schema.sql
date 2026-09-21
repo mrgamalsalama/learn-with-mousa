@@ -241,21 +241,31 @@ CREATE TABLE IF NOT EXISTS public.challenge_quizzes (
 );
 
 CREATE TABLE IF NOT EXISTS public.challenge_rooms (
-   id TEXT PRIMARY KEY,
+   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
    pin TEXT NOT NULL,
-   quiz_id TEXT NOT NULL,
-   quiz_title TEXT NOT NULL,
+   quiz_id TEXT,
+   quiz_title TEXT,
    host_id TEXT NOT NULL,
-   host_name TEXT NOT NULL,
-   target_grade TEXT NOT NULL,
+   host_name TEXT,
+   target_grade TEXT,
    status TEXT NOT NULL DEFAULT 'lobby',
    current_question_index INTEGER NOT NULL DEFAULT 0,
-   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
-   players JSONB NOT NULL DEFAULT '{}'::jsonb,
+   questions JSONB DEFAULT '[]'::jsonb,
+   players JSONB NOT NULL DEFAULT '[]'::jsonb,
+   answers_received JSONB NOT NULL DEFAULT '[]'::jsonb,
    question_start_time BIGINT,
    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+-- تحديث الأعمدة لضمان التوافق مع الجداول المنشأة سابقاً
+ALTER TABLE public.challenge_rooms ADD COLUMN IF NOT EXISTS answers_received JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.challenge_rooms ALTER COLUMN players SET DEFAULT '[]'::jsonb;
+ALTER TABLE public.challenge_rooms ALTER COLUMN quiz_id DROP NOT NULL;
+ALTER TABLE public.challenge_rooms ALTER COLUMN quiz_title DROP NOT NULL;
+ALTER TABLE public.challenge_rooms ALTER COLUMN host_name DROP NOT NULL;
+ALTER TABLE public.challenge_rooms ALTER COLUMN target_grade DROP NOT NULL;
+ALTER TABLE public.challenge_rooms ALTER COLUMN questions DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_challenge_rooms_pin ON public.challenge_rooms(pin);
 CREATE INDEX IF NOT EXISTS idx_challenge_quizzes_grade ON public.challenge_quizzes(target_grade);

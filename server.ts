@@ -34,6 +34,28 @@ async function startServer() {
     res.json({ status: 'ok', serverTime: new Date().toISOString() });
   });
 
+  // Local Room State Fallback (ذاكرة تخزين غرف التحدي المحلية لضمان اللعب عبر الشبكة دون انقطاع)
+  const localChallengeRooms = new Map<string, any>();
+
+  app.get('/api/challenge/rooms/:pin', (req, res) => {
+    const pin = (req.params.pin || '').trim();
+    const room = localChallengeRooms.get(pin);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    res.json({ room });
+  });
+
+  app.post('/api/challenge/rooms', (req, res) => {
+    const room = req.body;
+    if (!room || !room.pin) {
+      return res.status(400).json({ error: 'Room PIN is required' });
+    }
+    const cleanPin = String(room.pin).trim();
+    localChallengeRooms.set(cleanPin, { ...room, pin: cleanPin });
+    res.json({ status: 'ok', room });
+  });
+
   // Gemini API Proxy with intelligent fallback across modern models
   const TEXT_FALLBACK_MODELS = [
     'gemini-3.8-flash',

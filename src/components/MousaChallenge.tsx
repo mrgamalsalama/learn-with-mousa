@@ -11,7 +11,7 @@ import {
 import { 
   getChallengeQuizzes, saveChallengeQuiz, deleteChallengeQuiz, 
   getChallengeRooms, saveChallengeRoom, syncChallengeRoomFromCloud, 
-  syncChallengeQuizzesFromCloud 
+  syncChallengeQuizzesFromCloud, getChallengeRoomByPin, normalizeRoomPlayers
 } from '../storage';
 import { supabase } from '../supabaseClient';
 import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService';
@@ -89,18 +89,45 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     });
   }, []);
 
-  // اشتراك Realtime في غرفة اللعب المحددة
+  // اشتراك Realtime في غرفة اللعب المحددة (سحابي + محلي متكامل)
   useEffect(() => {
     if (!activeRoom) return;
 
     // استماع للتحديثات المحلية عبر CustomEvent
     const handleLocalUpdate = (e: any) => {
       const updated = e.detail as ChallengeRoom;
-      if (updated && updated.id === activeRoom.id) {
+      if (updated && (updated.id === activeRoom.id || updated.pin === activeRoom.pin)) {
         setActiveRoom(updated);
       }
     };
     window.addEventListener('challenge_room_updated', handleLocalUpdate);
+
+    // استماع لتحديثات التخزين بين التبويبات المختلفة في نفس المتصفح
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'lwm_challenge_rooms' && e.newValue) {
+        try {
+          const rooms: ChallengeRoom[] = JSON.parse(e.newValue);
+          const found = rooms.find(r => r.id === activeRoom.id || r.pin === activeRoom.pin);
+          if (found) {
+            setActiveRoom(found);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // استماع لقناة البث المحلي BroadcastChannel
+    const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('mousa_challenge_sync') : null;
+    if (bc) {
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'ROOM_UPDATE') {
+          const updated = event.data.room as ChallengeRoom;
+          if (updated && (updated.id === activeRoom.id || updated.pin === activeRoom.pin)) {
+            setActiveRoom(updated);
+          }
+        }
+      };
+    }
 
     // استماع للتحديثات السحابية عبر Supabase Realtime Channel
     const channel = supabase
@@ -119,17 +146,18 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
             const formatted: ChallengeRoom = {
               id: data.id,
               pin: data.pin,
-              quiz_id: data.quiz_id,
-              quiz_title: data.quiz_title,
+              quiz_id: data.quiz_id || activeRoom.quiz_id,
+              quiz_title: data.quiz_title || activeRoom.quiz_title,
               host_id: data.host_id,
-              host_name: data.host_name,
-              target_grade: data.target_grade,
+              host_name: data.host_name || activeRoom.host_name,
+              target_grade: data.target_grade || activeRoom.target_grade,
               status: data.status,
               current_question_index: data.current_question_index,
-              questions: Array.isArray(data.questions) ? data.questions : [],
-              players: (typeof data.players === 'object' && data.players) ? data.players : {},
+              questions: (Array.isArray(data.questions) && data.questions.length > 0) ? data.questions : activeRoom.questions,
+              players: normalizeRoomPlayers(data.players),
+              answers_received: Array.isArray(data.answers_received) ? data.answers_received : activeRoom.answers_received,
               question_start_time: data.question_start_time || undefined,
-              created_at: data.created_at,
+              created_at: data.created_at || activeRoom.created_at,
               updated_at: data.updated_at
             };
             setActiveRoom(formatted);
@@ -142,11 +170,13 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
     return () => {
       window.removeEventListener('challenge_room_updated', handleLocalUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      if (bc) bc.close();
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [activeRoom?.id]);
+  }, [activeRoom?.id, activeRoom?.pin]);
 
   // إدارة المؤقت التنازلي التفاعلي
   useEffect(() => {
@@ -219,19 +249,53 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
   // بدء غرفة جديدة من كويز محدد
   const handleStartHosting = async (quiz: ChallengeQuiz) => {
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    const generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
+    const teacherId = currentUser.id;
+
+    // مطابقة كائن الغرفة المرسل مع أعمدة الجدول:
+    // التأكد من إرسال الحقول الأساسية فقط المتوافقة مع Supabase
+    const essentialRoomPayload = {
+      pin: generatedPin,
+      host_id: teacherId,
+      status: 'lobby',
+      current_question_index: 0,
+      players: [],
+      answers_received: []
+    };
+
+    let cloudRoomId: string | null = null;
+    try {
+      const { data, error } = await supabase
+        .from('challenge_rooms')
+        .insert(essentialRoomPayload)
+        .select()
+        .single();
+
+      if (error) {
+        // طباعة تفاصيل الخطأ بوضوح في الكونسول
+        console.error('Room creation failed:', error.message, error.details);
+      } else if (data) {
+        cloudRoomId = data.id || null;
+      }
+    } catch (err: any) {
+      console.error('Room creation failed:', err?.message || err, err?.details);
+    }
+
+    // بناء الغرفة المحلية الكاملة (Local Room State) لتوفير Fallback فوري متزامن
+    const roomId = cloudRoomId || `room_${Date.now()}`;
     const newRoom: ChallengeRoom = {
-      id: `room_${Date.now()}`,
-      pin,
+      id: roomId,
+      pin: generatedPin,
       quiz_id: quiz.id,
       quiz_title: quiz.title,
-      host_id: currentUser.id,
+      host_id: teacherId,
       host_name: currentUser.name,
       target_grade: quiz.target_grade,
       status: 'lobby',
       current_question_index: 0,
       questions: quiz.questions,
       players: {},
+      answers_received: [],
       created_at: new Date().toISOString()
     };
 
@@ -305,8 +369,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const handleJoinByPin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setJoinError(null);
-    const cleanPin = pinInput.trim();
-    if (!cleanPin || cleanPin.length !== 6) {
+    const enteredPin = pinInput.trim();
+    if (!enteredPin || enteredPin.length !== 6) {
       setJoinError('يرجى إدخال رمز دخول سداسي صحيح (6 أرقام)');
       return;
     }
@@ -319,7 +383,73 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
     setIsJoining(true);
     try {
-      const room = await syncChallengeRoomFromCloud(cleanPin);
+      let room: ChallengeRoom | null = null;
+
+      // 1. في شاشة الطالب: التأكد من البحث عن الغرفة باستخدام الحقل الصحيح
+      try {
+        const { data, error } = await supabase
+          .from('challenge_rooms')
+          .select('*')
+          .eq('pin', enteredPin.trim())
+          .eq('status', 'lobby')
+          .single();
+
+        if (error) {
+          console.warn('Supabase room query warning:', error.message, error.details);
+        } else if (data) {
+          const localMatch = getChallengeRoomByPin(enteredPin.trim());
+          const quizzes = getChallengeQuizzes();
+          const quizMatch = quizzes.find(q => q.id === data.quiz_id || q.title === data.quiz_title);
+          const roomQuestions = (Array.isArray(data.questions) && data.questions.length > 0)
+            ? data.questions
+            : (localMatch?.questions || quizMatch?.questions || []);
+
+          room = {
+            id: data.id || localMatch?.id || `room_${Date.now()}`,
+            pin: data.pin,
+            quiz_id: data.quiz_id || localMatch?.quiz_id || '',
+            quiz_title: data.quiz_title || localMatch?.quiz_title || 'تحدي موسى التفاعلي',
+            host_id: data.host_id,
+            host_name: data.host_name || localMatch?.host_name || 'المعلم',
+            target_grade: data.target_grade || localMatch?.target_grade || 'grade-1',
+            status: data.status,
+            current_question_index: data.current_question_index || 0,
+            questions: roomQuestions,
+            players: normalizeRoomPlayers(data.players || localMatch?.players),
+            answers_received: Array.isArray(data.answers_received) ? data.answers_received : [],
+            question_start_time: data.question_start_time || undefined,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: data.updated_at
+          };
+        }
+      } catch (cloudErr) {
+        console.warn('Cloud connection failed, trying Local Room State fallback:', cloudErr);
+      }
+
+      // 2. توفير Fallback محلي (Local Room State) في حال تعذر الاتصال بالسحابة أو عدم العثور عليها
+      if (!room) {
+        const localRoom = getChallengeRoomByPin(enteredPin.trim());
+        if (localRoom && (localRoom.status === 'lobby' || localRoom.status === 'question_active')) {
+          console.log('Using Local Room State fallback for PIN:', enteredPin.trim());
+          room = localRoom;
+        } else {
+          // فحص خادم الشبكة المحلي (Local Network Server Fallback)
+          try {
+            const resp = await fetch(`/api/challenge/rooms/${enteredPin.trim()}`);
+            if (resp.ok) {
+              const json = await resp.json();
+              if (json?.room) {
+                console.log('Using local network server fallback for PIN:', enteredPin.trim());
+                room = {
+                  ...json.room,
+                  players: normalizeRoomPlayers(json.room.players)
+                };
+              }
+            }
+          } catch {}
+        }
+      }
+
       if (!room) {
         setJoinError('لم يتم العثور على غرفة تحدٍّ نشطة بهذا الرمز. تأكد من المعلم.');
         setIsJoining(false);
@@ -343,7 +473,6 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           lastAnswer: existingPlayer?.lastAnswer
         }
       };
-
 
       const updatedRoom: ChallengeRoom = {
         ...room,
@@ -420,9 +549,24 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       }
     };
 
+    const existingAnswers = Array.isArray(activeRoom.answers_received) ? [...activeRoom.answers_received] : [];
+    const updatedAnswers = [
+      ...existingAnswers.filter((a: any) => !(a.playerId === playerId && a.questionIndex === activeRoom.current_question_index)),
+      {
+        playerId,
+        playerName: currentUser.name,
+        questionIndex: activeRoom.current_question_index,
+        optionIndex,
+        isCorrect,
+        points,
+        answeredAt: Date.now()
+      }
+    ];
+
     const updatedRoom: ChallengeRoom = {
       ...activeRoom,
-      players: updatedPlayers
+      players: updatedPlayers,
+      answers_received: updatedAnswers
     };
 
     await saveChallengeRoom(updatedRoom);
