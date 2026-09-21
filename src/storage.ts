@@ -2515,12 +2515,17 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
       status: roomToSave.status,
       current_question_index: roomToSave.current_question_index,
       players: playersArray,
-      answers_received: answersArray
+      answers_received: answersArray,
+      settings: {
+        ...(roomToSave.settings || {}),
+        question_start_time: roomToSave.question_start_time,
+        questions: roomToSave.questions,
+        quiz_id: roomToSave.quiz_id,
+        quiz_title: roomToSave.quiz_title,
+        target_grade: roomToSave.target_grade,
+        host_name: roomToSave.host_name
+      }
     };
-
-    if (roomToSave.question_start_time) {
-      updatePayload.question_start_time = roomToSave.question_start_time;
-    }
 
     const { error: updateError } = await supabase
       .from('challenge_rooms')
@@ -2552,24 +2557,27 @@ export const syncChallengeRoomFromCloud = async (roomIdOrPin: string): Promise<C
       const localMatch = getChallengeRoomByPin(data.pin);
       const quizzes = getChallengeQuizzes();
       const quizMatch = quizzes.find(q => q.id === data.quiz_id || q.title === data.quiz_title);
+      const settingsQuestions = data.settings?.questions;
       const roomQuestions = (Array.isArray(data.questions) && data.questions.length > 0)
         ? data.questions
-        : (localMatch?.questions || quizMatch?.questions || []);
+        : ((Array.isArray(settingsQuestions) && settingsQuestions.length > 0)
+            ? settingsQuestions
+            : (localMatch?.questions || quizMatch?.questions || INITIAL_CHALLENGE_QUIZZES[0].questions));
 
       const formatted: ChallengeRoom = {
         id: data.id || localMatch?.id || `room_${Date.now()}`,
         pin: data.pin,
-        quiz_id: data.quiz_id || localMatch?.quiz_id || '',
-        quiz_title: data.quiz_title || localMatch?.quiz_title || 'تحدي موسى التفاعلي',
+        quiz_id: data.quiz_id || data.settings?.quiz_id || localMatch?.quiz_id || '',
+        quiz_title: data.quiz_title || data.settings?.quiz_title || localMatch?.quiz_title || 'تحدي موسى التفاعلي',
         host_id: data.host_id,
-        host_name: data.host_name || localMatch?.host_name || 'المعلم',
-        target_grade: data.target_grade || localMatch?.target_grade || 'grade-1',
+        host_name: data.host_name || data.settings?.host_name || localMatch?.host_name || 'المعلم',
+        target_grade: data.target_grade || data.settings?.target_grade || localMatch?.target_grade || 'grade-1',
         status: data.status,
-        current_question_index: data.current_question_index || 0,
+        current_question_index: typeof data.current_question_index === 'number' ? data.current_question_index : 0,
         questions: roomQuestions,
         players: normalizeRoomPlayers(data.players || localMatch?.players),
         answers_received: Array.isArray(data.answers_received) ? data.answers_received : [],
-        question_start_time: data.question_start_time || undefined,
+        question_start_time: data.settings?.question_start_time || undefined,
         created_at: data.created_at || new Date().toISOString(),
         updated_at: data.updated_at
       };

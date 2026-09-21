@@ -545,6 +545,7 @@ export interface ChallengeRoom {
   players: Record<string, ChallengePlayer>; // keyed by player id
   answers_received?: any[];
   question_start_time?: number; // timestamp when current question started
+  settings?: any;
   created_at: string;
   updated_at?: string;
 }
