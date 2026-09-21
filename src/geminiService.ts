@@ -870,15 +870,16 @@ ${cleanPassage}
 
 /**
  * دالة توليد أسئلة تحدي موسى التنافسية الحية (Mousa Challenge Quiz Generator)
- * تضمن 4 خيارات مطابقة للأشكال التنافسية (مثلث، معين، دائرة، مربع) مع التشكيل التام وتوضيح تربوي سريع بصوت موسى
+ * تضمن دعم الأنماط التفاعلية: (اختيار متعدد كلاسيكي، صح أو خطأ، سباق الترتيب، سحر الإملاء والكتابة، سحابة الكلمات، استطلاع الرأي)
  */
 export async function generateAIChallengeQuestions(params: {
   topic: string;
   grade: string;
   count: number;
   timeLimitSeconds?: number;
+  questionTypes?: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[];
 }): Promise<any[]> {
-  const { topic, grade, count = 4, timeLimitSeconds = 20 } = params;
+  const { topic, grade, count = 4, timeLimitSeconds = 20, questionTypes } = params;
   const ai = getAIClient();
   const cleanTopic = topic.trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
 
@@ -887,6 +888,7 @@ export async function generateAIChallengeQuestions(params: {
   const fallbackQuestions = [
     {
       id: `ch_q_${Date.now()}_1`,
+      type: 'classic',
       text: `مَا المَفْهُومُ الأَسَاسِيُّ المُرْتَبِطُ بِمَوْضُوعِ (${cleanTopic})؟`,
       timeLimitSeconds,
       correctIndex: 0,
@@ -900,16 +902,41 @@ export async function generateAIChallengeQuestions(params: {
     },
     {
       id: `ch_q_${Date.now()}_2`,
-      text: `أَيُّ الجُمَلِ التَّالِيَةِ كُتِبَتْ بِطَرِيقَةٍ صَحِيحَةٍ فِي سِيَاقِ (${cleanTopic})؟`,
+      type: 'true_false',
+      text: `هَلْ تَبْدَأُ الجُمْلَةُ الفِعْلِيَّةُ دَائِمًا بِاسْمٍ؟`,
       timeLimitSeconds,
       correctIndex: 1,
-      explanation: `رَائِعٌ جِدًّا! تَمَيَّزْتُمْ فِي ضَبْطِ الحَرَكَاتِ وَالصِّيَاغَةِ الفَصِيحَةِ!`,
+      explanation: `رَائِعٌ جِدًّا! الجُمْلَةُ الفِعْلِيَّةُ تَبْدَأُ دَوْمًا بِفِعْلٍ وَلَيْسَ بِاسْمٍ!`,
       options: [
-        { id: '0', text: 'الجُمْلَةُ الخَالِيَةُ مِنَ المَعْنَى', shape: 'triangle' },
-        { id: '1', text: `الجُمْلَةُ المَضْبُوطَةُ بِالشَّكْلِ التَّامِّ وَالحَرَكَاتِ 🎯`, shape: 'diamond' },
-        { id: '2', text: 'الجُمْلَةُ المَبْنِيَّةُ عَلَى الخَطَأِ الإِمْلائِيِّ', shape: 'circle' },
-        { id: '3', text: 'الجُمْلَةُ النَّاقِصَةُ لِلْمَعْنَى', shape: 'square' },
+        { id: '0', text: 'صَحِيحٌ (صَوَابٌ) ✅', shape: 'diamond' },
+        { id: '1', text: 'خَاطِئٌ (خَطَأٌ) ❌', shape: 'triangle' },
       ]
+    },
+    {
+      id: `ch_q_${Date.now()}_3`,
+      type: 'puzzle',
+      text: `رَتِّبِ الكَلِمَاتِ الآتِيَةَ لِتُكَوِّنَ جُمْلَةً مُفِيدَةً:`,
+      timeLimitSeconds,
+      correctIndex: 0,
+      correctOrder: [0, 1, 2, 3],
+      explanation: `تَرْتِيبٌ مِثَالِيٌّ! تَكَوَّنَتْ جُمْلَةٌ عَرَبِيَّةٌ فَصِيحَةٌ وَمُتَنَاسِقَةٌ! 🌟`,
+      options: [
+        { id: '0', text: 'يَقْرَأُ', shape: 'triangle' },
+        { id: '1', text: 'مُوسَى', shape: 'diamond' },
+        { id: '2', text: 'كِتَابًا', shape: 'circle' },
+        { id: '3', text: 'مُفِيدًا', shape: 'square' },
+      ]
+    },
+    {
+      id: `ch_q_${Date.now()}_4`,
+      type: 'type_answer',
+      text: `اكْتُبْ كَلِمَةَ: [كِتَابٌ] مَضْبُوطَةً بِالتَّنْوِينِ:`,
+      timeLimitSeconds,
+      correctIndex: 0,
+      correctAnswerText: 'كتاب',
+      acceptableAnswers: ['كتاب', 'كتابٌ', 'كِتَابٌ'],
+      explanation: `كِتَابَةٌ دَقِيقَةٌ وَإِمْلَاءٌ سَلِيمٌ يَا بَطَل! ✨`,
+      options: []
     }
   ];
 
@@ -917,38 +944,85 @@ export async function generateAIChallengeQuestions(params: {
     return fallbackQuestions.slice(0, count);
   }
 
+  const allowedTypesStr = (questionTypes && questionTypes.length > 0)
+    ? questionTypes.join(', ')
+    : 'classic, true_false, puzzle, type_answer, word_cloud, poll';
+
   const prompt = `
 أنت «موسى» الخبير التربوي وصانع المسابقات التفاعلية الحية للأطفال في منصة "تعلَّم مع موسى".
 الموضوع المطلوب للمسابقة: [${cleanTopic}].
 الصف الدراسي: [${grade}].
 عدد الأسئلة المطلوبة: [${count}].
 زمن الإجابة لكل سؤال: [${timeLimitSeconds}] ثانية.
+الأنماط التفاعلية المسموح بتوليدها وتوزيعها بذكاء: [${allowedTypesStr}].
 
-المطلوب بدقة متناهية:
-1. توليد ${count} أسئلة مسابقة ممتعة، ذكية، ومناسبة لعمر وصف الطلاب.
-2. يجب تشكيل كافة النصوص (السؤال والخيارات والشرح) تشكيلاً تاماً 100% بالحركات الفصيحة (فتحة، ضمة، كسرة، سكون، تنوين، شدة).
-3. كل سؤال يجب أن يتضمن بالضبط 4 خيارات، خيار واحد فقط هو الصحيح، و 3 خيارات ذكية مموهة.
-4. الخيارات الأربعة تتبع دائماً الأشكال التنافسية التالية بالترتيب:
-   - الخيار 0: شكل "triangle" (مثلث)
-   - الخيار 1: شكل "diamond" (معين)
-   - الخيار 2: شكل "circle" (دائرة)
-   - الخيار 3: شكل "square" (مربع)
-5. تنويع موضع الإجابة الصحيحة (correctIndex: من 0 إلى 3) بين الأسئلة.
-6. تقديم توضيح تربوي تشجيعي سريع ودافئ (explanation) بصوت موسى يشرح فيه سبب صحة الإجابة للأطفال.
-7. أخرج النتيجة فقط بصيغة مصفوفة JSON مطابقة تماماً للمثال التالي دون أي نصوص إضافية:
+قواعد الأنماط التفاعلية بدقة:
+1. نمط "classic": 4 خيارات بأشكال (triangle, diamond, circle, square)، خيار واحد صحيح (correctIndex من 0 إلى 3).
+2. نمط "true_false": خياران عملاقان فقط:
+   - الخيار 0: "صَحِيحٌ (صَوَابٌ) ✅" مع شكل "diamond"
+   - الخيار 1: "خَاطِئٌ (خَطَأٌ) ❌" مع شكل "triangle"
+   و correctIndex إما 0 للصحيح أو 1 للخاطئ.
+3. نمط "puzzle": سؤال سباق ترتيب (تكوين جملة أو ترتيب أحداث أو خطوات). يحتوي على 4 عناصر في options بالترتيب الأولي المشوش، وحقل correctOrder يحتوي على مصفوفة أرقام الترتيب الصحيح [0, 1, 2, 3] بحسب الفهارس الأصلية للخيارات.
+4. نمط "type_answer": سؤال كتابة إملائية سريعة، options تكون فارغة []، مع حقل correctAnswerText (الكلمة أو العبارة المطلوبة) وحقل acceptableAnswers (مصفوفة بدائل مقبولة مع وبدون التشكيل).
+5. نمط "word_cloud": عصف ذهني وإبداعي (مثل: "صِفِ القِرَاءَةَ بِكَلِمَةٍ وَاحِدَةٍ")، options فارغة []، لا يوجد خاسر (everyone participates).
+6. نمط "poll": استطلاع رأي تصويتي، يحتوي على 2 أو 3 أو 4 خيارات، لا يوجد correctIndex (أو correctIndex = -1).
+
+المطلوب:
+- توليد ${count} أسئلة متنوعة وشائقة مناسبة لعمر وصف الطلاب مشكولة 100% بالحركات التامة.
+- تقديم توضيح تربوي تشجيعي بصوت موسى (explanation) لكل سؤال.
+- أخرج النتيجة فقط بصيغة مصفوفة JSON مطابقة للمخطط التالي:
 [
   {
     "id": "q_1",
+    "type": "classic",
     "text": "نص السؤال المشكول بالحركات التامة؟",
     "timeLimitSeconds": ${timeLimitSeconds},
     "correctIndex": 0,
-    "explanation": "شرح موسى التربوي المشكول والمشجع جداً للأبطال 🌟",
+    "explanation": "شرح موسى التربوي المشكول والمشجع للأبطال 🌟",
     "options": [
-      { "id": "0", "text": "الخيار الأول المشكول", "shape": "triangle" },
-      { "id": "1", "text": "الخيار الثاني المشكول", "shape": "diamond" },
-      { "id": "2", "text": "الخيار الثالث المشكول", "shape": "circle" },
-      { "id": "3", "text": "الخيار الرابع المشكول", "shape": "square" }
+      { "id": "0", "text": "الخيار الأول", "shape": "triangle" },
+      { "id": "1", "text": "الخيار الثاني", "shape": "diamond" },
+      { "id": "2", "text": "الخيار الثالث", "shape": "circle" },
+      { "id": "3", "text": "الخيار الرابع", "shape": "square" }
     ]
+  },
+  {
+    "id": "q_2",
+    "type": "true_false",
+    "text": "جملة صحيحة أو خاطئة مشكولة؟",
+    "timeLimitSeconds": ${timeLimitSeconds},
+    "correctIndex": 0,
+    "explanation": "شرح موسى لتوضيح الصواب",
+    "options": [
+      { "id": "0", "text": "صَحِيحٌ (صَوَابٌ) ✅", "shape": "diamond" },
+      { "id": "1", "text": "خَاطِئٌ (خَطَأٌ) ❌", "shape": "triangle" }
+    ]
+  },
+  {
+    "id": "q_3",
+    "type": "puzzle",
+    "text": "رَتِّبِ الكَلِمَاتِ الآتِيَةَ لِتَكْوِينِ جُمْلَةٍ مُفِيدَةٍ:",
+    "timeLimitSeconds": ${timeLimitSeconds},
+    "correctIndex": 0,
+    "correctOrder": [0, 1, 2, 3],
+    "explanation": "أحسنتم ترتيب الجملة!",
+    "options": [
+      { "id": "0", "text": "الكلمة الأولى", "shape": "triangle" },
+      { "id": "1", "text": "الكلمة الثانية", "shape": "diamond" },
+      { "id": "2", "text": "الكلمة الثالثة", "shape": "circle" },
+      { "id": "3", "text": "الكلمة الرابعة", "shape": "square" }
+    ]
+  },
+  {
+    "id": "q_4",
+    "type": "type_answer",
+    "text": "اكْتُبْ كَلِمَةً مُحَدَّدَةً:",
+    "timeLimitSeconds": ${timeLimitSeconds},
+    "correctIndex": 0,
+    "correctAnswerText": "الكلمة",
+    "acceptableAnswers": ["الكلمة", "كلمة"],
+    "explanation": "كتابة صحيحة ومتقنة!",
+    "options": []
   }
 ]
 `;
@@ -966,28 +1040,43 @@ export async function generateAIChallengeQuestions(params: {
     const parsed: any[] = JSON.parse(cleanJsonText(response.text || '[]'));
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed.map((item, idx) => {
-        const correctIdx = typeof item.correctIndex === 'number' && item.correctIndex >= 0 && item.correctIndex < 4
-          ? item.correctIndex
-          : 0;
+        const qType = item.type || 'classic';
+        const correctIdx = typeof item.correctIndex === 'number' ? item.correctIndex : 0;
 
-        const options = Array.isArray(item.options) && item.options.length === 4
-          ? item.options.map((opt: any, oIdx: number) => ({
-              id: String(oIdx),
-              text: opt.text || `خيار ${oIdx + 1}`,
-              shape: defaultShapes[oIdx] || 'triangle',
-            }))
-          : [
+        let options = Array.isArray(item.options) ? item.options : [];
+        if (qType === 'true_false') {
+          options = [
+            { id: '0', text: 'صَحِيحٌ (صَوَابٌ) ✅', shape: 'diamond' },
+            { id: '1', text: 'خَاطِئٌ (خَطَأٌ) ❌', shape: 'triangle' },
+          ];
+        } else if (qType === 'classic' || qType === 'poll' || qType === 'puzzle') {
+          if (options.length === 0 || options.length < 2) {
+            options = [
               { id: '0', text: 'الخيار الأول', shape: 'triangle' },
               { id: '1', text: 'الخيار الثاني', shape: 'diamond' },
               { id: '2', text: 'الخيار الثالث', shape: 'circle' },
               { id: '3', text: 'الخيار الرابع', shape: 'square' },
             ];
+          } else {
+            options = options.map((opt: any, oIdx: number) => ({
+              id: String(oIdx),
+              text: opt.text || `خيار ${oIdx + 1}`,
+              shape: opt.shape || defaultShapes[oIdx % 4] || 'triangle',
+            }));
+          }
+        } else if (qType === 'type_answer' || qType === 'word_cloud') {
+          options = [];
+        }
 
         return {
           id: item.id || `ch_q_${Date.now()}_${idx + 1}`,
+          type: qType,
           text: item.text || `سؤال المسابقة (${idx + 1})`,
           timeLimitSeconds: item.timeLimitSeconds || timeLimitSeconds,
           correctIndex: correctIdx,
+          correctOrder: Array.isArray(item.correctOrder) ? item.correctOrder : (qType === 'puzzle' ? [0, 1, 2, 3] : undefined),
+          correctAnswerText: item.correctAnswerText || (qType === 'type_answer' ? 'الكلمة' : undefined),
+          acceptableAnswers: Array.isArray(item.acceptableAnswers) ? item.acceptableAnswers : (item.correctAnswerText ? [item.correctAnswerText] : undefined),
           explanation: item.explanation || 'إجابة متميزة يا أبطال لغتنا العربية الجميلة! 🌟',
           options,
         };

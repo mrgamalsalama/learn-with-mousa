@@ -474,6 +474,14 @@ export type ChallengeShape = 'triangle' | 'diamond' | 'circle' | 'square';
 // 🟡 أصفر (دائرة)
 // 🟩 أخضر (مربع)
 
+export type ChallengeQuestionType =
+  | 'classic'       // نمط Quiz الكلاسيكي القائم (أ، ب، ج، د)
+  | 'true_false'    // صَحٌّ أَمْ خَطَأ (🔷 صواب / 🔺 خطأ)
+  | 'puzzle'        // سِبَاقُ التَّرْتِيب (Sequence - ترتيب 4 بطاقات)
+  | 'type_answer'   // سِحْرُ الإِمْلَاء وَالكِتَابَة (Type Answer - إدخال نصي ومطابقة مرنة)
+  | 'word_cloud'    // سَحَابَةُ الكَلِمَاتِ التَّفَاعُلِيَّة (Word Cloud - عصف ذهني)
+  | 'poll';         // اسْتِطْلَاعُ الرَّأْي (Poll - بدون صواب وخطأ)
+
 export interface ChallengeOption {
   id: string; // '0', '1', '2', '3'
   text: string;
@@ -483,8 +491,12 @@ export interface ChallengeOption {
 export interface ChallengeQuestion {
   id: string;
   text: string; // نص السؤال مشكول
+  type?: ChallengeQuestionType; // النمط التفاعلي (افتراضياً classic)
   options: ChallengeOption[];
-  correctIndex: number; // 0, 1, 2, or 3
+  correctIndex: number; // 0, 1, 2, or 3 (للخيارات أو صح/خطأ)
+  correctOrder?: number[]; // لسؤال الترتيب [0, 1, 2, 3] يمثل الترتيب الصحيح
+  correctAnswerText?: string; // لسؤال الكتابة والإملاء
+  acceptableAnswers?: string[]; // إجابات بديلة مقبولة للكتابة
   timeLimitSeconds: number; // 10, 20, 30 ثانية
   explanation?: string; // توضيح تربوي سريع بصوت موسى
 }
@@ -519,6 +531,10 @@ export interface ChallengePlayerAnswer {
   timeTakenMs: number; // الزمن بالمللي ثانية لاحتساب سرعة النقر
   pointsEarned: number;
   answeredAt: number;
+  // حقول إضافية للأنماط الجديدة
+  textAnswer?: string; // لسؤال الكتابة وسحابة الكلمات
+  orderAnswer?: number[]; // لسؤال الترتيب
+  questionType?: ChallengeQuestionType;
 }
 
 export interface ChallengePlayer {

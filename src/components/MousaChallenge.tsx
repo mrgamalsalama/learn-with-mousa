@@ -3,11 +3,11 @@ import {
   Trophy, Play, Users, Sparkles, Plus, Clock, Award, Flame, CheckCircle2, 
   XCircle, RotateCcw, Volume2, VolumeX, ArrowRight, BookOpen, AlertCircle, 
   ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye, LogOut,
-  Sliders, Zap
+  Sliders, Zap, Upload, ArrowUp, ArrowDown, Send, Cloud, Vote, CheckSquare, MessageSquare
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, ChallengeQuiz, ChallengeRoom, 
-  ChallengeQuestion, ChallengePlayer, ChallengePlayerAnswer, ChallengeShape 
+  ChallengeQuestion, ChallengePlayer, ChallengePlayerAnswer, ChallengeShape, ChallengeQuestionType
 } from '../types';
 import { 
   getChallengeQuizzes, saveChallengeQuiz, deleteChallengeQuiz, 
@@ -19,6 +19,8 @@ import { supabase } from '../supabaseClient';
 import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService';
 import { SHAPE_CONFIG, DEFAULT_SHAPES, INITIAL_CHALLENGE_QUIZZES } from '../data/challengeData';
 import { challengeAudio } from '../utils/challengeAudio';
+import { parseQTIForChallenge } from '../utils/qtiChallengeParser';
+import { checkArabicAnswerMatch, normalizeArabicText } from '../utils/arabicNorm';
 import confetti from 'canvas-confetti';
 
 export const ARABIC_OPTION_LETTERS = ['أ', 'ب', 'ج', 'د'];
@@ -123,12 +125,29 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [newQuizQuestions, setNewQuizQuestions] = useState<ChallengeQuestion[]>([]);
 
   // محرر يدوي لسؤال
+  const [manualQuestionType, setManualQuestionType] = useState<ChallengeQuestionType>('classic');
   const [manualQuestionText, setManualQuestionText] = useState('');
   const [manualExplanation, setManualExplanation] = useState('');
   const [manualOptions, setManualOptions] = useState<string[]>(['', '', '', '']);
   const [manualCorrectIndex, setManualCorrectIndex] = useState<number>(0);
+  const [manualCorrectAnswerText, setManualCorrectAnswerText] = useState<string>('');
   const [manualTimeLimit, setManualTimeLimit] = useState<number>(20);
   const [isTashkeelActive, setIsTashkeelActive] = useState(false);
+
+  // استيراد بنوك الأسئلة QTI
+  const [isImportingQTI, setIsImportingQTI] = useState(false);
+  const [qtiImportError, setQtiImportError] = useState<string | null>(null);
+  const qtiFileInputRef = useRef<HTMLInputElement>(null);
+
+  // حالات إجابة الطالب للأنماط التفاعلية الجديدة
+  const [studentTextAnswer, setStudentTextAnswer] = useState<string>('');
+  const [studentPuzzleOrder, setStudentPuzzleOrder] = useState<number[]>([0, 1, 2, 3]);
+  const [lastSubmittedAnswerDetail, setLastSubmittedAnswerDetail] = useState<{
+    type?: ChallengeQuestionType;
+    textAnswer?: string;
+    orderAnswer?: number[];
+    selectedIndex?: number;
+  } | null>(null);
 
   const timerRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
@@ -386,6 +405,23 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     setSelectedOptionIndex(null);
     setHasAnswered(false);
     setAnswerResult(null);
+    setStudentTextAnswer('');
+    setLastSubmittedAnswerDetail(null);
+
+    const roomQuestions = (Array.isArray(activeRoom?.questions) && activeRoom.questions.length > 0)
+      ? activeRoom.questions
+      : ((Array.isArray(activeRoom?.settings?.questions) && activeRoom.settings.questions.length > 0)
+        ? activeRoom.settings.questions
+        : []);
+    const qIndex = Number(activeRoom?.current_question_index || 0);
+    const currentQ = roomQuestions[qIndex];
+    if (currentQ?.options) {
+      // خلط مبدئي لترتيب خيارات سؤال الترتيب puzzle
+      const initialIndices = currentQ.options.map((_, i) => i);
+      setStudentPuzzleOrder(initialIndices);
+    } else {
+      setStudentPuzzleOrder([0, 1, 2, 3]);
+    }
   }, [activeRoom?.current_question_index]);
 
   // إدارة المؤقت التنازلي التفاعلي
@@ -768,8 +804,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     setActiveTab(isTeacherOrAdmin ? 'bank' : 'play');
   };
 
-  // إرسال الإجابة وحساب النقاط وسرعة النقر
-  const handleSelectAnswer = async (optionIndex: number) => {
+  // إرسال الإجابة وحساب النقاط وسرعة النقر لجميع الأنماط التفاعلية
+  const handleSelectAnswer = async (
+    optionIndex: number,
+    extraPayload?: { textAnswer?: string; orderAnswer?: number[] }
+  ) => {
     if (!activeRoom || hasAnswered) return;
     if (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress') return;
 
@@ -781,6 +820,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     const qIndex = typeof activeRoom.current_question_index === 'number' ? activeRoom.current_question_index : 0;
     const currentQ = roomQuestions[qIndex];
     const qId = currentQ?.id || `q_${qIndex}`;
+    const qType: ChallengeQuestionType = currentQ?.type || 'classic';
 
     try {
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -790,15 +830,45 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
     setHasAnswered(true);
     setSelectedOptionIndex(optionIndex);
+    setLastSubmittedAnswerDetail({
+      type: qType,
+      textAnswer: extraPayload?.textAnswer,
+      orderAnswer: extraPayload?.orderAnswer,
+      selectedIndex: optionIndex
+    });
 
-    const isCorrect = currentQ ? (optionIndex === currentQ.correctIndex) : true;
+    // تقييم صحة الإجابة حسب نمط السؤال
+    let isCorrect = true;
+    if (currentQ) {
+      if (qType === 'classic' || qType === 'true_false') {
+        isCorrect = optionIndex === currentQ.correctIndex;
+      } else if (qType === 'type_answer') {
+        const studentText = extraPayload?.textAnswer || '';
+        const acceptable = currentQ.acceptableAnswers && currentQ.acceptableAnswers.length > 0
+          ? currentQ.acceptableAnswers
+          : [currentQ.correctAnswerText || ''];
+        isCorrect = checkArabicAnswerMatch(studentText, acceptable);
+      } else if (qType === 'puzzle') {
+        const studentOrder = extraPayload?.orderAnswer || [];
+        const correctOrder = currentQ.correctOrder || currentQ.options.map((_, i) => i);
+        isCorrect = studentOrder.length === correctOrder.length &&
+          studentOrder.every((val, idx) => val === correctOrder[idx]);
+      } else if (qType === 'word_cloud' || qType === 'poll') {
+        // أنماط تصويت واستطلاع رأي وسحابة كلمات: كل مشاركة صحيحة ومقبولة
+        isCorrect = true;
+      }
+    }
+
     const timeLimit = currentQ?.timeLimitSeconds || 20;
     const startTime = activeRoom.question_start_time || Date.now();
     const timeTakenMs = Math.max(100, Date.now() - startTime);
 
-    // حساب النقاط بناءً على الصحة والسرعة
+    // حساب النقاط بناءً على النمط والصحة والسرعة
     let points = 0;
-    if (isCorrect) {
+    if (qType === 'poll' || qType === 'word_cloud') {
+      points = 1000; // نقاط مشاركة وتفاعل كاملة
+      if (!soundMuted) challengeAudio.playCorrect();
+    } else if (isCorrect) {
       const fractionRemaining = Math.max(0, (timeLimit * 1000 - timeTakenMs) / (timeLimit * 1000));
       points = Math.round(500 + 500 * fractionRemaining);
       if (!soundMuted) challengeAudio.playCorrect();
@@ -832,6 +902,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         lastAnswer: {
           questionId: qId,
           selectedIndex: optionIndex,
+          textAnswer: extraPayload?.textAnswer,
+          orderAnswer: extraPayload?.orderAnswer,
           isCorrect,
           timeTakenMs,
           pointsEarned: points,
@@ -840,11 +912,13 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       }
     };
 
-    const answerRecord = {
+    const answerRecord: any = {
       playerId,
       playerName: currentUser.name || playerNameInput || 'بطل التحدي',
       questionIndex: qIndex,
       optionIndex,
+      textAnswer: extraPayload?.textAnswer,
+      orderAnswer: extraPayload?.orderAnswer,
       isCorrect,
       points,
       answeredAt: Date.now()
@@ -872,6 +946,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       lastAnswer: {
         questionId: qId,
         selectedIndex: optionIndex,
+        textAnswer: extraPayload?.textAnswer,
+        orderAnswer: extraPayload?.orderAnswer,
         questionIndex: qIndex,
         isCorrect,
         pointsEarned: points,
@@ -905,28 +981,122 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     }
   };
 
-  // إضافة سؤال يدوي
-  const handleAddManualQuestion = () => {
-    if (!manualQuestionText.trim() || manualOptions.some(o => !o.trim())) return;
+  // استيراد بنك أسئلة QTI ZIP
+  const handleQTIFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    const newQ: ChallengeQuestion = {
-      id: `q_man_${Date.now()}`,
-      text: manualQuestionText,
-      timeLimitSeconds: manualTimeLimit,
-      correctIndex: manualCorrectIndex,
-      explanation: manualExplanation || 'إجابة متميزة يا أبطال!',
-      options: manualOptions.map((optText, idx) => ({
-        id: String(idx),
-        text: optText,
-        shape: DEFAULT_SHAPES[idx]
-      }))
-    };
+    setIsImportingQTI(true);
+    setQtiImportError(null);
+    try {
+      const result = await parseQTIForChallenge(file);
+      if (result.questions.length === 0) {
+        setQtiImportError('لم يتم العثور على أسئلة متوافقة داخل ملف QTI. يرجى التأكد من احتواء الملف على بنك أسئلة سليم.');
+        return;
+      }
+
+      setNewQuizQuestions(prev => [...prev, ...result.questions]);
+      if (!newQuizTitle.trim()) {
+        setNewQuizTitle(result.quizTitle || file.name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (err: any) {
+      console.error('فشل استيراد QTI:', err);
+      setQtiImportError(err.message || 'حدث خطأ أثناء فك ضغط واستيراد ملف QTI.');
+    } finally {
+      setIsImportingQTI(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  // إضافة سؤال يدوي (يدعم جميع الأنماط)
+  const handleAddManualQuestion = () => {
+    if (!manualQuestionText.trim()) return;
+
+    let newQ: ChallengeQuestion;
+
+    if (manualQuestionType === 'true_false') {
+      newQ = {
+        id: `q_tf_${Date.now()}`,
+        type: 'true_false',
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: manualCorrectIndex,
+        explanation: manualExplanation || 'أحسنتم يا أبطال!',
+        options: [
+          { id: '0', text: 'صَحِيحٌ (صَوَابٌ) ✅', shape: 'diamond' },
+          { id: '1', text: 'خَاطِئٌ (خَطَأٌ) ❌', shape: 'triangle' },
+        ]
+      };
+    } else if (manualQuestionType === 'type_answer') {
+      const cleanAns = manualCorrectAnswerText.trim();
+      if (!cleanAns) return;
+      newQ = {
+        id: `q_type_${Date.now()}`,
+        type: 'type_answer',
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: 0,
+        correctAnswerText: cleanAns,
+        acceptableAnswers: [cleanAns],
+        explanation: manualExplanation || `الإجابة الصحيحة هي: ${cleanAns}`,
+        options: []
+      };
+    } else if (manualQuestionType === 'puzzle') {
+      const validOpts = manualOptions.filter(o => o.trim());
+      if (validOpts.length < 2) return;
+      newQ = {
+        id: `q_puz_${Date.now()}`,
+        type: 'puzzle',
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: 0,
+        correctOrder: validOpts.map((_, i) => i),
+        explanation: manualExplanation || 'ترتيب سليم ومتقن!',
+        options: validOpts.map((optText, idx) => ({
+          id: String(idx),
+          text: optText,
+          shape: DEFAULT_SHAPES[idx % DEFAULT_SHAPES.length]
+        }))
+      };
+    } else if (manualQuestionType === 'word_cloud' || manualQuestionType === 'poll') {
+      const validOpts = manualOptions.filter(o => o.trim());
+      newQ = {
+        id: `q_${manualQuestionType}_${Date.now()}`,
+        type: manualQuestionType,
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: 0,
+        explanation: manualExplanation || 'شكراً لمشاركتكم وتفاعلكم الرائع!',
+        options: validOpts.map((optText, idx) => ({
+          id: String(idx),
+          text: optText,
+          shape: DEFAULT_SHAPES[idx % DEFAULT_SHAPES.length]
+        }))
+      };
+    } else {
+      // classic multiple choice
+      if (manualOptions.some(o => !o.trim())) return;
+      newQ = {
+        id: `q_man_${Date.now()}`,
+        type: 'classic',
+        text: manualQuestionText,
+        timeLimitSeconds: manualTimeLimit,
+        correctIndex: manualCorrectIndex,
+        explanation: manualExplanation || 'إجابة متميزة يا أبطال!',
+        options: manualOptions.map((optText, idx) => ({
+          id: String(idx),
+          text: optText,
+          shape: DEFAULT_SHAPES[idx]
+        }))
+      };
+    }
 
     setNewQuizQuestions(prev => [...prev, newQ]);
     // إعادة تعيين الحقول
     setManualQuestionText('');
     setManualExplanation('');
     setManualOptions(['', '', '', '']);
+    setManualCorrectAnswerText('');
     setManualCorrectIndex(0);
   };
 
@@ -1414,27 +1584,68 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                 </p>
               </div>
 
-              <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  ref={qtiFileInputRef}
+                  onChange={handleQTIFileChange}
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  className="hidden"
+                />
                 <button
-                  onClick={() => setCreationMode('ai')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                    creationMode === 'ai' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
-                  }`}
+                  type="button"
+                  onClick={() => qtiFileInputRef.current?.click()}
+                  disabled={isImportingQTI}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                  title="استيراد بنك أسئلة قياسي من ملف QTI ZIP"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>توليد ذكي (AI)</span>
+                  {isImportingQTI ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                  <span>{isImportingQTI ? 'جَارٍ الاسْتِيرَاد...' : 'اسْتِيرَاد QTI (.zip)'}</span>
                 </button>
-                <button
-                  onClick={() => setCreationMode('manual')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                    creationMode === 'manual' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>إدخال يدوي</span>
-                </button>
+
+                <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+                  <button
+                    onClick={() => setCreationMode('ai')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      creationMode === 'ai' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>توليد ذكي (AI)</span>
+                  </button>
+                  <button
+                    onClick={() => setCreationMode('manual')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      creationMode === 'manual' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>إدخال يدوي</span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* تنبيه خطأ استيراد QTI إن وُجد */}
+            {qtiImportError && (
+              <div className="p-4 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{qtiImportError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQtiImportError(null)}
+                  className="text-rose-400 hover:text-white text-xs underline mr-2"
+                >
+                  إغلاق
+                </button>
+              </div>
+            )}
 
             {/* نمط التوليد الذكي عبر الذكاء الاصطناعي */}
             {creationMode === 'ai' && (
@@ -1525,6 +1736,41 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
             {/* نمط الإدخال اليدوي */}
             {creationMode === 'manual' && (
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 space-y-4 shadow-xl">
+                {/* اختيار نمط السؤال التفاعلي */}
+                <div>
+                  <label className="block text-xs font-black text-slate-300 mb-2">
+                    نَمَطُ السُّؤَالِ التَّفَاعُلِيِّ:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                    {[
+                      { id: 'classic', label: 'كلاسيكي (4 خيارات)', icon: CheckSquare },
+                      { id: 'true_false', label: 'صح أم خطأ', icon: CheckCircle2 },
+                      { id: 'puzzle', label: 'سباق الترتيب', icon: Sliders },
+                      { id: 'type_answer', label: 'اكتب الإجابة', icon: MessageSquare },
+                      { id: 'word_cloud', label: 'سحابة كلمات', icon: Cloud },
+                      { id: 'poll', label: 'استطلاع رأي', icon: Vote }
+                    ].map(t => {
+                      const Icon = t.icon;
+                      const isSelected = manualQuestionType === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setManualQuestionType(t.id as any)}
+                          className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-600/30 border-indigo-400 text-amber-300 ring-2 ring-indigo-500/40'
+                              : 'bg-slate-900/60 border-slate-700/80 text-slate-400 hover:text-white hover:border-slate-600'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="text-[11px] font-bold leading-tight">{t.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-black text-slate-200">
@@ -1549,32 +1795,70 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                   />
                 </div>
 
-                {/* الخيارات الأربعة مع الأشكال التنافسية */}
-                <div className="space-y-2.5">
-                  <span className="block text-xs font-black text-slate-300">
-                    الخِيَارَاتُ الأَرْبَعَةُ التَّنَافُسِيَّةُ (حَدِّدِ الإِجَابَةَ الصَّحِيحَةَ):
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {manualOptions.map((opt, idx) => {
-                      const shape = DEFAULT_SHAPES[idx];
-                      const cfg = SHAPE_CONFIG[shape];
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-3 rounded-xl border flex items-center gap-2 ${
-                            manualCorrectIndex === idx
-                              ? 'bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/40'
-                              : 'bg-slate-900/60 border-slate-700'
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setManualCorrectIndex(idx)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base shadow-sm ${cfg.bgClass} ${cfg.textClass}`}
-                            title="انقر لتحديد هذا الخيار كإجابة صحيحة"
-                          >
-                            {cfg.symbol}
-                          </button>
+                {/* واجهة إدخال الخيارات حسب نمط السؤال المحدد */}
+                {manualQuestionType === 'true_false' && (
+                  <div className="space-y-2">
+                    <span className="block text-xs font-black text-slate-300">
+                      حَدِّدِ الإِجَابَةَ الصَّحِيحَةَ:
+                    </span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setManualCorrectIndex(0)}
+                        className={`p-4 rounded-xl border-2 font-black text-sm transition flex items-center justify-center gap-2 ${
+                          manualCorrectIndex === 0
+                            ? 'bg-blue-600/30 border-blue-400 text-blue-300 ring-2 ring-blue-500/40'
+                            : 'bg-slate-900/60 border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        <span>🔷 صَوَابٌ (صَحِيحٌ)</span>
+                        {manualCorrectIndex === 0 && <Check className="w-4 h-4 text-blue-300" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setManualCorrectIndex(1)}
+                        className={`p-4 rounded-xl border-2 font-black text-sm transition flex items-center justify-center gap-2 ${
+                          manualCorrectIndex === 1
+                            ? 'bg-rose-600/30 border-rose-400 text-rose-300 ring-2 ring-rose-500/40'
+                            : 'bg-slate-900/60 border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        <span>🔺 خَطَأٌ (غَيْرُ صَحِيحٍ)</span>
+                        {manualCorrectIndex === 1 && <Check className="w-4 h-4 text-rose-300" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {manualQuestionType === 'type_answer' && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-slate-300">
+                      الإِجَابَةُ الصَّحِيحَةُ المَعْتَمَدَةُ (النص الدقيق المقبول):
+                    </label>
+                    <input
+                      type="text"
+                      value={manualCorrectAnswerText}
+                      onChange={(e) => setManualCorrectAnswerText(e.target.value)}
+                      placeholder="مثال: الفاعل، مفعول به، اسم مجرور..."
+                      className="w-full py-3 px-4 rounded-xl bg-slate-900 border border-emerald-500/60 text-emerald-300 placeholder:text-slate-500 font-bold text-sm focus:outline-hidden"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      💡 سيقوم النظام تلقائياً بتطبيع التشكيل والهمزات والتاء المربوطة لضمان العدالة للطلاب.
+                    </p>
+                  </div>
+                )}
+
+                {manualQuestionType === 'puzzle' && (
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-black text-slate-300">
+                      أَدْخِلِ الكَلِمَاتِ بِالتَّرْتِيبِ الصَّحِيحِ (سيقوم النظام بخلطها للطلاب):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {manualOptions.map((opt, idx) => (
+                        <div key={idx} className="p-3 rounded-xl border border-slate-700 bg-slate-900/60 flex items-center gap-2">
+                          <span className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-mono font-black text-xs shrink-0">
+                            {idx + 1}
+                          </span>
                           <input
                             type="text"
                             value={opt}
@@ -1583,21 +1867,69 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                               updated[idx] = e.target.value;
                               setManualOptions(updated);
                             }}
-                            placeholder={`الخيار ${idx + 1} (${cfg.name} - ${cfg.colorName})`}
+                            placeholder={`العنصر رقم ${idx + 1} بالترتيب الصحيح`}
                             className="flex-1 bg-transparent text-white text-xs font-bold focus:outline-hidden"
                           />
-                          <input
-                            type="radio"
-                            name="correctOption"
-                            checked={manualCorrectIndex === idx}
-                            onChange={() => setManualCorrectIndex(idx)}
-                            className="w-4 h-4 text-emerald-500 accent-emerald-500 cursor-pointer"
-                          />
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {(manualQuestionType === 'classic' || manualQuestionType === 'poll' || manualQuestionType === 'word_cloud') && (
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-black text-slate-300">
+                      {manualQuestionType === 'classic'
+                        ? 'الخِيَارَاتُ الأَرْبَعَةُ التَّنَافُسِيَّةُ (حَدِّدِ الإِجَابَةَ الصَّحِيحَةَ):'
+                        : 'خِيَارَاتُ الاسْتِطْلاعِ أَوِ التَّصْوِيتِ:'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {manualOptions.map((opt, idx) => {
+                        const shape = DEFAULT_SHAPES[idx];
+                        const cfg = SHAPE_CONFIG[shape];
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-xl border flex items-center gap-2 ${
+                              manualCorrectIndex === idx && manualQuestionType === 'classic'
+                                ? 'bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/40'
+                                : 'bg-slate-900/60 border-slate-700'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setManualCorrectIndex(idx)}
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base shadow-sm ${cfg.bgClass} ${cfg.textClass}`}
+                              title="انقر لتحديد هذا الخيار كإجابة صحيحة"
+                            >
+                              {cfg.symbol}
+                            </button>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => {
+                                const updated = [...manualOptions];
+                                updated[idx] = e.target.value;
+                                setManualOptions(updated);
+                              }}
+                              placeholder={`الخيار ${idx + 1} (${cfg.name} - ${cfg.colorName})`}
+                              className="flex-1 bg-transparent text-white text-xs font-bold focus:outline-hidden"
+                            />
+                            {manualQuestionType === 'classic' && (
+                              <input
+                                type="radio"
+                                name="correctOption"
+                                checked={manualCorrectIndex === idx}
+                                onChange={() => setManualCorrectIndex(idx)}
+                                className="w-4 h-4 text-emerald-500 accent-emerald-500 cursor-pointer"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -1615,7 +1947,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                 <button
                   type="button"
                   onClick={handleAddManualQuestion}
-                  disabled={!manualQuestionText.trim() || manualOptions.some(o => !o.trim())}
+                  disabled={
+                    !manualQuestionText.trim() ||
+                    (manualQuestionType === 'type_answer' && !manualCorrectAnswerText.trim()) ||
+                    (manualQuestionType === 'classic' && manualOptions.some(o => !o.trim()))
+                  }
                   className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" />
@@ -1650,7 +1986,16 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-4 space-y-2 text-right"
                     >
                       <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span className="font-bold text-amber-400">سؤال {qIdx + 1} ({q.timeLimitSeconds} ثانية)</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-amber-400">سؤال {qIdx + 1} ({q.timeLimitSeconds} ثانية)</span>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-indigo-300 border border-slate-700">
+                            {q.type === 'true_false' ? 'صح أم خطأ' :
+                             q.type === 'puzzle' ? 'سباق الترتيب' :
+                             q.type === 'type_answer' ? 'اكتب الإجابة' :
+                             q.type === 'word_cloud' ? 'سحابة كلمات' :
+                             q.type === 'poll' ? 'استطلاع رأي' : 'كلاسيكي'}
+                          </span>
+                        </div>
                         <button
                           onClick={() => setNewQuizQuestions(prev => prev.filter((_, idx) => idx !== qIdx))}
                           className="text-rose-400 hover:text-rose-300 transition"
@@ -1659,26 +2004,43 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         </button>
                       </div>
                       <p className="text-sm font-black text-white">{q.text}</p>
-                      <div className="grid grid-cols-2 gap-2 pt-1">
-                        {q.options.map((opt, oIdx) => {
-                          const cfg = SHAPE_CONFIG[opt.shape];
-                          const isCorrect = oIdx === q.correctIndex;
-                          return (
-                            <div
-                              key={oIdx}
-                              className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${
-                                isCorrect
-                                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-                                  : 'bg-slate-800/40 border-slate-700/40 text-slate-300'
-                              }`}
-                            >
-                              <span>{cfg.symbol}</span>
-                              <span className="truncate">{opt.text}</span>
-                              {isCorrect && <Check className="w-3.5 h-3.5 text-emerald-400 mr-auto shrink-0" />}
-                            </div>
-                          );
-                        })}
-                      </div>
+
+                      {q.type === 'type_answer' ? (
+                        <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
+                          <span>الإجابة الصحيحة المقبولة:</span>
+                          <span className="text-white bg-slate-900 px-2 py-0.5 rounded border border-slate-700 font-mono">
+                            {q.correctAnswerText || q.acceptableAnswers?.[0] || 'غير محدد'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          {q.options.map((opt, oIdx) => {
+                            const cfg = SHAPE_CONFIG[opt.shape] || SHAPE_CONFIG['triangle'];
+                            const isCorrect = q.type === 'puzzle' || q.type === 'poll' || q.type === 'word_cloud'
+                              ? false
+                              : oIdx === q.correctIndex;
+                            return (
+                              <div
+                                key={oIdx}
+                                className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${
+                                  isCorrect
+                                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                                    : 'bg-slate-800/40 border-slate-700/40 text-slate-300'
+                                }`}
+                              >
+                                {q.type === 'puzzle' && (
+                                  <span className="w-5 h-5 rounded bg-indigo-500/30 text-indigo-300 flex items-center justify-center font-mono text-[10px]">
+                                    {oIdx + 1}
+                                  </span>
+                                )}
+                                <span>{cfg.symbol}</span>
+                                <span className="truncate">{opt.text}</span>
+                                {isCorrect && <Check className="w-3.5 h-3.5 text-emerald-400 mr-auto shrink-0" />}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2031,28 +2393,67 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       </h3>
                     </div>
 
-                    {/* بطاقات الخيارات الأربعة - للعرض الواضح والتربوي على شاشة المعلم/السبورة الذكية */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      {currentQ.options.map((opt, idx) => {
-                        const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
-
-                        return (
+                    {/* بطاقات الخيارات أو نموذج العرض حسب نمط السؤال - لشاشة المعلم/السبورة الذكية */}
+                    {currentQ.type === 'true_false' ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-6 rounded-3xl border-2 border-blue-500/50 bg-blue-950/40 flex flex-col items-center justify-center text-center shadow-lg">
+                          <span className="text-4xl mb-2">🔷</span>
+                          <span className="text-2xl font-black text-blue-300">صَوَابٌ (صَحِيحٌ)</span>
+                        </div>
+                        <div className="p-6 rounded-3xl border-2 border-rose-500/50 bg-rose-950/40 flex flex-col items-center justify-center text-center shadow-lg">
+                          <span className="text-4xl mb-2">🔺</span>
+                          <span className="text-2xl font-black text-rose-300">خَطَأٌ (غَيْرُ صَحِيحٍ)</span>
+                        </div>
+                      </div>
+                    ) : currentQ.type === 'type_answer' ? (
+                      <div className="p-6 rounded-3xl border-2 border-indigo-500/40 bg-indigo-950/30 text-center space-y-3 shadow-lg">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-black">
+                          <MessageSquare className="w-4 h-4" />
+                          <span>سُؤَالُ إِدْخَالِ نَصٍّ (يكتب الطلاب الإجابة من لوحة المفاتيح)</span>
+                        </div>
+                        <p className="text-sm font-bold text-slate-300">
+                          يكتب الطلاب الإجابة الصحيحة الآن مباشرة من أجهزتهم، ويتم التحقق والتطبيع آلياً.
+                        </p>
+                      </div>
+                    ) : currentQ.type === 'puzzle' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {currentQ.options.map((opt, idx) => (
                           <div
                             key={idx}
-                            className={`p-4 rounded-2xl border-2 flex items-center gap-4 text-right select-none shadow-md ${style.bg} ${style.border}`}
+                            className="p-4 rounded-2xl border-2 border-amber-500/40 bg-slate-900/80 flex items-center gap-4 text-right select-none shadow-md"
                           >
-                            <div className="w-12 h-12 rounded-2xl bg-black/30 flex items-center justify-center text-2xl font-black text-white shrink-0 shadow-inner">
-                              ({style.letter})
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center text-lg font-black shrink-0">
+                              {idx + 1}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
-                                {opt.text}
-                              </span>
-                            </div>
+                            <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
+                              {opt.text}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {currentQ.options.map((opt, idx) => {
+                          const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+
+                          return (
+                            <div
+                              key={idx}
+                              className={`p-4 rounded-2xl border-2 flex items-center gap-4 text-right select-none shadow-md ${style.bg} ${style.border}`}
+                            >
+                              <div className="w-12 h-12 rounded-2xl bg-black/30 flex items-center justify-center text-2xl font-black text-white shrink-0 shadow-inner">
+                                ({style.letter})
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
+                                  {opt.text}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {/* لوحة متابعة إجابات ودرجات الطلاب الحية للمعلم */}
                     <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-right space-y-3 shadow-xl">
@@ -2175,8 +2576,24 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         <div>
                           <span className="text-xs text-slate-400 font-bold">الإِجَابَةُ الصَّحِيحَةُ المَعْتَمَدَةُ:</span>
                           <h3 className="text-2xl font-black text-white flex items-center gap-2">
-                            <span className="text-amber-400 font-black">({ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'})</span>
-                            <span>{currentQ.options[currentQ.correctIndex]?.text}</span>
+                            {currentQ.type === 'true_false' ? (
+                              <span>{currentQ.correctIndex === 0 ? '🔷 صَوَابٌ (صَحِيحٌ)' : '🔺 خَطَأٌ (غَيْرُ صَحِيحٍ)'}</span>
+                            ) : currentQ.type === 'type_answer' ? (
+                              <span className="text-emerald-300 font-mono">{currentQ.correctAnswerText || currentQ.acceptableAnswers?.[0] || 'تم فحص الإجابات'}</span>
+                            ) : currentQ.type === 'puzzle' ? (
+                              <span className="text-amber-300 text-lg">
+                                {currentQ.correctOrder && currentQ.correctOrder.length > 0
+                                  ? currentQ.correctOrder.map(idx => currentQ.options[idx]?.text || '').filter(Boolean).join(' ⬅️ ')
+                                  : currentQ.options.map(o => o.text).join(' ⬅️ ')}
+                              </span>
+                            ) : currentQ.type === 'poll' || currentQ.type === 'word_cloud' ? (
+                              <span className="text-indigo-300">مشاركة جماعية (استطلاع رأي / سحابة كلمات)</span>
+                            ) : (
+                              <>
+                                <span className="text-amber-400 font-black">({ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'})</span>
+                                <span>{currentQ.options[currentQ.correctIndex]?.text}</span>
+                              </>
+                            )}
                           </h3>
                         </div>
                       </div>
@@ -2193,33 +2610,87 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         </div>
                       )}
 
-                      {/* توزيع إجابات الطلاب على الخيارات الأربعة بالحروف العربية */}
-                      <div className="space-y-2 pt-2">
-                        <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف الحالية:</span>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          {currentQ.options.map((opt, idx) => {
-                            const count = optionAnswerCounts[idx];
-                            const pct = totalAnswersCount > 0 ? Math.round((count / totalAnswersCount) * 100) : 0;
-                            const isCorrect = idx === currentQ.correctIndex;
-                            const letter = ARABIC_OPTION_LETTERS[idx] || 'أ';
-
-                            return (
-                              <div
-                                key={idx}
-                                className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center text-center ${
-                                  isCorrect ? 'bg-emerald-950/60 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
-                                }`}
-                              >
-                                <span className={`text-2xl font-black ${isCorrect ? 'text-emerald-400' : 'text-slate-300'}`}>
-                                  ({letter})
-                                </span>
-                                <span className="text-base font-black text-white mt-1">{count} إجابة</span>
-                                <span className="text-xs text-slate-400 font-bold">{pct}%</span>
-                              </div>
-                            );
-                          })}
+                      {/* توزيع إجابات الطلاب على الخيارات */}
+                      {currentQ.type === 'true_false' ? (
+                        <div className="space-y-2 pt-2">
+                          <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف (صح أم خطأ):</span>
+                          <div className="grid grid-cols-2 gap-4">
+                            {[
+                              { label: 'صواب 🔷', count: optionAnswerCounts[0] || 0, isCorrect: currentQ.correctIndex === 0, color: 'blue' },
+                              { label: 'خطأ 🔺', count: optionAnswerCounts[1] || 0, isCorrect: currentQ.correctIndex === 1, color: 'rose' }
+                            ].map((item, idx) => {
+                              const pct = totalAnswersCount > 0 ? Math.round((item.count / totalAnswersCount) * 100) : 0;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-4 rounded-2xl border flex flex-col items-center justify-center text-center ${
+                                    item.isCorrect ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300' : 'bg-slate-900/60 border-slate-800 text-slate-300'
+                                  }`}
+                                >
+                                  <span className="text-xl font-black">{item.label}</span>
+                                  <span className="text-base font-black text-white mt-1">{item.count} إجابة ({pct}%)</span>
+                                  <div className="w-full bg-slate-800 h-2.5 rounded-full mt-2 overflow-hidden">
+                                    <div
+                                      className={`h-full ${item.isCorrect ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      ) : currentQ.type === 'type_answer' ? (
+                        <div className="space-y-2 pt-2">
+                          <span className="text-xs font-bold text-slate-400 block">إجابات الطلاب النصية المستلمة:</span>
+                          <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 bg-slate-900/60 rounded-2xl border border-slate-800">
+                            {Array.isArray(activeRoom.answers_received) && activeRoom.answers_received.filter((a: any) => Number(a.questionIndex) === currentQIndex).length > 0 ? (
+                              activeRoom.answers_received
+                                .filter((a: any) => Number(a.questionIndex) === currentQIndex)
+                                .map((ans: any, aIdx: number) => {
+                                  const player = activeRoom.players[ans.playerId];
+                                  return (
+                                    <div key={aIdx} className="flex items-center justify-between text-xs py-1 px-2.5 bg-slate-800/80 rounded-xl">
+                                      <span className="text-slate-300 font-bold">{player?.name || 'طالب'}:</span>
+                                      <span className={`font-mono font-black ${ans.isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        «{ans.textAnswer || ans.selectedText || 'بدون إدخال'}» {ans.isCorrect ? '✓' : '✗'}
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                            ) : (
+                              <div className="text-center text-xs text-slate-500 py-3">لا توجد إجابات نصية مسجلة بعد</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 pt-2">
+                          <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف الحالية:</span>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {currentQ.options.map((opt, idx) => {
+                              const count = optionAnswerCounts[idx];
+                              const pct = totalAnswersCount > 0 ? Math.round((count / totalAnswersCount) * 100) : 0;
+                              const isCorrect = idx === currentQ.correctIndex;
+                              const letter = ARABIC_OPTION_LETTERS[idx] || 'أ';
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center text-center ${
+                                    isCorrect ? 'bg-emerald-950/60 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
+                                  }`}
+                                >
+                                  <span className={`text-2xl font-black ${isCorrect ? 'text-emerald-400' : 'text-slate-300'}`}>
+                                    ({letter})
+                                  </span>
+                                  <span className="text-base font-black text-white mt-1">{count} إجابة</span>
+                                  <span className="text-xs text-slate-400 font-bold">{pct}%</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* لوحة درجات الطلاب بعد كشف السؤال لمعرفة من أصاب ومن أخطأ */}
@@ -2520,46 +2991,215 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     )}
 
                     {!hasAnswered ? (
-                      /* خيارات الإجابة العربية الأربعة الواضحة (أ، ب، ج، د) دون أشكال هندسية */
+                      /* واجهات إجابة الطالب المخصصة حسب نمط السؤال التفاعلي */
                       <div className="flex-1 flex flex-col justify-center space-y-3">
-                        <div className="text-center mb-1">
-                          <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span>اختر الحرف الصحيح بأسرع ما يمكن! ⚡</span>
-                          </span>
-                        </div>
+                        {/* 1. نمط صح أم خطأ (True / False): خياران عملاقان فقط */}
+                        {currentQ?.type === 'true_false' ? (
+                          <div className="flex-1 flex flex-col justify-center space-y-4">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>صَحٌّ أَمْ خَطَأ؟ اختر قرارك بسرعة! ⚡</span>
+                              </span>
+                            </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 flex-1">
-                          {(currentQ?.options || [
-                            { text: 'الخيار الأول' },
-                            { text: 'الخيار الثاني' },
-                            { text: 'الخيار الثالث' },
-                            { text: 'الخيار الرابع' }
-                          ]).map((opt, idx) => {
-                            const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
-
-                            return (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                              {/* صواب */}
                               <button
-                                key={idx}
                                 type="button"
-                                onClick={() => handleSelectAnswer(idx)}
-                                className={`w-full min-h-[110px] sm:min-h-[130px] rounded-3xl p-4 flex items-center gap-3.5 text-right transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${style.bg} ${style.border} ${style.shadow}`}
+                                onClick={() => handleSelectAnswer(0)}
+                                className="w-full min-h-[140px] sm:min-h-[160px] rounded-3xl p-5 flex flex-col items-center justify-center gap-3 text-center transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 border-blue-400 shadow-blue-900/40 text-white"
                               >
-                                <div className="w-14 h-14 rounded-2xl bg-black/30 border border-white/20 flex items-center justify-center text-3xl font-black text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform">
-                                  ({style.letter})
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
-                                    {opt.text}
-                                  </span>
-                                </div>
+                                <span className="text-5xl">🔷</span>
+                                <span className="text-2xl sm:text-3xl font-black tracking-wide">صَوَابٌ</span>
                               </button>
-                            );
-                          })}
-                        </div>
+
+                              {/* خطأ */}
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAnswer(1)}
+                                className="w-full min-h-[140px] sm:min-h-[160px] rounded-3xl p-5 flex flex-col items-center justify-center gap-3 text-center transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer bg-gradient-to-br from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 border-rose-400 shadow-rose-900/40 text-white"
+                              >
+                                <span className="text-5xl">🔺</span>
+                                <span className="text-2xl sm:text-3xl font-black tracking-wide">خَطَأٌ</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : currentQ?.type === 'type_answer' ? (
+                          /* 2. نمط اكتب الإجابة (Type Answer): حقل إدخال نصي ذكي وكبير */
+                          <div className="flex-1 flex flex-col justify-center space-y-4 max-w-lg mx-auto w-full">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>اكتب الإجابة بالتشكيل أو بدونه، ثم اضغط إرسال! ✍️</span>
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-4">
+                              <input
+                                type="text"
+                                value={studentTextAnswer}
+                                onChange={(e) => setStudentTextAnswer(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && studentTextAnswer.trim()) {
+                                    handleSelectAnswer(0, { textAnswer: studentTextAnswer.trim() });
+                                  }
+                                }}
+                                placeholder="اكتب إجابتك هنا يا بطل..."
+                                autoFocus
+                                className="w-full py-4 px-5 rounded-2xl bg-slate-950 border-2 border-indigo-500/60 focus:border-indigo-400 text-white placeholder:text-slate-500 font-black text-lg text-center focus:outline-hidden shadow-inner"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAnswer(0, { textAnswer: studentTextAnswer.trim() })}
+                                disabled={!studentTextAnswer.trim()}
+                                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 text-slate-950 font-black text-base shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Send className="w-4 h-4" />
+                                <span>تَأْكِيدُ وَإِرْسَالُ الإِجَابَةِ 🚀</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : currentQ?.type === 'puzzle' ? (
+                          /* 3. نمط سباق الترتيب (Puzzle / Sequence): إعادة ترتيب البطاقات للأعلى والأسفل */
+                          <div className="flex-1 flex flex-col justify-center space-y-3 max-w-lg mx-auto w-full">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                                <Sliders className="w-3.5 h-3.5" />
+                                <span>رتّب الكلمات بالسهمين لأعلى وأسفل ثم اضغط تأكيد الترتيب! 🧩</span>
+                              </span>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              {(() => {
+                                const currentOrder = studentPuzzleOrder.length === currentQ.options.length
+                                  ? studentPuzzleOrder
+                                  : currentQ.options.map((_, i) => i);
+
+                                return currentOrder.map((optIdx, pos) => {
+                                  const opt = currentQ.options[optIdx];
+                                  if (!opt) return null;
+
+                                  const moveUp = () => {
+                                    if (pos === 0) return;
+                                    const nextOrder = [...currentOrder];
+                                    const temp = nextOrder[pos - 1];
+                                    nextOrder[pos - 1] = nextOrder[pos];
+                                    nextOrder[pos] = temp;
+                                    setStudentPuzzleOrder(nextOrder);
+                                  };
+
+                                  const moveDown = () => {
+                                    if (pos === currentOrder.length - 1) return;
+                                    const nextOrder = [...currentOrder];
+                                    const temp = nextOrder[pos + 1];
+                                    nextOrder[pos + 1] = nextOrder[pos];
+                                    nextOrder[pos] = temp;
+                                    setStudentPuzzleOrder(nextOrder);
+                                  };
+
+                                  return (
+                                    <div
+                                      key={optIdx}
+                                      className="p-3.5 rounded-2xl bg-slate-800 border-2 border-indigo-500/40 flex items-center justify-between gap-3 shadow-md"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <span className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center justify-center font-mono font-black text-sm">
+                                          {pos + 1}
+                                        </span>
+                                        <span className="text-base font-black text-white">{opt.text}</span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={moveUp}
+                                          disabled={pos === 0}
+                                          className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white text-xs font-bold transition"
+                                          title="تحريك لأعلى"
+                                        >
+                                          ▲
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={moveDown}
+                                          disabled={pos === currentOrder.length - 1}
+                                          className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white text-xs font-bold transition"
+                                          title="تحريك لأسفل"
+                                        >
+                                          ▼
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const finalOrder = studentPuzzleOrder.length === currentQ.options.length
+                                    ? studentPuzzleOrder
+                                    : currentQ.options.map((_, i) => i);
+                                  handleSelectAnswer(0, { orderAnswer: finalOrder });
+                                }}
+                                className="w-full py-3.5 mt-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Check className="w-4 h-4 stroke-[3]" />
+                                <span>تَأْكِيدُ التَّرْتِيبِ النِّهَائِيِّ 🎯</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* 4. نمط كلاسيكي (Classic 4-choices) واستطلاع رأي (Poll) وسحابة كلمات (Word Cloud) */
+                          <div className="flex-1 flex flex-col justify-center space-y-3">
+                            <div className="text-center mb-1">
+                              <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>
+                                  {currentQ?.type === 'poll'
+                                    ? 'استطلاع رأي: صوّت لخيارك المفضل!'
+                                    : currentQ?.type === 'word_cloud'
+                                    ? 'سحابة كلمات: شارك برأيك لتظهر كلمتك في السحابة!'
+                                    : 'اختر الحرف الصحيح بأسرع ما يمكن! ⚡'}
+                                </span>
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 flex-1">
+                              {(currentQ?.options || [
+                                { text: 'الخيار الأول' },
+                                { text: 'الخيار الثاني' },
+                                { text: 'الخيار الثالث' },
+                                { text: 'الخيار الرابع' }
+                              ]).map((opt, idx) => {
+                                const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
+
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => handleSelectAnswer(idx)}
+                                    className={`w-full min-h-[110px] sm:min-h-[130px] rounded-3xl p-4 flex items-center gap-3.5 text-right transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${style.bg} ${style.border} ${style.shadow}`}
+                                  >
+                                    <div className="w-14 h-14 rounded-2xl bg-black/30 border border-white/20 flex items-center justify-center text-3xl font-black text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                      ({style.letter})
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
+                                        {opt.text}
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      /* شاشة تأكيد بعد النقر: «تم استلام إجابتك! في انتظار بقية الأبطال» */
+                      /* شاشة تأكيد بعد النقر أو الإرسال */
                       <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-5 animate-in zoom-in-95 duration-200">
                         <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border-2 border-emerald-500/40 text-emerald-400 flex items-center justify-center text-4xl shadow-xl shadow-emerald-500/20 animate-bounce">
                           <Check className="w-10 h-10 stroke-[3]" />
@@ -2574,15 +3214,35 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                           </p>
                         </div>
 
-                        {selectedOptionIndex !== null && currentQ.options[selectedOptionIndex] && (
+                        {currentQ.type === 'type_answer' ? (
                           <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
-                            <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-base font-black shrink-0">
-                              ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'})
-                            </span>
-                            <span className="text-xs font-black text-amber-300 truncate">
-                              إجابتك المسجلة: ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'}) {currentQ.options[selectedOptionIndex].text}
+                            <span className="text-xs font-black text-amber-300">
+                              إجابتك المكتوبة: «{studentTextAnswer || lastSubmittedAnswerDetail?.textAnswer || 'مسجلة'}»
                             </span>
                           </div>
+                        ) : currentQ.type === 'true_false' ? (
+                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
+                            <span className="text-xs font-black text-amber-300">
+                              إجابتك المختارة: {selectedOptionIndex === 0 ? '🔷 صَوَاب' : '🔺 خَطَأ'}
+                            </span>
+                          </div>
+                        ) : currentQ.type === 'puzzle' ? (
+                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
+                            <span className="text-xs font-black text-amber-300">
+                              تم تسجيل ترتيبك بنجاح 🧩
+                            </span>
+                          </div>
+                        ) : (
+                          selectedOptionIndex !== null && currentQ.options[selectedOptionIndex] && (
+                            <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
+                              <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-base font-black shrink-0">
+                                ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'})
+                              </span>
+                              <span className="text-xs font-black text-amber-300 truncate">
+                                إجابتك المسجلة: ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'}) {currentQ.options[selectedOptionIndex].text}
+                              </span>
+                            </div>
+                          )
                         )}
 
                         <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
@@ -2624,7 +3284,19 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         <div>
                           <span className="text-[11px] text-slate-400 font-bold block">الإِجَابَةُ الصَّحِيحَةُ:</span>
                           <span className="text-base font-black text-white">
-                            ({ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'}) {currentQ.options[currentQ.correctIndex]?.text}
+                            {currentQ.type === 'true_false' ? (
+                              currentQ.correctIndex === 0 ? '🔷 صَوَابٌ (صَحِيحٌ)' : '🔺 خَطَأٌ (غَيْرُ صَحِيحٍ)'
+                            ) : currentQ.type === 'type_answer' ? (
+                              `«${currentQ.correctAnswerText || currentQ.acceptableAnswers?.[0] || ''}»`
+                            ) : currentQ.type === 'puzzle' ? (
+                              currentQ.correctOrder && currentQ.correctOrder.length > 0
+                                ? currentQ.correctOrder.map(idx => currentQ.options[idx]?.text || '').filter(Boolean).join(' ⬅️ ')
+                                : currentQ.options.map(o => o.text).join(' ⬅️ ')
+                            ) : currentQ.type === 'poll' || currentQ.type === 'word_cloud' ? (
+                              'مشاركة جماعية مقبولة'
+                            ) : (
+                              `(${ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'}) ${currentQ.options[currentQ.correctIndex]?.text}`
+                            )}
                           </span>
                         </div>
                       </div>
