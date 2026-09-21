@@ -122,11 +122,45 @@ async function startServer() {
       return res.json({ status: 'ok', room: localChallengeRooms.get(cleanPin) });
     }
 
-    // دمج اللاعبين دون فقدان أي بطل منضم
-    const mergedPlayers = {
-      ...normalizePlayers(existing.players),
-      ...normalizePlayers(room.players)
-    };
+    // دمج اللاعبين دون فقدان أي بطل منضم مع الحفاظ على أعلى رصيد نقاط مسجل
+    const existingPlayers = normalizePlayers(existing.players);
+    const incomingPlayers = normalizePlayers(room.players);
+    const allPlayerIds = new Set([...Object.keys(existingPlayers), ...Object.keys(incomingPlayers)]);
+
+    // حساب الدرجات من الإجابات المدمجة
+    const computedScores: Record<string, number> = {};
+    mergedAnswers.forEach((a: any) => {
+      if (a && a.playerId && a.isCorrect) {
+        computedScores[a.playerId] = (computedScores[a.playerId] || 0) + (Number(a.points) || 0);
+      }
+    });
+
+    const mergedPlayers: Record<string, any> = {};
+    allPlayerIds.forEach(id => {
+      const ep = existingPlayers[id];
+      const ip = incomingPlayers[id];
+      const base = ip || ep;
+      if (!base) return;
+
+      const maxScore = Math.max(
+        Number(ep?.score || 0),
+        Number(ip?.score || 0),
+        Number(computedScores[id] || 0)
+      );
+
+      const maxStreak = Math.max(
+        Number(ep?.streak || 0),
+        Number(ip?.streak || 0)
+      );
+
+      mergedPlayers[id] = {
+        ...ep,
+        ...ip,
+        score: maxScore,
+        streak: maxStreak,
+        isOnline: true
+      };
+    });
 
     // دمج الإجابات دون مسح إجابات الطلاب السابقة
     const existingAnswers = Array.isArray(existing.answers_received) ? existing.answers_received : [];

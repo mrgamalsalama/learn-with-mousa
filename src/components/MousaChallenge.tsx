@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Trophy, Play, Users, Sparkles, Plus, Clock, Award, Flame, CheckCircle2, 
   XCircle, RotateCcw, Volume2, VolumeX, ArrowRight, BookOpen, AlertCircle, 
-  ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye, LogOut
+  ChevronRight, BarChart3, HelpCircle, Loader2, Copy, Check, Radio, PlayCircle, Eye, LogOut,
+  Sliders, Zap
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, ChallengeQuiz, ChallengeRoom, 
@@ -19,6 +20,42 @@ import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService
 import { SHAPE_CONFIG, DEFAULT_SHAPES, INITIAL_CHALLENGE_QUIZZES } from '../data/challengeData';
 import { challengeAudio } from '../utils/challengeAudio';
 import confetti from 'canvas-confetti';
+
+export const ARABIC_OPTION_LETTERS = ['أ', 'ب', 'ج', 'د'];
+export const ARABIC_OPTION_STYLES = [
+  {
+    letter: 'أ',
+    bg: 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700',
+    border: 'border-rose-700',
+    badgeBg: 'bg-rose-950/60 border-rose-400/50 text-white',
+    text: 'text-white',
+    shadow: 'shadow-rose-950/40'
+  },
+  {
+    letter: 'ب',
+    bg: 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700',
+    border: 'border-blue-700',
+    badgeBg: 'bg-blue-950/60 border-blue-400/50 text-white',
+    text: 'text-white',
+    shadow: 'shadow-blue-950/40'
+  },
+  {
+    letter: 'ج',
+    bg: 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600',
+    border: 'border-amber-600',
+    badgeBg: 'bg-amber-950/60 border-amber-400/50 text-slate-950',
+    text: 'text-slate-950',
+    shadow: 'shadow-amber-950/40'
+  },
+  {
+    letter: 'د',
+    bg: 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700',
+    border: 'border-emerald-700',
+    badgeBg: 'bg-emerald-950/60 border-emerald-400/50 text-white',
+    text: 'text-white',
+    shadow: 'shadow-emerald-950/40'
+  }
+];
 
 interface MousaChallengeProps {
   currentUser: UserProfile;
@@ -72,6 +109,10 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [copiedPin, setCopiedPin] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
 
+  // نمط سير التحدي: تحكم يدوي للمعلم خطوة بخطوة vs تحدٍّ تلقائي متتابع
+  const [progressionMode, setProgressionMode] = useState<'teacher_paced' | 'auto_continuous'>('teacher_paced');
+  const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<number | null>(null);
+
   // نموذج إنشاء تحدي جديد (AI أو يدوي)
   const [creationMode, setCreationMode] = useState<'ai' | 'manual'>('ai');
   const [aiTopic, setAiTopic] = useState('');
@@ -117,12 +158,6 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
           ? settingsQuestions
           : (prev?.questions || []));
 
-      // دمج اللاعبين
-      const mergedPlayers = {
-        ...(prev?.players || {}),
-        ...normalizeRoomPlayers(incoming.players)
-      };
-
       // دمج الإجابات بدقة حسب playerId ورقم السؤال
       const prevAnswers = Array.isArray(prev?.answers_received) ? prev.answers_received : [];
       const incomingAnswers = Array.isArray(incoming.answers_received) ? incoming.answers_received : [];
@@ -134,6 +169,56 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         if (a && a.playerId !== undefined) ansMap.set(`${a.playerId}_${a.questionIndex}`, a);
       });
       const finalAnswers = Array.from(ansMap.values());
+
+      // احتساب النقاط التراكمية من جميع الإجابات الصحيحة لحماية نتائج الطلاب
+      const computedScores: Record<string, number> = {};
+      finalAnswers.forEach((a: any) => {
+        if (a && a.playerId && a.isCorrect) {
+          computedScores[a.playerId] = (computedScores[a.playerId] || 0) + (Number(a.points) || 0);
+        }
+      });
+
+      // دمج اللاعبين مع الحفاظ على أعلى رصيد نقاط مسجل
+      const prevPlayers = prev?.players || {};
+      const incomingPlayers = normalizeRoomPlayers(incoming.players);
+      const allPlayerIds = new Set([
+        ...Object.keys(prevPlayers),
+        ...Object.keys(incomingPlayers),
+        ...Object.keys(computedScores)
+      ]);
+
+      const mergedPlayers: Record<string, ChallengePlayer> = {};
+      allPlayerIds.forEach(id => {
+        const pp = prevPlayers[id];
+        const ip = incomingPlayers[id];
+        const base = ip || pp;
+        if (!base) return;
+
+        const maxScore = Math.max(
+          Number(pp?.score || 0),
+          Number(ip?.score || 0),
+          Number(computedScores[id] || 0)
+        );
+
+        const maxStreak = Math.max(
+          Number(pp?.streak || 0),
+          Number(ip?.streak || 0)
+        );
+
+        mergedPlayers[id] = {
+          ...pp,
+          ...ip,
+          score: maxScore,
+          streak: maxStreak,
+          isOnline: true
+        };
+      });
+
+      const effectiveSettings = {
+        ...(prev?.settings || {}),
+        ...(incoming.settings || {}),
+        progression_mode: incoming.settings?.progression_mode || prev?.settings?.progression_mode || 'teacher_paced'
+      };
 
       return {
         ...(prev || {}),
@@ -152,6 +237,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         questions: questionsToUse,
         players: mergedPlayers,
         answers_received: finalAnswers,
+        settings: effectiveSettings,
         created_at: incoming.created_at || prev?.created_at || new Date().toISOString(),
         updated_at: incoming.updated_at || new Date().toISOString()
       };
@@ -406,7 +492,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       settings: {
         questions: quiz.questions,
         target_grade: quiz.target_grade,
-        host_name: currentUser.name
+        host_name: currentUser.name,
+        progression_mode: progressionMode
       }
     };
 
@@ -443,6 +530,9 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       questions: quiz.questions,
       players: {},
       answers_received: [],
+      settings: {
+        progression_mode: progressionMode
+      },
       created_at: new Date().toISOString()
     };
 
@@ -458,7 +548,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       ...activeRoom,
       status: 'question_active',
       current_question_index: 0,
-      question_start_time: Date.now()
+      question_start_time: Date.now(),
+      settings: {
+        ...(activeRoom.settings || {}),
+        progression_mode: progressionMode
+      }
     };
     const saved = await saveChallengeRoom(updated);
     setActiveRoom(saved);
@@ -875,9 +969,30 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
     setAiTopic('');
   };
 
+  // حساب درجات الطلاب الإجمالية من كافة الإجابات المؤكدة لضمان عدم ضياع أي نقطة
+  const computedScores: Record<string, number> = {};
+  if (Array.isArray(activeRoom?.answers_received)) {
+    activeRoom.answers_received.forEach((ans: any) => {
+      if (ans && ans.playerId && ans.isCorrect) {
+        computedScores[ans.playerId] = (computedScores[ans.playerId] || 0) + (Number(ans.points) || 0);
+      }
+    });
+  }
+
+  const playersList = Object.values(activeRoom?.players || {}).map(p => ({
+    ...p,
+    score: Math.max(Number(p.score || 0), Number(computedScores[p.id] || 0))
+  }));
+
   // حساب ترتيب المتصدرين
-  const sortedPlayers = Object.values(activeRoom?.players || {}).sort((a, b) => b.score - a.score);
-  const currentPlayer = activeRoom ? activeRoom.players[currentUser.id] : null;
+  const sortedPlayers = playersList.sort((a, b) => b.score - a.score);
+  const currentPlayer = activeRoom ? {
+    ...(activeRoom.players[currentUser.id] || {}),
+    score: Math.max(
+      Number(activeRoom.players[currentUser.id]?.score || 0),
+      Number(computedScores[currentUser.id] || 0)
+    )
+  } as ChallengePlayer : null;
   const studentRank = sortedPlayers.findIndex(p => p.id === currentUser.id) + 1;
   const studentScore = currentPlayer?.score || 0;
 
@@ -923,6 +1038,54 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       });
     }
   }
+
+  // 1. الانتقال التلقائي للأسئلة في وضع «التحدي المتتابع التلقائي» (auto_continuous)
+  useEffect(() => {
+    if (!isHost || !activeRoom) return;
+    const isAutoMode = activeRoom.settings?.progression_mode === 'auto_continuous';
+
+    if (activeRoom.status === 'question_revealed' && isAutoMode) {
+      setAutoAdvanceCountdown(4);
+      const interval = setInterval(() => {
+        setAutoAdvanceCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            clearInterval(interval);
+            handleNextQuestion();
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        clearInterval(interval);
+      };
+    } else {
+      setAutoAdvanceCountdown(null);
+    }
+  }, [activeRoom?.status, activeRoom?.current_question_index, activeRoom?.settings?.progression_mode, isHost]);
+
+  // 2. في وضع التحدي التلقائي: إذا أجاب جميع الطلاب الحاضرين، يتم كشف الإجابة فوراً
+  useEffect(() => {
+    if (!isHost || !activeRoom) return;
+    const isAutoMode = activeRoom.settings?.progression_mode === 'auto_continuous';
+    if (!isAutoMode || (activeRoom.status !== 'question_active' && activeRoom.status !== 'in_progress')) return;
+
+    const totalJoined = Object.keys(activeRoom.players || {}).length;
+    if (totalJoined > 0 && totalAnswersCount >= totalJoined) {
+      const timer = setTimeout(() => {
+        handleRevealAnswer();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [totalAnswersCount, activeRoom?.status, activeRoom?.players, activeRoom?.settings?.progression_mode, isHost]);
+
+  // 3. مزامنة وضع التحدي مع إعدادات الغرفة إذا كانت محددة
+  useEffect(() => {
+    if (activeRoom?.settings?.progression_mode) {
+      setProgressionMode(activeRoom.settings.progression_mode);
+    }
+  }, [activeRoom?.settings?.progression_mode]);
 
   // نسخ الرمز
   const handleCopyPin = () => {
@@ -1738,6 +1901,65 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       )}
                     </div>
 
+                    {/* اختيار نمط سير التحدي للمعلم */}
+                    <div className="w-full bg-slate-950/60 border border-slate-800 rounded-3xl p-5 text-right space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                          <Sliders className="w-4 h-4 text-amber-400" />
+                          <span>طَرِيقَةُ عَرْضِ وَسَيْرِ التَّحَدِّي:</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-bold">
+                          اختر النظام الأنسب لخطتك الدراسية
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setProgressionMode('teacher_paced')}
+                          className={`p-4 rounded-2xl border text-right transition flex items-start gap-3 cursor-pointer ${
+                            progressionMode === 'teacher_paced'
+                              ? 'bg-indigo-950/80 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                            progressionMode === 'teacher_paced' ? 'border-indigo-400 bg-indigo-500' : 'border-slate-600'
+                          }`}>
+                            {progressionMode === 'teacher_paced' && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <span className="text-xs font-black block text-slate-200 mb-1">تحكم يدوي خطوة بخطوة 👨‍🏫</span>
+                            <span className="text-[11px] text-slate-400 block leading-relaxed">
+                              يمرّر المعلم كل سؤال يدوياً بالضغط على زر «السؤال التالي»، مما يتيح لك مناقشة وتوضيح كل سؤال للطلاب.
+                            </span>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setProgressionMode('auto_continuous')}
+                          className={`p-4 rounded-2xl border text-right transition flex items-start gap-3 cursor-pointer ${
+                            progressionMode === 'auto_continuous'
+                              ? 'bg-amber-950/80 border-amber-500 text-white shadow-lg shadow-amber-500/20'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                            progressionMode === 'auto_continuous' ? 'border-amber-400 bg-amber-500' : 'border-slate-600'
+                          }`}>
+                            {progressionMode === 'auto_continuous' && <div className="w-2 h-2 rounded-full bg-slate-950" />}
+                          </div>
+                          <div>
+                            <span className="text-xs font-black block text-slate-200 mb-1">تحدٍّ متتابع وتلقائي ⚡</span>
+                            <span className="text-[11px] text-slate-400 block leading-relaxed">
+                              تتعاقب الأسئلة وراء بعضها تلقائياً وبشكل سريع ومستمر، مع إعلان النتيجة النهائية الشاملة في النهاية.
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* زر إطلاق التحدي للمعلم */}
                     <button
                       onClick={handleLaunchChallenge}
@@ -1809,19 +2031,18 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       </h3>
                     </div>
 
-                    {/* بطاقات الخيارات الأربعة - للعرض فقط على شاشة المعلم/السبورة الذكية (Display Only - No Answering) */}
+                    {/* بطاقات الخيارات الأربعة - للعرض الواضح والتربوي على شاشة المعلم/السبورة الذكية */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       {currentQ.options.map((opt, idx) => {
-                        const shape = opt.shape || DEFAULT_SHAPES[idx] || 'triangle';
-                        const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
+                        const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
 
                         return (
                           <div
                             key={idx}
-                            className={`p-4 rounded-2xl border-2 flex items-center gap-4 text-right select-none shadow-md ${cfg.bgClass} ${cfg.borderClass}`}
+                            className={`p-4 rounded-2xl border-2 flex items-center gap-4 text-right select-none shadow-md ${style.bg} ${style.border}`}
                           >
-                            <div className="w-12 h-12 rounded-2xl bg-black/25 flex items-center justify-center text-3xl shrink-0 shadow-inner">
-                              {cfg.symbol}
+                            <div className="w-12 h-12 rounded-2xl bg-black/30 flex items-center justify-center text-2xl font-black text-white shrink-0 shadow-inner">
+                              ({style.letter})
                             </div>
                             <div className="flex-1 min-w-0">
                               <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
@@ -1833,11 +2054,72 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       })}
                     </div>
 
+                    {/* لوحة متابعة إجابات ودرجات الطلاب الحية للمعلم */}
+                    <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-right space-y-3 shadow-xl">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                          <Award className="w-4 h-4 text-amber-400" />
+                          <span>دَرَجَاتُ وَتَفَاعُلُ الأَبْطَالِ فِي هَذَا السُّؤَالِ ({sortedPlayers.length} بطل):</span>
+                        </div>
+                        <span className="text-[11px] font-bold text-indigo-300">
+                          {totalAnswersCount} أجابوا من أصل {sortedPlayers.length}
+                        </span>
+                      </div>
+
+                      {sortedPlayers.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-slate-500 font-bold">
+                          لا يوجد طلاب منضمون حتى الآن
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto p-1">
+                          {sortedPlayers.map((player) => {
+                            const playerAns = Array.isArray(activeRoom.answers_received)
+                              ? activeRoom.answers_received.find((a: any) => a.playerId === player.id && Number(a.questionIndex) === currentQIndex)
+                              : null;
+                            const hasAnsweredCurrent = Boolean(playerAns || (player.lastAnswer && Number(player.lastAnswer.questionIndex) === currentQIndex));
+
+                            return (
+                              <div
+                                key={player.id}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition ${
+                                  hasAnsweredCurrent
+                                    ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200'
+                                    : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-base shrink-0">{player.avatar || '🌟'}</span>
+                                  <div className="truncate">
+                                    <span className="text-xs font-black text-white block truncate">{player.name}</span>
+                                    <span className="text-[10px] text-amber-400 font-mono font-bold block">مجموع النقاط: {player.score}</span>
+                                  </div>
+                                </div>
+
+                                <div className="text-left shrink-0">
+                                  {hasAnsweredCurrent ? (
+                                    <span className="text-[10px] font-black text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 flex items-center gap-1">
+                                      <Check className="w-3 h-3 stroke-[3]" />
+                                      <span>أجاب ✓</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                                      <Clock className="w-3 h-3" />
+                                      <span>يفكر...</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
                     {/* شريط التحكم السفلي للمعلم */}
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                       <span className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>💡 الطلاب يجيبون الآن عبر هواتفهم/أجهزتهم بالأشكال التنافسية الأربعة.</span>
+                        <span>💡 يجيب الطلاب الآن باختيار الحرف العربي المناسب (أ، ب، ج، د) من أجهزتهم.</span>
                       </span>
                       <div className="flex items-center gap-2">
                         <button
@@ -1862,6 +2144,28 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                 {/* C. شاشة كشف الإجابة الصحيحة للمعلم مع الإحصائيات (Host Revealed View) */}
                 {activeRoom.status === 'question_revealed' && currentQ && (
                   <div className="flex-1 flex flex-col justify-center space-y-5 py-4 animate-in zoom-in-95 duration-200 max-w-4xl mx-auto w-full">
+                    {/* تنبيه الانتقال التلقائي إذا كان وضع التتابع مفعل */}
+                    {activeRoom.settings?.progression_mode === 'auto_continuous' && (
+                      <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2 text-xs sm:text-sm font-black">
+                          <Zap className="w-4 h-4 text-amber-400 animate-bounce" />
+                          <span>
+                            {currentQIndex + 1 < roomQuestions.length 
+                              ? `وضع التتابع التلقائي: السؤال التالي سينطلق خلال ${autoAdvanceCountdown !== null ? autoAdvanceCountdown : 4} ثوانٍ...`
+                              : `وضع التتابع التلقائي: إعلان النتيجة النهائية والتتويج خلال ${autoAdvanceCountdown !== null ? autoAdvanceCountdown : 4} ثوانٍ...`
+                            }
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleNextQuestion}
+                          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shrink-0 transition cursor-pointer"
+                        >
+                          الانتقال فوراً ❯
+                        </button>
+                      </div>
+                    )}
+
                     {/* بطاقة الإجابة الصحيحة وشرح موسى */}
                     <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-5">
                       <div className="flex items-center gap-3">
@@ -1871,8 +2175,8 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         <div>
                           <span className="text-xs text-slate-400 font-bold">الإِجَابَةُ الصَّحِيحَةُ المَعْتَمَدَةُ:</span>
                           <h3 className="text-2xl font-black text-white flex items-center gap-2">
-                            <span>{SHAPE_CONFIG[currentQ.options[currentQ.correctIndex].shape]?.symbol}</span>
-                            <span>{currentQ.options[currentQ.correctIndex].text}</span>
+                            <span className="text-amber-400 font-black">({ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'})</span>
+                            <span>{currentQ.options[currentQ.correctIndex]?.text}</span>
                           </h3>
                         </div>
                       </div>
@@ -1889,16 +2193,15 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         </div>
                       )}
 
-                      {/* توزيع إجابات الطلاب على الخيارات الأربعة */}
+                      {/* توزيع إجابات الطلاب على الخيارات الأربعة بالحروف العربية */}
                       <div className="space-y-2 pt-2">
                         <span className="text-xs font-bold text-slate-400 block">إحصائيات إجابات الصف الحالية:</span>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                           {currentQ.options.map((opt, idx) => {
                             const count = optionAnswerCounts[idx];
                             const pct = totalAnswersCount > 0 ? Math.round((count / totalAnswersCount) * 100) : 0;
-                            const shape = opt.shape || DEFAULT_SHAPES[idx] || 'triangle';
-                            const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
                             const isCorrect = idx === currentQ.correctIndex;
+                            const letter = ARABIC_OPTION_LETTERS[idx] || 'أ';
 
                             return (
                               <div
@@ -1907,13 +2210,78 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                                   isCorrect ? 'bg-emerald-950/60 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
                                 }`}
                               >
-                                <span className="text-2xl">{cfg.symbol}</span>
+                                <span className={`text-2xl font-black ${isCorrect ? 'text-emerald-400' : 'text-slate-300'}`}>
+                                  ({letter})
+                                </span>
                                 <span className="text-base font-black text-white mt-1">{count} إجابة</span>
                                 <span className="text-xs text-slate-400 font-bold">{pct}%</span>
                               </div>
                             );
                           })}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* لوحة درجات الطلاب بعد كشف السؤال لمعرفة من أصاب ومن أخطأ */}
+                    <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-right space-y-3 shadow-xl">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                          <Award className="w-4 h-4 text-amber-400" />
+                          <span>نَتَائِجُ وَدَرَجَاتُ الأَبْطَالِ فِي هَذَا السُّؤَالِ ({sortedPlayers.length} بطل):</span>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-400">
+                          الدرجة الكلية المحدثة لكل طالب
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto p-1">
+                        {sortedPlayers.map((player) => {
+                          const playerAns = Array.isArray(activeRoom.answers_received)
+                            ? activeRoom.answers_received.find((a: any) => a.playerId === player.id && Number(a.questionIndex) === currentQIndex)
+                            : null;
+                          const hasAnsweredCurrent = Boolean(playerAns || (player.lastAnswer && Number(player.lastAnswer.questionIndex) === currentQIndex));
+                          const isCorrectAns = playerAns ? Boolean(playerAns.isCorrect) : (player.lastAnswer?.isCorrect || false);
+                          const pointsEarned = playerAns ? (Number(playerAns.points) || 0) : (player.lastAnswer?.pointsEarned || 0);
+
+                          return (
+                            <div
+                              key={player.id}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition ${
+                                hasAnsweredCurrent
+                                  ? isCorrectAns
+                                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                                    : 'bg-rose-950/50 border-rose-500/40 text-rose-200'
+                                  : 'bg-slate-800/50 border-slate-700/60 text-slate-400'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-base shrink-0">{player.avatar || '🌟'}</span>
+                                <div className="truncate">
+                                  <span className="text-xs font-black text-white block truncate">{player.name}</span>
+                                  <span className="text-[10px] text-amber-400 font-mono font-bold block">المجموع: {player.score} نقطة</span>
+                                </div>
+                              </div>
+
+                              <div className="text-left shrink-0">
+                                {hasAnsweredCurrent ? (
+                                  isCorrectAns ? (
+                                    <span className="text-[11px] font-black text-emerald-400 bg-emerald-900/60 px-2 py-0.5 rounded-md border border-emerald-500/40">
+                                      +{pointsEarned} ✓
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-black text-rose-400 bg-rose-900/60 px-2 py-0.5 rounded-md border border-rose-500/40">
+                                      خطأ ✗
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    لم يجب
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -2108,7 +2476,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                       </h3>
 
                       <p className="text-xs text-slate-400 leading-relaxed">
-                        أنت متصل الآن بغرفة التحدي <span className="text-amber-400 font-mono font-bold">{activeRoom.pin}</span>. استعد لاختيار الأشكال التنافسية بأعلى سرعة فور انطلاق السؤال!
+                        أنت متصل الآن بغرفة التحدي <span className="text-amber-400 font-mono font-bold">{activeRoom.pin}</span>. استعد لاختيار الإجابة الصحيحة (أ، ب، ج، د) بأعلى سرعة فور انطلاق السؤال!
                       </p>
                     </div>
 
@@ -2152,51 +2520,39 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                     )}
 
                     {!hasAnswered ? (
-                      /* أزرار الإجابة التنافسية الأربعة الكبيرة (🔺 أحمر، 🔷 أزرق، 🟡 أصفر، 🟩 أخضر) */
+                      /* خيارات الإجابة العربية الأربعة الواضحة (أ، ب، ج، د) دون أشكال هندسية */
                       <div className="flex-1 flex flex-col justify-center space-y-3">
                         <div className="text-center mb-1">
                           <span className="text-xs font-black text-amber-300 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5" />
-                            <span>اختر الإجابة الصحيحة بسرعة! ⚡</span>
+                            <span>اختر الحرف الصحيح بأسرع ما يمكن! ⚡</span>
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 sm:gap-4 flex-1 max-h-[480px]">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 flex-1">
                           {(currentQ?.options || [
-                            { text: 'الخيار الأول', shape: 'triangle' },
-                            { text: 'الخيار الثاني', shape: 'diamond' },
-                            { text: 'الخيار الثالث', shape: 'circle' },
-                            { text: 'الخيار الرابع', shape: 'square' }
+                            { text: 'الخيار الأول' },
+                            { text: 'الخيار الثاني' },
+                            { text: 'الخيار الثالث' },
+                            { text: 'الخيار الرابع' }
                           ]).map((opt, idx) => {
-                            const shape = (opt as any).shape || DEFAULT_SHAPES[idx] || 'triangle';
-                            const cfg = SHAPE_CONFIG[shape] || SHAPE_CONFIG.triangle;
+                            const style = ARABIC_OPTION_STYLES[idx] || ARABIC_OPTION_STYLES[0];
 
                             return (
                               <button
                                 key={idx}
                                 type="button"
                                 onClick={() => handleSelectAnswer(idx)}
-                                className={`w-full h-full min-h-[140px] sm:min-h-[170px] rounded-3xl p-4 flex flex-col items-center justify-center text-center transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${
-                                  idx === 0 
-                                    ? 'bg-rose-600 hover:bg-rose-500 border-rose-700 text-white shadow-rose-900/30' 
-                                    : idx === 1 
-                                    ? 'bg-blue-600 hover:bg-blue-500 border-blue-700 text-white shadow-blue-900/30' 
-                                    : idx === 2 
-                                    ? 'bg-amber-500 hover:bg-amber-400 border-amber-600 text-slate-950 shadow-amber-900/30' 
-                                    : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-700 text-white shadow-emerald-900/30'
-                                }`}
+                                className={`w-full min-h-[110px] sm:min-h-[130px] rounded-3xl p-4 flex items-center gap-3.5 text-right transition-all duration-150 shadow-xl border-4 active:scale-95 cursor-pointer relative overflow-hidden group ${style.bg} ${style.border} ${style.shadow}`}
                               >
-                                <div className="text-4xl sm:text-5xl md:text-6xl mb-1 filter drop-shadow-md group-hover:scale-105 transition-transform duration-150">
-                                  {cfg.symbol}
+                                <div className="w-14 h-14 rounded-2xl bg-black/30 border border-white/20 flex items-center justify-center text-3xl font-black text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                  ({style.letter})
                                 </div>
-                                <span className="text-xs sm:text-sm font-bold opacity-90 block mb-1">
-                                  {cfg.name} ({cfg.colorName})
-                                </span>
-                                {opt.text && (
-                                  <span className="text-base sm:text-xl md:text-2xl font-black text-white block px-2 leading-snug">
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-base sm:text-lg font-black block leading-relaxed text-white">
                                     {opt.text}
                                   </span>
-                                )}
+                                </div>
                               </button>
                             );
                           })}
@@ -2220,11 +2576,11 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
                         {selectedOptionIndex !== null && currentQ.options[selectedOptionIndex] && (
                           <div className="px-5 py-2.5 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center gap-2.5 shadow-md">
-                            <span className="text-xl">
-                              {SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.symbol}
+                            <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-base font-black shrink-0">
+                              ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'})
                             </span>
-                            <span className="text-xs font-black text-amber-300">
-                              إجابتك المسجلة: {SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.name} ({SHAPE_CONFIG[currentQ.options[selectedOptionIndex].shape]?.colorName})
+                            <span className="text-xs font-black text-amber-300 truncate">
+                              إجابتك المسجلة: ({ARABIC_OPTION_LETTERS[selectedOptionIndex] || 'أ'}) {currentQ.options[selectedOptionIndex].text}
                             </span>
                           </div>
                         )}
@@ -2268,7 +2624,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
                         <div>
                           <span className="text-[11px] text-slate-400 font-bold block">الإِجَابَةُ الصَّحِيحَةُ:</span>
                           <span className="text-base font-black text-white">
-                            {SHAPE_CONFIG[currentQ.options[currentQ.correctIndex].shape]?.symbol} {currentQ.options[currentQ.correctIndex].text}
+                            ({ARABIC_OPTION_LETTERS[currentQ.correctIndex] || 'أ'}) {currentQ.options[currentQ.correctIndex]?.text}
                           </span>
                         </div>
                       </div>

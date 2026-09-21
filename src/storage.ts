@@ -2536,7 +2536,7 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
     // التحقق من بيانات السحابة لدمج أي إجابات أو لاعبين مسجلين حديثاً
     const { data: cloudData } = await supabase
       .from('challenge_rooms')
-      .select('answers_received, players, settings, quiz_id, quiz_title, host_id, host_name')
+      .select('answers_received, players, settings, quiz_id, quiz_title, host_id')
       .eq('pin', roomToSave.pin)
       .maybeSingle();
 
@@ -2554,7 +2554,49 @@ export const saveChallengeRoom = async (room: ChallengeRoom): Promise<ChallengeR
       finalAnswers = Array.from(ansMap.values());
 
       const cloudPlayers = normalizeRoomPlayers(cloudData.players);
-      mergedPlayers = { ...cloudPlayers, ...mergedPlayers };
+      
+      // حساب الدرجات التراكمية من جميع الإجابات الصحيحة المؤكدة لضمان عدم ضياع أي نقطة
+      const computedScores: Record<string, number> = {};
+      finalAnswers.forEach((a: any) => {
+        if (a && a.playerId && a.isCorrect) {
+          computedScores[a.playerId] = (computedScores[a.playerId] || 0) + (Number(a.points) || 0);
+        }
+      });
+
+      const allIds = new Set([
+        ...Object.keys(cloudPlayers),
+        ...Object.keys(mergedPlayers),
+        ...Object.keys(computedScores)
+      ]);
+
+      const reconciledPlayers: Record<string, ChallengePlayer> = {};
+      allIds.forEach(id => {
+        const cp = cloudPlayers[id];
+        const lp = mergedPlayers[id];
+        const base = lp || cp;
+        if (!base) return;
+
+        const maxScore = Math.max(
+          Number(cp?.score || 0),
+          Number(lp?.score || 0),
+          Number(computedScores[id] || 0)
+        );
+
+        const maxStreak = Math.max(
+          Number(cp?.streak || 0),
+          Number(lp?.streak || 0)
+        );
+
+        reconciledPlayers[id] = {
+          ...cp,
+          ...lp,
+          score: maxScore,
+          streak: maxStreak,
+          isOnline: true
+        };
+      });
+
+      mergedPlayers = reconciledPlayers;
     }
 
     const effectiveQuestions = (Array.isArray(roomToSave.questions) && roomToSave.questions.length > 0)
@@ -2711,11 +2753,22 @@ export const submitChallengeAnswerToCloudAndLocal = async (
       joinedAt: Date.now()
     };
 
+    // حساب مجموع النقاط الإجمالي للاعب من جميع إجاباته الصحيحة المسجلة
+    const totalPointsFromAnswers = finalCloudAnswers
+      .filter((a: any) => a.playerId === answer.playerId && a.isCorrect)
+      .reduce((sum: number, a: any) => sum + (Number(a.points) || 0), 0);
+
+    const calculatedScore = Math.max(
+      totalPointsFromAnswers,
+      (Number(currentPlayer.score) || 0) + (answer.isCorrect ? (Number(answer.points) || 0) : 0),
+      Number(playerUpdate?.score || 0)
+    );
+
     cloudPlayers[answer.playerId] = {
       ...currentPlayer,
       ...playerUpdate,
       joinedAt: currentPlayer.joinedAt || Date.now(),
-      score: (currentPlayer.score || 0) + answer.points,
+      score: calculatedScore,
       streak: answer.isCorrect ? ((currentPlayer.streak || 0) + 1) : 0,
       lastAnswer: {
         questionId: `q_${answer.questionIndex}`,
