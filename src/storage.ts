@@ -2988,7 +2988,7 @@ export const getLiveClassSessions = (): LiveClassSession[] => {
       if (Array.isArray(parsed)) {
         return parsed.map((s: LiveClassSession) => ({
           ...s,
-          serverDomain: (!s.serverDomain || s.serverDomain === 'meet.ffrn.de') ? 'jitsi.hamburg.ccc.de' : s.serverDomain
+          serverDomain: (!s.serverDomain || s.serverDomain === 'meet.ffrn.de' || s.serverDomain === 'jitsi.hamburg.ccc.de') ? 'framatalk.org' : s.serverDomain
         }));
       }
     }

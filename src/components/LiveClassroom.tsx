@@ -37,37 +37,25 @@ declare global {
   }
 }
 
-// قائمة خوادم Jitsi المتاحة (خوادم مفتوحة ومجانية 100% وبلا قيود تسجيل دخول)
+// قائمة خوادم Jitsi المعتمدة (خوادم مستقرة ومجانية 100%)
 export const JITSI_SERVERS = [
-  {
-    id: 'jitsi.hamburg.ccc.de',
-    name: 'خادم CCC المفتوح (jitsi.hamburg.ccc.de)',
-    desc: 'خادم مجتمعي مفتوح وسريع جداً، بدون تسجيل دخول أو أعضاء (موصى به ⭐)',
-    badge: 'موصى به ⭐'
-  },
   {
     id: 'framatalk.org',
     name: 'خادم Framatalk المفتوح (framatalk.org)',
-    desc: 'مفتوح ومجاني بدون تسجيل دخول تابع لمؤسسة Framasoft (بديل ممتاز)',
-    badge: 'بديل ممتاز'
-  },
-  {
-    id: 'fairmeeting.net',
-    name: 'خادم Fairmeeting (fairmeeting.net)',
-    desc: 'خادم مفتوح وصديق للخصوصية بدون قيود أو شاشات انتظار',
-    badge: 'مفتوح'
+    desc: 'خادم مجاني ومستقر جداً يعمل به جسر الفيديو Videobridge بنسبة 100% (موصى به ⭐)',
+    badge: 'موصى به ⭐'
   },
   {
     id: 'meet.jit.si',
     name: 'خادم Jitsi الرسمي (meet.jit.si)',
-    desc: 'يتطلب من المعلم تسجيل الدخول كمضيف (أنا المضيف) بحساب Google',
-    badge: 'يتطلب مضيف'
+    desc: 'الخادم الرسمي لمنصة Jitsi (يتطلب تسجيل دخول المعلم كمضيف)',
+    badge: 'رسمي'
   }
 ];
 
 export const sanitizeServerDomain = (domain?: string): string => {
-  if (!domain || domain === 'meet.ffrn.de') {
-    return 'jitsi.hamburg.ccc.de';
+  if (!domain || domain === 'meet.ffrn.de' || domain === 'jitsi.hamburg.ccc.de') {
+    return 'framatalk.org';
   }
   return domain;
 };
@@ -84,13 +72,14 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   const [selectedGrade, setSelectedGrade] = useState<string>(defaultGrade);
   const [selectedTrack] = useState<string>(initialTrack || currentUser.track || 'arabic-a');
   const [lessonTopic, setLessonTopic] = useState<string>('حصة تفاعلية مباشرة مع موسى');
-  const [selectedServer, setSelectedServer] = useState<string>('jitsi.hamburg.ccc.de'); // الافتراضي خادم CCC المفتوح والمجاني 100%
+  const [selectedServer, setSelectedServer] = useState<string>('framatalk.org'); // الافتراضي خادم Framatalk المستقر والمفتوح
   const [isMeetingActive, setIsMeetingActive] = useState<boolean>(false);
   const [currentRoomName, setCurrentRoomName] = useState<string>('');
   const [activeSession, setActiveSession] = useState<LiveClassSession | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [scriptLoaded, setScriptLoaded] = useState<boolean>(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
+  const [popoutNotice, setPopoutNotice] = useState<{ message: string; roomName: string; domain: string } | null>(null);
   const [isLoadingMeeting, setIsLoadingMeeting] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
@@ -164,7 +153,7 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     }
   }, [currentUser, isTeacher, selectedGrade, isMeetingActive]);
 
-  // تحميل سكريبت Jitsi ديناميكياً من الخوادم المفتوحة النشطة
+  // تحميل سكريبت Jitsi ديناميكياً من الخوادم المعتمدة
   useEffect(() => {
     if (window.JitsiMeetExternalAPI) {
       setScriptLoaded(true);
@@ -172,7 +161,6 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     }
 
     const scriptUrls = [
-      'https://jitsi.hamburg.ccc.de/external_api.js',
       'https://framatalk.org/external_api.js',
       'https://meet.jit.si/external_api.js'
     ];
@@ -296,66 +284,20 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       jitsiContainerRef.current.innerHTML = '';
     }
 
-    // إعدادات وتكوين Jitsi لتجاوز قيود membersOnly وتخطي صفحات التحقق
+    // إعدادات وتكوين Jitsi المبسطة لتجنب تضارب sourceNameSignaling
     const options = {
       roomName: roomName,
       width: '100%',
       height: '100%',
       parentNode: jitsiContainerRef.current,
       userInfo: {
-        displayName: `${currentUser.name} (${isTeacher ? 'المعلم' : 'طالب'})`,
-        email: currentUser.username ? `${currentUser.username}@mousa.edu` : undefined
+        displayName: `${currentUser.name} (${isTeacher ? 'المعلم' : 'طالب'})`
       },
       configOverwrite: {
-        defaultLanguage: 'ar',
-        lang: 'ar',
-        // الخيارات المطلوبة بدقة لتجاوز التحقق وحظر الأعضاء
-        prejoinPageEnabled: false,
-        prejoinConfig: { enabled: false },
-        disableDeepLinking: true,
-        enableLobbyChat: false,
-        requireDisplayName: false,
-        // خيارات تجربة المستخدم
-        enableWelcomePage: false,
-        enableClosePage: false,
-        startWithAudioMuted: !isTeacher,
+        startWithAudioMuted: false,
         startWithVideoMuted: false,
-        disableThirdPartyRequests: true,
-        toolbarButtons: [
-          'microphone',
-          'camera',
-          'closedcaptions',
-          'desktop',
-          'fullscreen',
-          'fodeviceselection',
-          'hangup',
-          'chat',
-          'raisehand',
-          'videoquality',
-          'tileview',
-          'whiteboard'
-        ]
-      },
-      interfaceConfigOverwrite: {
-        SHOW_JITSI_WATERMARK: false,
-        SHOW_WATERMARK_FOR_GUESTS: false,
-        SHOW_BRAND_WATERMARK: false,
-        BRAND_WATERMARK_LINK: '',
-        DEFAULT_REMOTE_DISPLAY_NAME: 'طالب مبدع 🌟',
-        TOOLBAR_BUTTONS: [
-          'microphone',
-          'camera',
-          'closedcaptions',
-          'desktop',
-          'fullscreen',
-          'fodeviceselection',
-          'hangup',
-          'chat',
-          'raisehand',
-          'videoquality',
-          'tileview',
-          'whiteboard'
-        ]
+        disableDeepLinking: true,
+        prejoinPageEnabled: false
       }
     };
 
@@ -363,24 +305,46 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       const api = new window.JitsiMeetExternalAPI(domain, options);
       jitsiApiRef.current = api;
 
+      // التأكد من أن عنصر الـ iframe يأخذ الصلاحيات الكاملة
+      setTimeout(() => {
+        try {
+          const iframe = api.getIFrame ? api.getIFrame() : jitsiContainerRef.current?.querySelector('iframe');
+          if (iframe) {
+            iframe.setAttribute('allow', 'camera; microphone; fullscreen; display-capture; autoplay; clipboard-write');
+            iframe.setAttribute('allowfullscreen', 'true');
+          }
+        } catch (e) {
+          console.warn('Iframe permissions setup:', e);
+        }
+      }, 50);
+
       api.addEventListener('videoConferenceJoined', () => {
         setIsLoadingMeeting(false);
+        setPopoutNotice(null);
       });
 
-      // رصد أخطاء المؤتمر وتحويل السيرفر تلقائياً في حال خطأ membersOnly
+      // رصد أخطاء المؤتمر وتقديم حل النافذة المستقلة فوراً
       api.addEventListener('videoConferenceFailed', (err: any) => {
         console.warn('Jitsi conference failed:', err);
         setIsLoadingMeeting(false);
         const errStr = JSON.stringify(err || '');
+
         if (errStr.includes('membersOnly') || (typeof err === 'object' && err?.error?.includes('membersOnly'))) {
-          // إذا حدث الخطأ على meet.jit.si، يتم التحويل التلقائي لخادم CCC المفتوح
           if (domain === 'meet.jit.si') {
-            setScriptError('خادم meet.jit.si يتطلب تسجيل دخول كمضيف (أنا المضيف). يتم التحويل الفوري إلى خادم CCC المفتوح مجاناً وبلا قيود...');
+            setScriptError('خادم meet.jit.si يتطلب تسجيل دخول كمضيف (أنا المضيف). يتم التحويل الفوري إلى خادم Framatalk المستقر...');
             setTimeout(() => {
-              handleSwitchServer('jitsi.hamburg.ccc.de', roomName);
+              handleSwitchServer('framatalk.org', roomName);
             }, 800);
+            return;
           }
         }
+
+        // دعم خيار فتح في نافذة مستقلة (Pop-out) تلقائياً عند فشل الاتصال
+        setPopoutNotice({
+          message: 'تعذر تشغيل الفيديو داخل الإطار الداخلي (Iframe/Videobridge). يمكنك الانتقال فوراً للنافذة المستقلة ومتابعة الحصة.',
+          roomName,
+          domain
+        });
       });
 
       api.addEventListener('videoConferenceLeft', () => {
@@ -393,7 +357,11 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     } catch (err: any) {
       console.error('Failed to initialize Jitsi:', err);
       setIsLoadingMeeting(false);
-      setScriptError('حدث خطأ أثناء فتح غرفة الاجتماع. يمكنك استخدام زر "فتح في نافذة خارجية" كبديل سريع.');
+      setPopoutNotice({
+        message: 'حدث تعثر في مشغل الفيديو الداخلي. يمكنك الدخول المباشر للحصة عبر النافذة الخارجية فوراً.',
+        roomName,
+        domain
+      });
     }
   };
 
@@ -440,7 +408,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   // نسخ رابط الحصة المباشر
   const handleCopyLink = () => {
     const room = currentRoomName || activeSession?.roomName || computeRoomName(selectedGrade, currentUser.id);
-    const directUrl = `https://${selectedServer}/${room}`;
+    const domain = sanitizeServerDomain(selectedServer || activeSession?.serverDomain);
+    const directUrl = `https://${domain}/${room}`;
     navigator.clipboard.writeText(directUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -449,7 +418,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   // فتح في نافذة خارجية مباشرة
   const handleOpenExternal = () => {
     const room = currentRoomName || activeSession?.roomName || computeRoomName(selectedGrade, currentUser.id);
-    const directUrl = `https://${selectedServer}/${room}`;
+    const domain = sanitizeServerDomain(selectedServer || activeSession?.serverDomain);
+    const directUrl = `https://${domain}/${room}`;
     window.open(directUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -612,20 +582,68 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
           }`}
         />
 
+        {/* بطاقة حل الطوارئ التلقائي الفوري (Pop-out) عند حدوث أي خلل في الـ Iframe */}
+        {isMeetingActive && popoutNotice && (
+          <div className="absolute inset-0 z-40 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+            <div className="max-w-md w-full bg-slate-900 border border-amber-500/50 rounded-3xl p-6 sm:p-7 text-center space-y-4 shadow-2xl animate-in zoom-in-95">
+              <div className="w-16 h-16 mx-auto rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/10">
+                <AlertCircle className="w-8 h-8 animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-base sm:text-lg font-black text-white">حل الطوارئ الفوري للحصة 🚀</h4>
+                <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                  {popoutNotice.message}
+                </p>
+              </div>
+
+              <div className="space-y-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `https://${popoutNotice.domain}/${popoutNotice.roomName}`;
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-xl transition shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>فتح في نافذة مستقلة (Pop-out) الآن 🎥</span>
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchServer('framatalk.org', popoutNotice.roomName)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition cursor-pointer"
+                  >
+                    إعادة المحاولة على Framatalk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPopoutNotice(null)}
+                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs rounded-xl transition cursor-pointer"
+                  >
+                    إخفاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* شريط المساعدة السريع إذا كان المستخدم على خادم jit.si الرسمي الذي يتطلب مضيفاً */}
         {isMeetingActive && selectedServer === 'meet.jit.si' && (
           <div className="absolute top-3 left-4 right-4 z-30 p-2.5 bg-indigo-950/95 border border-indigo-500/50 rounded-2xl text-xs text-indigo-100 flex flex-wrap items-center justify-between gap-2 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0" />
               <span>
-                <b>ملاحظة:</b> إذا ظهرت لك رسالة "أنا المضيف" (Moderator)، يمكنك تسجيل الدخول بحساب Google أو الانتقال فوراً لخادم CCC المفتوح بدون تسجيل:
+                <b>ملاحظة:</b> إذا ظهرت لك رسالة "أنا المضيف" (Moderator)، يمكنك تسجيل الدخول بحساب Google أو الانتقال فوراً لخادم Framatalk المفتوح بدون تسجيل:
               </span>
             </div>
             <button
-              onClick={() => handleSwitchServer('jitsi.hamburg.ccc.de')}
+              onClick={() => handleSwitchServer('framatalk.org')}
               className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs transition cursor-pointer shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 shrink-0"
             >
-              <span>التحويل لخادم CCC المفتوح فوراً ⚡</span>
+              <span>التحويل لخادم Framatalk فوراً ⚡</span>
             </button>
           </div>
         )}
