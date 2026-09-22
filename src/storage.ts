@@ -2985,7 +2985,12 @@ export const getLiveClassSessions = (): LiveClassSession[] => {
     const raw = localStorage.getItem(LIVE_CLASS_SESSIONS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.map((s: LiveClassSession) => ({
+          ...s,
+          serverDomain: (!s.serverDomain || s.serverDomain === 'meet.ffrn.de') ? 'jitsi.hamburg.ccc.de' : s.serverDomain
+        }));
+      }
     }
   } catch (e) {
     console.warn('Error reading live class sessions from storage:', e);

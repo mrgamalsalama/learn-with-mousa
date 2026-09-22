@@ -580,5 +580,6 @@ export interface LiveClassSession {
   startedAt: string;
   endedAt?: string;
   participantsCount?: number;
+  serverDomain?: string;
 }
 

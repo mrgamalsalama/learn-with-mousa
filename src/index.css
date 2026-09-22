@@ -29,3 +29,17 @@ body {
     border: none !important;
   }
 }
+
+#jitsi-meet-viewport {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative;
+}
+
+#jitsi-meet-viewport iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: 1rem !important;
+  display: block;
+}

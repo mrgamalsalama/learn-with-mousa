@@ -1,29 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Video, 
-  VideoOff, 
-  Mic, 
-  MicOff, 
   PhoneOff, 
-  Users, 
   Clock, 
-  Sparkles, 
   AlertCircle, 
   Radio, 
-  Play, 
-  Square, 
   ShieldCheck, 
   Hand, 
-  Maximize2,
-  RefreshCw
+  ExternalLink,
+  Server,
+  CheckCircle2,
+  RefreshCw,
+  Mic,
+  Copy,
+  Check
 } from 'lucide-react';
 import { UserProfile, GradeLevel, ArabicTrack, LiveClassSession } from '../types';
 import { 
   getActiveLiveClassForGrade, 
   getActiveLiveClassForTeacher, 
   saveLiveClassSession, 
-  endLiveClassSession,
-  getLiveClassSessions
+  endLiveClassSession
 } from '../storage';
 import { supabase } from '../supabaseClient';
 
@@ -40,7 +37,40 @@ declare global {
   }
 }
 
-const JITSI_SCRIPT_URL = 'https://meet.jit.si/external_api.js';
+// قائمة خوادم Jitsi المتاحة (خوادم مفتوحة ومجانية 100% وبلا قيود تسجيل دخول)
+export const JITSI_SERVERS = [
+  {
+    id: 'jitsi.hamburg.ccc.de',
+    name: 'خادم CCC المفتوح (jitsi.hamburg.ccc.de)',
+    desc: 'خادم مجتمعي مفتوح وسريع جداً، بدون تسجيل دخول أو أعضاء (موصى به ⭐)',
+    badge: 'موصى به ⭐'
+  },
+  {
+    id: 'framatalk.org',
+    name: 'خادم Framatalk المفتوح (framatalk.org)',
+    desc: 'مفتوح ومجاني بدون تسجيل دخول تابع لمؤسسة Framasoft (بديل ممتاز)',
+    badge: 'بديل ممتاز'
+  },
+  {
+    id: 'fairmeeting.net',
+    name: 'خادم Fairmeeting (fairmeeting.net)',
+    desc: 'خادم مفتوح وصديق للخصوصية بدون قيود أو شاشات انتظار',
+    badge: 'مفتوح'
+  },
+  {
+    id: 'meet.jit.si',
+    name: 'خادم Jitsi الرسمي (meet.jit.si)',
+    desc: 'يتطلب من المعلم تسجيل الدخول كمضيف (أنا المضيف) بحساب Google',
+    badge: 'يتطلب مضيف'
+  }
+];
+
+export const sanitizeServerDomain = (domain?: string): string => {
+  if (!domain || domain === 'meet.ffrn.de') {
+    return 'jitsi.hamburg.ccc.de';
+  }
+  return domain;
+};
 
 export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   currentUser,
@@ -54,16 +84,20 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   const [selectedGrade, setSelectedGrade] = useState<string>(defaultGrade);
   const [selectedTrack] = useState<string>(initialTrack || currentUser.track || 'arabic-a');
   const [lessonTopic, setLessonTopic] = useState<string>('حصة تفاعلية مباشرة مع موسى');
+  const [selectedServer, setSelectedServer] = useState<string>('jitsi.hamburg.ccc.de'); // الافتراضي خادم CCC المفتوح والمجاني 100%
   const [isMeetingActive, setIsMeetingActive] = useState<boolean>(false);
+  const [currentRoomName, setCurrentRoomName] = useState<string>('');
   const [activeSession, setActiveSession] = useState<LiveClassSession | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [scriptLoaded, setScriptLoaded] = useState<boolean>(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [isLoadingMeeting, setIsLoadingMeeting] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
   const jitsiApiRef = useRef<any>(null);
   const timerRef = useRef<any>(null);
+  const loadingTimeoutRef = useRef<any>(null);
 
   // تنسيق اسم الصف
   const formatGradeName = (grade: string) => {
@@ -92,10 +126,16 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       if (isTeacher) {
         const teacherSession = getActiveLiveClassForTeacher(currentUser.id);
         setActiveSession(teacherSession);
+        if (teacherSession?.serverDomain) {
+          setSelectedServer(sanitizeServerDomain(teacherSession.serverDomain));
+        }
       } else {
         const studentGrade = currentUser.grade || selectedGrade;
         const gradeSession = getActiveLiveClassForGrade(studentGrade);
         setActiveSession(gradeSession);
+        if (gradeSession?.serverDomain) {
+          setSelectedServer(sanitizeServerDomain(gradeSession.serverDomain));
+        }
       }
     };
 
@@ -110,8 +150,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
           const relevantGrade = currentUser.grade || selectedGrade;
           if (updated.grade === relevantGrade || updated.grade === 'all' || updated.teacherId === currentUser.id) {
             setActiveSession(updated.isActive ? updated : null);
+            if (updated.serverDomain) {
+              setSelectedServer(sanitizeServerDomain(updated.serverDomain));
+            }
             if (!updated.isActive && isMeetingActive && !isTeacher) {
-              // المعلم أغلق الحصة
               handleEndOrLeave();
             }
           }
@@ -122,35 +164,51 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     }
   }, [currentUser, isTeacher, selectedGrade, isMeetingActive]);
 
-  // تحميل سكريبت Jitsi الرسمي ديناميكياً
+  // تحميل سكريبت Jitsi ديناميكياً من الخوادم المفتوحة النشطة
   useEffect(() => {
     if (window.JitsiMeetExternalAPI) {
       setScriptLoaded(true);
       return;
     }
 
-    const existingScript = document.querySelector(`script[src="${JITSI_SCRIPT_URL}"]`);
-    if (existingScript) {
-      existingScript.addEventListener('load', () => setScriptLoaded(true));
-      existingScript.addEventListener('error', () => setScriptError('تعذر تحميل خادم الاجتماع المباشر'));
-      return;
-    }
+    const scriptUrls = [
+      'https://jitsi.hamburg.ccc.de/external_api.js',
+      'https://framatalk.org/external_api.js',
+      'https://meet.jit.si/external_api.js'
+    ];
 
-    const script = document.createElement('script');
-    script.src = JITSI_SCRIPT_URL;
-    script.async = true;
-    script.onload = () => {
-      setScriptLoaded(true);
-      setScriptError(null);
-    };
-    script.onerror = () => {
-      setScriptError('تعذر الاتصال بخادم Jitsi Meet. يرجى التحقق من اتصال الإنترنت.');
-    };
-    document.body.appendChild(script);
+    let currentScriptIdx = 0;
 
-    return () => {
-      // لا نحذف السكريبت حتى يظل متوفراً للتنقلات اللاحقة بسلاسة
+    const tryLoadScript = () => {
+      if (window.JitsiMeetExternalAPI) {
+        setScriptLoaded(true);
+        return;
+      }
+
+      if (currentScriptIdx >= scriptUrls.length) {
+        setScriptError('تعذر تحميل مشغل الفيديو المباشر. يرجى التأكد من اتصال الإنترنت أو استخدام زر الفتح في نافذة خارجية.');
+        return;
+      }
+
+      const url = scriptUrls[currentScriptIdx];
+      const script = document.createElement('script');
+      script.src = url;
+      script.async = true;
+
+      script.onload = () => {
+        setScriptLoaded(true);
+        setScriptError(null);
+      };
+
+      script.onerror = () => {
+        currentScriptIdx++;
+        tryLoadScript();
+      };
+
+      document.body.appendChild(script);
     };
+
+    tryLoadScript();
   }, []);
 
   // عداد مدة الحصة
@@ -175,9 +233,13 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     };
   }, [isMeetingActive]);
 
-  // تنظيف وإغلاق كامل لموارد الكاميرا والمايكروفون عند مغادرة المكون (Strict Cleanup)
+  // تنظيف وإغلاق كامل لموارد الكاميرا والمايكروفون عند مغادرة المكون
   useEffect(() => {
     return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
       if (jitsiApiRef.current) {
         try {
           jitsiApiRef.current.dispose();
@@ -189,7 +251,7 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     };
   }, []);
 
-  // تنسيق وقت الحصة (MM:SS أو HH:MM:SS)
+  // تنسيق وقت الحصة
   const formatDuration = (totalSeconds: number) => {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -200,16 +262,27 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // إطلاق اجتماع Jitsi
-  const startJitsiSession = (roomName: string) => {
+  // إطلاق اجتماع Jitsi مع تصحيح خيارات configOverwrite ومؤقت أقصاه 3 ثوانٍ
+  const startJitsiSession = (roomName: string, overrideDomain?: string) => {
     if (!window.JitsiMeetExternalAPI) {
       setScriptError('سكريبت Jitsi Meet لم يكتمل تحميله بعد. يرجى الانتظار ثوانٍ معدودة.');
       return;
     }
 
-    if (!jitsiContainerRef.current) return;
+    const domain = overrideDomain || selectedServer;
+    setCurrentRoomName(roomName);
 
+    // 1. جعل شاشة الاجتماع نشطة فوراً لتمكين المستخدم من الرؤية وعدم الحجب
+    setIsMeetingActive(true);
     setIsLoadingMeeting(true);
+
+    // 2. وضع مؤقت أقصاه 3 ثوانٍ فقط لمؤشر التحميل لإخفاء مؤشر التحميل مهما كانت استجابة السيرفر
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+    loadingTimeoutRef.current = setTimeout(() => {
+      setIsLoadingMeeting(false);
+    }, 3000);
 
     // تنظيف أي نسخة سابقة
     if (jitsiApiRef.current) {
@@ -219,9 +292,11 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       jitsiApiRef.current = null;
     }
 
-    jitsiContainerRef.current.innerHTML = '';
+    if (jitsiContainerRef.current) {
+      jitsiContainerRef.current.innerHTML = '';
+    }
 
-    const domain = 'meet.jit.si';
+    // إعدادات وتكوين Jitsi لتجاوز قيود membersOnly وتخطي صفحات التحقق
     const options = {
       roomName: roomName,
       width: '100%',
@@ -234,13 +309,18 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       configOverwrite: {
         defaultLanguage: 'ar',
         lang: 'ar',
-        disableDeepLinking: true,
-        startWithAudioMuted: false,
-        startWithVideoMuted: false,
+        // الخيارات المطلوبة بدقة لتجاوز التحقق وحظر الأعضاء
         prejoinPageEnabled: false,
         prejoinConfig: { enabled: false },
+        disableDeepLinking: true,
+        enableLobbyChat: false,
+        requireDisplayName: false,
+        // خيارات تجربة المستخدم
         enableWelcomePage: false,
         enableClosePage: false,
+        startWithAudioMuted: !isTeacher,
+        startWithVideoMuted: false,
+        disableThirdPartyRequests: true,
         toolbarButtons: [
           'microphone',
           'camera',
@@ -252,9 +332,9 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
           'chat',
           'raisehand',
           'videoquality',
-          'tileview'
-        ],
-        disableThirdPartyRequests: true
+          'tileview',
+          'whiteboard'
+        ]
       },
       interfaceConfigOverwrite: {
         SHOW_JITSI_WATERMARK: false,
@@ -273,7 +353,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
           'chat',
           'raisehand',
           'videoquality',
-          'tileview'
+          'tileview',
+          'whiteboard'
         ]
       }
     };
@@ -283,8 +364,23 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       jitsiApiRef.current = api;
 
       api.addEventListener('videoConferenceJoined', () => {
-        setIsMeetingActive(true);
         setIsLoadingMeeting(false);
+      });
+
+      // رصد أخطاء المؤتمر وتحويل السيرفر تلقائياً في حال خطأ membersOnly
+      api.addEventListener('videoConferenceFailed', (err: any) => {
+        console.warn('Jitsi conference failed:', err);
+        setIsLoadingMeeting(false);
+        const errStr = JSON.stringify(err || '');
+        if (errStr.includes('membersOnly') || (typeof err === 'object' && err?.error?.includes('membersOnly'))) {
+          // إذا حدث الخطأ على meet.jit.si، يتم التحويل التلقائي لخادم CCC المفتوح
+          if (domain === 'meet.jit.si') {
+            setScriptError('خادم meet.jit.si يتطلب تسجيل دخول كمضيف (أنا المضيف). يتم التحويل الفوري إلى خادم CCC المفتوح مجاناً وبلا قيود...');
+            setTimeout(() => {
+              handleSwitchServer('jitsi.hamburg.ccc.de', roomName);
+            }, 800);
+          }
+        }
       });
 
       api.addEventListener('videoConferenceLeft', () => {
@@ -296,8 +392,17 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       });
     } catch (err: any) {
       console.error('Failed to initialize Jitsi:', err);
-      setScriptError('حدث خطأ أثناء فتح غرفة الاجتماع. تحقق من إذن الكاميرا والمايكروفون.');
       setIsLoadingMeeting(false);
+      setScriptError('حدث خطأ أثناء فتح غرفة الاجتماع. يمكنك استخدام زر "فتح في نافذة خارجية" كبديل سريع.');
+    }
+  };
+
+  // التبديل بين الخوادم بسلاسة
+  const handleSwitchServer = (newServer: string, roomOverride?: string) => {
+    setSelectedServer(newServer);
+    const room = roomOverride || currentRoomName || (activeSession?.roomName) || computeRoomName(selectedGrade, currentUser.id);
+    if (isMeetingActive) {
+      startJitsiSession(room, newServer);
     }
   };
 
@@ -315,7 +420,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       teacherName: currentUser.name,
       title: lessonTopic.trim() || 'حصة تفاعلية مباشرة مع موسى',
       isActive: true,
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      serverDomain: selectedServer
     };
 
     await saveLiveClassSession(newSession);
@@ -325,12 +431,35 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
 
   // انضمام الطالب للحصة
   const handleStudentJoin = () => {
+    const targetDomain = activeSession?.serverDomain || selectedServer;
+    setSelectedServer(targetDomain);
     const roomName = activeSession?.roomName || computeRoomName(currentUser.grade || selectedGrade, currentUser.teacherId || 'usr_teacher');
-    startJitsiSession(roomName);
+    startJitsiSession(roomName, targetDomain);
+  };
+
+  // نسخ رابط الحصة المباشر
+  const handleCopyLink = () => {
+    const room = currentRoomName || activeSession?.roomName || computeRoomName(selectedGrade, currentUser.id);
+    const directUrl = `https://${selectedServer}/${room}`;
+    navigator.clipboard.writeText(directUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  // فتح في نافذة خارجية مباشرة
+  const handleOpenExternal = () => {
+    const room = currentRoomName || activeSession?.roomName || computeRoomName(selectedGrade, currentUser.id);
+    const directUrl = `https://${selectedServer}/${room}`;
+    window.open(directUrl, '_blank', 'noopener,noreferrer');
   };
 
   // إنهاء الحصة أو المغادرة وتنظيف الكاميرا والمايك فوراً
   const handleEndOrLeave = async () => {
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+
     if (jitsiApiRef.current) {
       try {
         jitsiApiRef.current.dispose();
@@ -360,80 +489,171 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   return (
     <div id="mousa-live-classroom-container" className="w-full flex flex-col h-[calc(100vh-140px)] min-h-[620px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl text-slate-100">
       
-      {/* الشريط العلوي الخفيف للحصة */}
-      <header className="bg-slate-950/80 backdrop-blur-md px-6 py-3.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 z-20">
+      {/* الشريط العلوي للحصة */}
+      <header className="bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 z-20">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-red-600 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-lg shadow-red-500/30">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-red-600 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-lg shadow-red-500/30 shrink-0">
             <Video className="w-5 h-5 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-black text-white flex items-center gap-1.5">
+              <h2 className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
                 فَصْلُ مُوسَى المَبَاشِر
               </h2>
-              {isMeetingActive && (
+              {isMeetingActive ? (
                 <span className="flex items-center gap-1 bg-red-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse border border-red-400/40">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                   بث مباشر الآن 🔴
                 </span>
+              ) : (
+                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
+                  غرفة البث الآمن
+                </span>
               )}
             </div>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className="text-[11px] text-slate-400 font-medium">
               {formatGradeName(isTeacher ? selectedGrade : (currentUser.grade || selectedGrade))} • {currentUser.name}
             </p>
           </div>
         </div>
 
-        {/* مدة الحصة وشارات التحكم */}
-        <div className="flex items-center gap-3">
+        {/* مدة الحصة وشارات التحكم والتبديل */}
+        <div className="flex flex-wrap items-center gap-2">
+          
+          {/* مؤشر الخادم النشط مع إمكانية التبديل */}
+          <div className="flex items-center gap-1 bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60 text-xs">
+            <Server className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="text-[11px] text-slate-300 font-mono hidden sm:inline">{selectedServer}</span>
+            <select
+              value={selectedServer}
+              onChange={(e) => handleSwitchServer(e.target.value)}
+              className="bg-transparent text-emerald-400 text-xs font-bold focus:outline-none cursor-pointer pr-1 max-w-[170px]"
+              title="تبديل خادم البث المباشر"
+            >
+              {JITSI_SERVERS.map((srv) => (
+                <option key={srv.id} value={srv.id} className="bg-slate-900 text-white">
+                  {srv.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* عداد وقت الحصة */}
           {isMeetingActive && (
-            <div className="flex items-center gap-2 bg-slate-800/90 px-3.5 py-1.5 rounded-xl border border-slate-700/60 text-xs font-mono font-bold text-emerald-400">
+            <div className="flex items-center gap-1.5 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700/60 text-xs font-mono font-bold text-emerald-400">
               <Clock className="w-3.5 h-3.5 text-emerald-400" />
               <span>{formatDuration(elapsedSeconds)}</span>
             </div>
           )}
 
-          {isMeetingActive ? (
+          {/* زر فتح في نافذة خارجية */}
+          {isMeetingActive && (
+            <button
+              onClick={handleOpenExternal}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition cursor-pointer"
+              title="فتح الاجتماع في نافذة مستقلة بملء الشاشة"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden md:inline">نافذة خارجية</span>
+            </button>
+          )}
+
+          {/* زر نسخ الرابط */}
+          {isMeetingActive && isTeacher && (
+            <button
+              onClick={handleCopyLink}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition cursor-pointer"
+              title="نسخ رابط الحصة المباشر"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+              <span className="hidden md:inline">{copiedLink ? 'تم النسخ!' : 'نسخ الرابط'}</span>
+            </button>
+          )}
+
+          {/* زر إنهاء أو مغادرة الحصة */}
+          {isMeetingActive && (
             <button
               id="live-classroom-hangup-btn"
               onClick={handleEndOrLeave}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-red-600/20 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-red-600/20 cursor-pointer"
             >
-              <PhoneOff className="w-4 h-4" />
-              <span>{isTeacher ? 'إنهاء الحصة وإغلاق البث 🛑' : 'مغادرة الحصة 🚪'}</span>
+              <PhoneOff className="w-3.5 h-3.5" />
+              <span>{isTeacher ? 'إنهاء الحصة 🛑' : 'مغادرة الحصة 🚪'}</span>
             </button>
-          ) : null}
+          )}
         </div>
       </header>
 
       {/* مساحة العرض الرئيسية */}
-      <div className="flex-1 relative flex flex-col items-center justify-center p-4 bg-slate-900 overflow-hidden">
+      <div className="flex-1 relative flex flex-col items-center justify-center p-2 sm:p-4 bg-slate-900 overflow-hidden">
         
-        {/* حاوية Iframe الخاصة بـ Jitsi */}
+        {/* تنبيه الخطأ أو التبديل التلقائي إن وُجد */}
+        {scriptError && (
+          <div className="absolute top-2 left-4 right-4 z-40 p-3 bg-amber-500/20 border border-amber-500/40 rounded-2xl text-xs text-amber-200 flex items-center justify-between gap-2 shadow-xl backdrop-blur-md animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>{scriptError}</span>
+            </div>
+            <button
+              onClick={() => setScriptError(null)}
+              className="text-amber-300 hover:text-white text-xs font-bold px-2 py-0.5 rounded bg-black/20"
+            >
+              إغلاق ✕
+            </button>
+          </div>
+        )}
+
+        {/* حاوية Iframe الخاصة بـ Jitsi - مأهولة ومرئية دائماً عند بدء الاجتماع دون حجب */}
         <div 
           ref={jitsiContainerRef} 
           id="jitsi-meet-viewport"
-          className={`w-full h-full rounded-2xl overflow-hidden transition-all duration-300 ${
-            isMeetingActive ? 'block opacity-100' : 'hidden opacity-0'
+          className={`w-full h-full rounded-2xl overflow-hidden bg-slate-950 relative ${
+            isMeetingActive ? 'block' : 'hidden'
           }`}
         />
 
-        {/* مؤشر جارِ بدء الاتصال */}
-        {isLoadingMeeting && !isMeetingActive && (
-          <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-30 space-y-4">
-            <div className="w-14 h-14 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-            <p className="text-sm font-bold text-slate-200">جارٍ تهيئة غرفة الفيديو الآمنة...</p>
-            <p className="text-xs text-slate-400">يتم تشغيل الكاميرا والمايكروفون المعتمدين</p>
+        {/* شريط المساعدة السريع إذا كان المستخدم على خادم jit.si الرسمي الذي يتطلب مضيفاً */}
+        {isMeetingActive && selectedServer === 'meet.jit.si' && (
+          <div className="absolute top-3 left-4 right-4 z-30 p-2.5 bg-indigo-950/95 border border-indigo-500/50 rounded-2xl text-xs text-indigo-100 flex flex-wrap items-center justify-between gap-2 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>
+                <b>ملاحظة:</b> إذا ظهرت لك رسالة "أنا المضيف" (Moderator)، يمكنك تسجيل الدخول بحساب Google أو الانتقال فوراً لخادم CCC المفتوح بدون تسجيل:
+              </span>
+            </div>
+            <button
+              onClick={() => handleSwitchServer('jitsi.hamburg.ccc.de')}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs transition cursor-pointer shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 shrink-0"
+            >
+              <span>التحويل لخادم CCC المفتوح فوراً ⚡</span>
+            </button>
+          </div>
+        )}
+
+        {/* مؤشر التحميل المؤقت (أقصاه 3 ثوانٍ فقط، غير حاجب لـ Jitsi Iframe) */}
+        {isMeetingActive && isLoadingMeeting && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900/90 border border-emerald-500/40 text-white px-5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md animate-in fade-in slide-in-from-top-2">
+            <div className="w-4 h-4 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin shrink-0" />
+            <div className="text-right">
+              <p className="text-xs font-bold text-slate-100">جارٍ تهيئة غرفة الفيديو...</p>
+              <p className="text-[10px] text-slate-400">الخادم: {selectedServer}</p>
+            </div>
+            <button 
+              onClick={() => setIsLoadingMeeting(false)}
+              className="px-2 py-1 bg-white/10 hover:bg-white/20 text-[10px] rounded-lg text-slate-300 hover:text-white transition cursor-pointer"
+            >
+              إخفاء المؤشر
+            </button>
           </div>
         )}
 
         {/* الشاشة الترحيبية وغرفة الانتظار قبل بدء الاجتماع */}
-        {!isMeetingActive && !isLoadingMeeting && (
-          <div className="max-w-xl w-full bg-slate-950/70 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-xl text-center space-y-6 shadow-2xl">
+        {!isMeetingActive && (
+          <div className="max-w-xl w-full bg-slate-950/70 border border-slate-800/80 rounded-3xl p-6 sm:p-8 backdrop-blur-xl text-center space-y-5 shadow-2xl">
             
             {/* أيقونة تفاعلية */}
-            <div className="relative mx-auto w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-xl shadow-emerald-500/20">
-              <Radio className="w-10 h-10 text-white animate-pulse" />
+            <div className="relative mx-auto w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-xl shadow-emerald-500/20">
+              <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-white animate-pulse" />
               {activeSession && (
                 <span className="absolute -top-1 -right-1 flex h-4 w-4">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -443,21 +663,41 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
             </div>
 
             <div>
-              <h3 className="text-xl font-black text-white">
+              <h3 className="text-lg sm:text-xl font-black text-white">
                 {isTeacher ? 'غرفة التحكم في البث المباشر 🎙️' : 'صالة استقبال الطلاب للبث المباشر 🌟'}
               </h3>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
                 تقنية فصل موسى التفاعلي تتيح بث الصوت والصورة ومشاركة الشاشة ورفع اليد بجودة عالية ومجانية 100% دون أي رسوم أو قيود.
               </p>
             </div>
 
-            {/* رسالة الخطأ إن وجدت */}
-            {scriptError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center gap-2 text-right">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <span>{scriptError}</span>
+            {/* اختيار الخادم المسبق */}
+            <div className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl text-right space-y-2">
+              <label className="block text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>خادم البث المباشر:</span>
+                <span className="text-[10px] text-emerald-400 font-normal">مجاني 100% وبلا قيود</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {JITSI_SERVERS.map((srv) => (
+                  <button
+                    key={srv.id}
+                    type="button"
+                    onClick={() => setSelectedServer(srv.id)}
+                    className={`p-2.5 rounded-xl border text-right transition flex flex-col justify-between cursor-pointer ${
+                      selectedServer === srv.id
+                        ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-500/10'
+                        : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold">{srv.name}</span>
+                      {selectedServer === srv.id && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1">{srv.desc}</span>
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
 
             {/* عناصر تحكم المعلم */}
             {isTeacher && (
@@ -490,15 +730,27 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
                   />
                 </div>
 
-                <button
-                  id="start-live-class-btn"
-                  onClick={handleTeacherStart}
-                  disabled={!scriptLoaded}
-                  className="w-full mt-2 py-3 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 text-white font-black text-sm rounded-xl transition shadow-xl shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <Radio className="w-5 h-5 text-white animate-pulse" />
-                  <span>بدء الحصة المباشرة الآن 🎙️</span>
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    id="start-live-class-btn"
+                    onClick={handleTeacherStart}
+                    disabled={!scriptLoaded}
+                    className="flex-1 py-3 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 text-white font-black text-xs sm:text-sm rounded-xl transition shadow-xl shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Radio className="w-4 h-4 text-white animate-pulse" />
+                    <span>بدء الحصة المباشرة الآن 🎙️</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenExternal}
+                    className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="فتح غرفة الحصة مباشرة في نافذة مستقلة بمتصفحك"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+                    <span>نافذة خارجية</span>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -518,15 +770,27 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
                       معلم المادة: <b className="text-white">{activeSession.teacherName}</b>
                     </p>
 
-                    <button
-                      id="student-join-live-class-btn"
-                      onClick={handleStudentJoin}
-                      disabled={!scriptLoaded}
-                      className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm rounded-2xl transition shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer animate-bounce"
-                    >
-                      <Video className="w-5 h-5" />
-                      <span>انضم إلى الحصة المباشرة الآن 🚀</span>
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                      <button
+                        id="student-join-live-class-btn"
+                        onClick={handleStudentJoin}
+                        disabled={!scriptLoaded}
+                        className="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm rounded-xl transition shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer animate-bounce"
+                      >
+                        <Video className="w-4 h-4" />
+                        <span>انضم إلى الحصة الآن 🚀</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenExternal}
+                        className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="الانضمام عبر نافذة مستقلة"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+                        <span>نافذة خارجية</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 text-center space-y-3">
@@ -539,14 +803,24 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
                     <p className="text-xs text-slate-400 leading-relaxed">
                       عندما يبدأ المعلم البث لصفك ({formatGradeName(currentUser.grade || selectedGrade)})، ستظهر لك إشارة البدء تلقائياً هنا!
                     </p>
-                    <button
-                      onClick={handleStudentJoin}
-                      disabled={!scriptLoaded}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition cursor-pointer border border-slate-700"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>الدخول للغرفة الاستباقية</span>
-                    </button>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        onClick={handleStudentJoin}
+                        disabled={!scriptLoaded}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition cursor-pointer border border-slate-700"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>الدخول للغرفة الاستباقية</span>
+                      </button>
+                      <button
+                        onClick={handleOpenExternal}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white text-xs rounded-xl border border-slate-700"
+                        title="فتح في نافذة جديدة"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+                        <span>نافذة جديدة</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
