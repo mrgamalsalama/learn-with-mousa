@@ -7,7 +7,8 @@ import {
   Bot, Palette, Brain, Printer, MessageCircle, Star,
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
-  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video
+  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video,
+  FileSpreadsheet
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -59,6 +60,8 @@ import { MousaChallenge } from './components/MousaChallenge';
 import { LiveClassroom } from './components/LiveClassroom';
 import { UserProfileModal } from './components/UserProfileModal';
 import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
+import { ParentProgressTab } from './components/ParentProgressTab';
+import { GradebookManager } from './components/GradebookManager';
 import { challengeAudio } from './utils/challengeAudio';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
@@ -105,7 +108,7 @@ const isValidTabForRole = (tab: string, role?: UserRole | string): boolean => {
     return ['activities', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge', 'live'].includes(tab);
   }
   if (role === 'hod') {
-    return ['overview', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
+    return ['overview', 'grades', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
   }
   if (role === 'super_admin' || role === 'admin') {
     return ['teachers', 'hods', 'students', 'parents', 'bank', 'ai_governance', 'teacher_tasks', 'tasks'].includes(tab);
@@ -177,7 +180,7 @@ export default function App() {
   });
 
   // تبويبات لوحة رئيس القسم مع استعادة التبويب النشط
-  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
+  const [hodTab, setHodTab] = useState<'overview' | 'grades' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'hod', 'overview') as any;
   });
@@ -2250,6 +2253,14 @@ export default function App() {
               <BarChart3 className="w-4 h-4" /> النظرة العامة والتقارير
             </button>
             <button
+              onClick={() => setHodTab('grades')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'grades' ? 'bg-indigo-900 text-white shadow-md shadow-indigo-900/20' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-indigo-400" /> سجل درجات القسم والتصدير 📊
+            </button>
+            <button
               onClick={() => setHodTab('teacher_tasks')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                 hodTab === 'teacher_tasks' ? 'bg-teal-700 text-white' : 'bg-white border border-slate-200 text-slate-600'
@@ -2339,14 +2350,23 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
-                    <BarChart3 className="w-6 h-6" />
+                <div 
+                  onClick={() => setHodTab('grades')}
+                  className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between cursor-pointer hover:border-amber-300 hover:shadow-sm transition"
+                  title="عرض وتصدير سجل الدرجات المعتمد للقسم"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                      <BarChart3 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500 font-medium">حلول واستجابات الطلاب</span>
+                      <h3 className="text-xl font-bold text-slate-800">{departmentSubmissions.length} حل مكتمل</h3>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs text-slate-500 font-medium">حلول الطلاب</span>
-                    <h3 className="text-xl font-bold text-slate-800">{departmentSubmissions.length} حل مكتمل</h3>
-                  </div>
+                  <span className="px-2.5 py-1 bg-amber-50 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200">
+                    عرض وتصدير 📥
+                  </span>
                 </div>
               </div>
 
@@ -2418,6 +2438,42 @@ export default function App() {
               </div>
             </>
           )}
+
+          {hodTab === 'grades' && (() => {
+            const userPerm = canUserUseAI(currentUser, aiGovernanceRules);
+            const isHodAIPermitted = userPerm.overrideStatus === 'inherit' 
+              ? isAIFeatureAllowed('teacher').allowed 
+              : userPerm.allowed;
+            const hodAIReason = userPerm.reason || isAIFeatureAllowed('teacher').reason;
+            const departmentStudents = users.filter((u) => 
+              u.role === 'student' && (!u.grade || hodGrades.length === 0 || hodGrades.includes(u.grade))
+            );
+
+            return (
+              <GradebookManager
+                currentUser={currentUser}
+                students={departmentStudents}
+                submissions={departmentSubmissions}
+                allowedGrades={hodGrades}
+                onOpenQuickDiagnostic={(student) => {
+                  setQuickDiagnosticStudent(student);
+                  setIsQuickDiagnosticOpen(true);
+                }}
+                onOpenFullDiagnostic={(student) => {
+                  setDiagnosticStudent(student);
+                  setIsDiagnosticModalOpen(true);
+                }}
+                onOpenClassDiagnostic={() => {
+                  setIsClassDiagnosticOpen(true);
+                }}
+                isAIPermitted={isHodAIPermitted}
+                aiBlockedReason={hodAIReason}
+                onRefreshData={() => {
+                  setUsers(getUsers());
+                }}
+              />
+            );
+          })()}
 
           {hodTab === 'teacher_tasks' && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
@@ -3192,175 +3248,37 @@ export default function App() {
               ? isAIFeatureAllowed('teacher').allowed 
               : userPerm.allowed;
             const teacherAIReason = userPerm.reason || isAIFeatureAllowed('teacher').reason;
+            const teacherGrades = currentUser.allowedGrades || [];
+            const teacherStudents = users.filter((u) => 
+              u.role === 'student' && (teacherGrades.length === 0 || (u.grade && teacherGrades.includes(u.grade)))
+            );
+            const teacherSubmissions = submissions.filter((s) => 
+              teacherGrades.length === 0 || (s.grade && teacherGrades.includes(s.grade))
+            );
 
             return (
-              <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-                {!isTeacherAIPermitted && (
-                  <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
-                    <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-                    <div>
-                      <span className="font-bold block">ميزات الذكاء الاصطناعي للمعلم معطلة</span>
-                      <span className="text-[11px] text-rose-600">{teacherAIReason}</span>
-                    </div>
-                  </div>
-                )}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
-                  <div>
-                    <h2 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
-                      <Award className="w-5 h-5 text-indigo-600" />
-                      قائمة درجات وحلول الطلاب
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      رصد استجابات المتعلمين ونتائج الاختبارات التفاعلية
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isTeacherAIPermitted) {
-                          alert(`عذراً، توليد التقارير الذكية معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
-                          return;
-                        }
-                        const firstStudent = users.find(u => u.role === 'student');
-                        if (firstStudent) {
-                          setQuickDiagnosticStudent({ id: firstStudent.id, name: firstStudent.name });
-                          setIsQuickDiagnosticOpen(true);
-                        } else if (submissions.length > 0) {
-                          setQuickDiagnosticStudent({ id: submissions[0].studentId, name: submissions[0].studentName });
-                          setIsQuickDiagnosticOpen(true);
-                        }
-                      }}
-                      disabled={submissions.length === 0 || !isTeacherAIPermitted}
-                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
-                      title={!isTeacherAIPermitted ? teacherAIReason : "توليد التقرير الذكي الفوري للطالب بنقرة واحدة"}
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>توليد التقرير الذكي الفوري للطالب ⚡</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isTeacherAIPermitted) {
-                          alert(`عذراً، تقرير الفاقد التعليمي الذكي معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
-                          return;
-                        }
-                        setIsClassDiagnosticOpen(true);
-                      }}
-                      disabled={submissions.length === 0 || !isTeacherAIPermitted}
-                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
-                      title={!isTeacherAIPermitted ? teacherAIReason : "تحليل ذكي تراكمي للفاقد التعليمي للفصل بالكامل"}
-                    >
-                      <BarChart3 className="w-4 h-4 text-amber-300" />
-                      تقرير الفاقد التعليمي للفصل 📊
-                    </button>
-                  </div>
-                </div>
-
-              {submissions.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-10">لم يقم أي طالب بحل الأنشطة بعد.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-400">
-                        <th className="pb-3 font-semibold">اسم الطالب</th>
-                        <th className="pb-3 font-semibold">النشاط</th>
-                        <th className="pb-3 font-semibold">الدرجة</th>
-                        <th className="pb-3 font-semibold">النسبة</th>
-                        <th className="pb-3 font-semibold">تاريخ التسليم</th>
-                        <th className="pb-3 font-semibold text-center">أدوات الذكاء الاصطناعي 🧠</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {submissions.map((sub) => {
-                        const percentage = Math.round((sub.score / sub.totalPoints) * 100) || 0;
-                        const targetStudent = users.find(u => u.id === sub.studentId) || {
-                          id: sub.studentId,
-                          name: sub.studentName,
-                          role: 'student' as const,
-                          grade: sub.grade,
-                          track: sub.track,
-                          stage: 'primary' as const,
-                          username: 'student',
-                          password: '123'
-                        };
-
-                        return (
-                          <tr key={sub.id} className="hover:bg-slate-50">
-                            <td className="py-3 font-bold text-slate-800">{sub.studentName}</td>
-                            <td className="py-3 text-slate-600">{sub.activityTitle}</td>
-                            <td className="py-3 font-bold text-emerald-600">{sub.score} / {sub.totalPoints}</td>
-                            <td className="py-3">
-                              <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                                percentage >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                              }`}>
-                                {percentage}%
-                              </span>
-                            </td>
-                            <td className="py-3 text-slate-400">{sub.submittedAt}</td>
-                            <td className="py-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!isTeacherAIPermitted) {
-                                      alert(`عذراً، التشخيص الفوري معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
-                                      return;
-                                    }
-                                    setQuickDiagnosticStudent({ id: sub.studentId, name: sub.studentName });
-                                    setIsQuickDiagnosticOpen(true);
-                                  }}
-                                  disabled={!isTeacherAIPermitted}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                                  title={!isTeacherAIPermitted ? teacherAIReason : "توليد التقرير التشخيصي الفوري لهذا الطالب بنقرة واحدة"}
-                                >
-                                  <Zap className="w-3 h-3 text-amber-600" /> تشخيص فوري ⚡
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!isTeacherAIPermitted) {
-                                      alert(`عذراً، التقرير التشخيصي معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
-                                      return;
-                                    }
-                                    setDiagnosticStudent(targetStudent);
-                                    setIsDiagnosticModalOpen(true);
-                                  }}
-                                  disabled={!isTeacherAIPermitted}
-                                  className="px-2.5 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-lg text-[10px] font-bold border border-cyan-200 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                                  title={!isTeacherAIPermitted ? teacherAIReason : "التقرير التشخيصي للطفل بالذكاء الاصطناعي"}
-                                >
-                                  <Brain className="w-3 h-3 text-cyan-600" /> تقرير تشخيصي
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!isTeacherAIPermitted) {
-                                      alert(`عذراً، توليد ورقة العمل العلاجية معطل بأمر الإدارة العليا:\n${teacherAIReason}`);
-                                      return;
-                                    }
-                                    setWorksheetStudent(targetStudent);
-                                    setIsPrintableWorksheetOpen(true);
-                                  }}
-                                  disabled={!isTeacherAIPermitted}
-                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition flex items-center gap-1 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                                  title={!isTeacherAIPermitted ? teacherAIReason : "توليد ورقة عمل علاجية للطباعة"}
-                                >
-                                  <Printer className="w-3 h-3 text-emerald-600" /> ورقة علاجية
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+              <GradebookManager
+                currentUser={currentUser}
+                students={teacherStudents}
+                submissions={teacherSubmissions}
+                allowedGrades={teacherGrades}
+                onOpenQuickDiagnostic={(student) => {
+                  setQuickDiagnosticStudent(student);
+                  setIsQuickDiagnosticOpen(true);
+                }}
+                onOpenFullDiagnostic={(student) => {
+                  setDiagnosticStudent(student);
+                  setIsDiagnosticModalOpen(true);
+                }}
+                onOpenClassDiagnostic={() => {
+                  setIsClassDiagnosticOpen(true);
+                }}
+                isAIPermitted={isTeacherAIPermitted}
+                aiBlockedReason={teacherAIReason}
+                onRefreshData={() => {
+                  setUsers(getUsers());
+                }}
+              />
             );
           })()}
 
@@ -5061,135 +4979,27 @@ export default function App() {
                 const parentAIReason = userPerm.reason || isAIFeatureAllowed('parent').reason;
 
                 return (
-                <>
-                  {!isParentAIPermitted && (
-                    <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs">
-                      <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-                      <div>
-                        <span className="font-bold block">تقارير الذكاء الاصطناعي التشخيصية لولي الأمر معطلة</span>
-                        <span className="text-[11px] text-rose-600">{parentAIReason}</span>
-                      </div>
-                    </div>
-                  )}
-                  <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
-                      <div>
-                        <span className="text-xs text-emerald-600 font-bold block mb-1">بطاقة متابعة الطالب</span>
-                        <h2 className="text-xl font-black text-slate-800">{student.name}</h2>
-                        <span className="text-xs text-slate-500">
-                          {getGradeLabel(student.grade!)} • {student.track === 'arabic-a' ? 'مسار الناطقين بها' : 'مسار الناطقين بغيرها'}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isParentAIPermitted) {
-                              alert(`عذراً، التقارير الذكية معطلة بأمر الإدارة العليا:\n${parentAIReason}`);
-                              return;
-                            }
-                            setQuickDiagnosticStudent({ id: student.id, name: student.name });
-                            setIsQuickDiagnosticOpen(true);
-                          }}
-                          disabled={!isParentAIPermitted}
-                          className="px-3 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                          title={!isParentAIPermitted ? parentAIReason : "توليد التقرير الذكي الفوري للطالب بنقرة واحدة"}
-                        >
-                          <Sparkles className="w-4 h-4 text-amber-300" />
-                          <span>التقرير الفوري ⚡</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isParentAIPermitted) {
-                              alert(`عذراً، التقرير التشخيصي الذكي معطل بأمر الإدارة العليا:\n${parentAIReason}`);
-                              return;
-                            }
-                            setDiagnosticStudent(student);
-                            setIsDiagnosticModalOpen(true);
-                          }}
-                          disabled={!isParentAIPermitted}
-                          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                          title={!isParentAIPermitted ? parentAIReason : "استخراج تقرير تشخيصي ذكي بالذكاء الاصطناعي"}
-                        >
-                          <Brain className="w-4 h-4" /> التقرير التشخيصي الذكي
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isParentAIPermitted) {
-                              alert(`عذراً، توليد ورقة العمل العلاجية معطل بأمر الإدارة العليا:\n${parentAIReason}`);
-                              return;
-                            }
-                            setWorksheetStudent(student);
-                            setIsPrintableWorksheetOpen(true);
-                          }}
-                          disabled={!isParentAIPermitted}
-                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
-                          title={!isParentAIPermitted ? parentAIReason : "توليد وطباعة أوراق عمل علاجية"}
-                        >
-                          <Printer className="w-4 h-4" /> ورقة عمل علاجية
-                        </button>
-                        <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100">
-                          <Award className="w-7 h-7 text-emerald-600" />
-                          <div>
-                            <span className="text-[10px] text-emerald-800 font-bold block">معدل التحصيل</span>
-                            <span className="text-base font-black text-emerald-700">{avgPercentage}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-[11px] text-slate-400 block mb-1">الأنشطة المكتملة</span>
-                        <span className="text-base font-extrabold text-slate-800">{studentSubs.length}</span>
-                      </div>
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-[11px] text-slate-400 block mb-1">مجموع الدرجات</span>
-                        <span className="text-base font-extrabold text-emerald-600">{totalEarned} نقطة</span>
-                      </div>
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 col-span-2 sm:col-span-1">
-                        <span className="text-[11px] text-slate-400 block mb-1">تقييم الأداء</span>
-                        <span className="text-xs font-bold text-slate-700">
-                          {avgPercentage >= 85 ? 'ممتاز ومتميز 🌟' : avgPercentage >= 70 ? 'جيد جداً 👍' : 'يحتاج متابعة وتدريب 🎯'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
-                    <h3 className="font-extrabold text-sm mb-4 text-slate-800">سجل إجابات ودرجات الأنشطة المكتملة</h3>
-                    {studentSubs.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-8">لم يكمل الطالب أي نشاط حتى الآن.</p>
-                    ) : (
-                      <div className="divide-y divide-slate-100">
-                        {studentSubs.map((sub) => {
-                          const perc = Math.round((sub.score / sub.totalPoints) * 100) || 0;
-                          return (
-                            <div key={sub.id} className="py-3.5 flex items-center justify-between">
-                              <div>
-                                <h4 className="font-bold text-xs text-slate-800 mb-0.5">{sub.activityTitle}</h4>
-                                <span className="text-[10px] text-slate-400">تاريخ الإنجاز: {sub.submittedAt}</span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-xs text-slate-700">
-                                  {sub.score} / {sub.totalPoints}
-                                </span>
-                                <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold ${
-                                  perc >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                }`}>
-                                  {perc}%
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
+                  <ParentProgressTab
+                    student={student}
+                    studentSubs={studentSubs}
+                    totalEarned={totalEarned}
+                    totalPossible={totalPossible}
+                    avgPercentage={avgPercentage}
+                    isParentAIPermitted={isParentAIPermitted}
+                    parentAIReason={parentAIReason}
+                    onOpenQuickDiagnostic={() => {
+                      setQuickDiagnosticStudent({ id: student.id, name: student.name });
+                      setIsQuickDiagnosticOpen(true);
+                    }}
+                    onOpenDiagnosticModal={() => {
+                      setDiagnosticStudent(student);
+                      setIsDiagnosticModalOpen(true);
+                    }}
+                    onOpenPrintableWorksheet={() => {
+                      setWorksheetStudent(student);
+                      setIsPrintableWorksheetOpen(true);
+                    }}
+                  />
                 );
               })()}
 

@@ -371,6 +371,43 @@ export const deleteUser = async (id: string): Promise<void> => {
   }
 };
 
+/**
+ * حفظ واستيراد دفعة من الطلاب (Bulk Students Upsert) لمنع التكرار وتحديث البيانات فورياً
+ */
+export const saveStudentsBulk = async (newStudents: UserProfile[]): Promise<{ count: number; error?: any }> => {
+  if (!newStudents || newStudents.length === 0) {
+    return { count: 0 };
+  }
+
+  // 1. تحديث التخزين المحلي فوراً
+  const users = getUsers();
+  let updatedCount = 0;
+
+  for (const st of newStudents) {
+    const existingIdx = users.findIndex(
+      u => u.id === st.id || (st.username && u.username.toLowerCase() === st.username.toLowerCase())
+    );
+    if (existingIdx >= 0) {
+      users[existingIdx] = { ...users[existingIdx], ...st };
+    } else {
+      users.push(st);
+    }
+    updatedCount++;
+  }
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+
+  // 2. الحفظ السحابي في Supabase لجميع الطلاب
+  try {
+    for (const st of newStudents) {
+      await upsertUserInSupabase(st);
+    }
+    return { count: updatedCount, error: null };
+  } catch (err: any) {
+    console.error('فشل حفظ بعض الطلاب سحابياً في الاستيراد الجماعي:', err);
+    return { count: updatedCount, error: err };
+  }
+};
+
 export const recordUserLogin = (user: UserProfile): UserProfile => {
   const updatedUser: UserProfile = {
     ...user,
@@ -796,9 +833,83 @@ export const syncSubmissionsFromCloud = async (): Promise<StudentSubmission[]> =
   return getSubmissions();
 };
 
+export const INITIAL_STUDENT_SUBMISSIONS: StudentSubmission[] = [
+  {
+    id: 'sub_demo_phonics_1',
+    activityId: 'act_phonics_1',
+    activityTitle: 'مغامرة كنز الأصوات: المدود الطويلة والحركات القصيرة 🎶',
+    studentId: 'usr_student_mousa',
+    studentName: 'موسى البطل 🌟',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    score: 10,
+    totalPoints: 10,
+    submittedAt: '2026-09-21 10:30',
+    answers: {},
+    gameType: 'phonics_treasure',
+    targetSkill: 'الوعي الصوتي والفونيمات'
+  },
+  {
+    id: 'sub_demo_spelling_1',
+    activityId: 'act_spelling_1',
+    activityTitle: 'تحدي اللام الشمسية واللام القمرية ورسم الهمزات ☀️🌙',
+    studentId: 'usr_student_mousa',
+    studentName: 'موسى البطل 🌟',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    score: 9,
+    totalPoints: 10,
+    submittedAt: '2026-09-21 11:15',
+    answers: {},
+    gameType: 'category_sorter',
+    targetSkill: 'الإملاء والظواهر الكتابية'
+  },
+  {
+    id: 'sub_demo_grammar_1',
+    activityId: 'act_grammar_1',
+    activityTitle: 'بناء الجمل المفيدة: الفعل والفاعل والمبتدأ والخبر 🧩',
+    studentId: 'usr_student_mousa',
+    studentName: 'موسى البطل 🌟',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    score: 8,
+    totalPoints: 10,
+    submittedAt: '2026-09-22 09:00',
+    answers: {},
+    gameType: 'sentence_builder',
+    targetSkill: 'القواعد والتراكيب اللغوية'
+  },
+  {
+    id: 'sub_demo_reading_1',
+    activityId: 'act_reading_1',
+    activityTitle: 'استيعاب وفهم قصة: الأرنب الذكي والسلحفاة الصبورة 📖',
+    studentId: 'usr_student_mousa',
+    studentName: 'موسى البطل 🌟',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    score: 9,
+    totalPoints: 10,
+    submittedAt: '2026-09-22 09:45',
+    answers: {},
+    gameType: 'story_quest',
+    targetSkill: 'الفهم القرائي والاستيعاب'
+  }
+];
+
 export const getSubmissions = (): StudentSubmission[] => {
   const data = localStorage.getItem(SUBMISSIONS_KEY);
-  return data ? JSON.parse(data) : [];
+  if (data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch {
+      // fallback
+    }
+  }
+  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(INITIAL_STUDENT_SUBMISSIONS));
+  return INITIAL_STUDENT_SUBMISSIONS;
 };
 
 export const saveSubmission = async (submission: StudentSubmission): Promise<void> => {
