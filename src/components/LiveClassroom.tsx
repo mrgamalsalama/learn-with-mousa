@@ -13,9 +13,19 @@ import {
   RefreshCw,
   Mic,
   Copy,
-  Check
+  Check,
+  MessageSquare,
+  Monitor,
+  VolumeX,
+  Volume2,
+  Sparkles,
+  Lock,
+  Unlock,
+  X,
+  Send,
+  UserCheck
 } from 'lucide-react';
-import { UserProfile, GradeLevel, ArabicTrack, LiveClassSession } from '../types';
+import { UserProfile, GradeLevel, ArabicTrack, LiveClassSession, LiveClassPermissions } from '../types';
 import { 
   getActiveLiveClassForGrade, 
   getActiveLiveClassForTeacher, 
@@ -24,6 +34,7 @@ import {
   syncLiveClassSessionsFromCloud
 } from '../storage';
 import { supabase } from '../supabaseClient';
+import { challengeAudio } from '../utils/challengeAudio';
 
 interface LiveClassroomProps {
   currentUser: UserProfile;
@@ -85,10 +96,35 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState<boolean>(false);
 
+  // حالات الصلاحيات الحية للحصة المباشرة (Live Class Permissions)
+  const [livePermissions, setLivePermissions] = useState<LiveClassPermissions>({
+    allowChat: false,
+    allowScreenShare: false
+  });
+  const [isUpdatingPermissions, setIsUpdatingPermissions] = useState<boolean>(false);
+
+  // إشعار موسى التفاعلي اللطيف للطالب
+  const [mousaToast, setMousaToast] = useState<{ id: string; text: string; icon: 'chat' | 'screen' | 'mute' } | null>(null);
+
+  // حالة فتح نافذة الدردشة عند الطالب
+  const [isStudentChatOpen, setIsStudentChatOpen] = useState<boolean>(false);
+  const [studentChatMessages, setStudentChatMessages] = useState<Array<{ id: string; sender: string; isTeacher: boolean; text: string; time: string }>>([
+    {
+      id: 'welcome',
+      sender: 'مُوسَى الودود 🌟',
+      isTeacher: false,
+      text: 'أهلاً بكم في حصتنا المباشرة! استمعوا لتوجيهات المعلم وشاركوا بفصاحة وأدب ✨',
+      time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+    }
+  ]);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
   const jitsiApiRef = useRef<any>(null);
   const timerRef = useRef<any>(null);
   const loadingTimeoutRef = useRef<any>(null);
+  const prevPermissionsRef = useRef<LiveClassPermissions>({ allowChat: false, allowScreenShare: false });
 
   // تنسيق اسم الصف
   const formatGradeName = (grade: string) => {
@@ -111,6 +147,52 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     return `MousaClass_${cleanGrade}_${cleanTeacher}`;
   };
 
+  // التمرير لأسفل قائمة رسائل الشات عند وصول رسالة جديدة
+  useEffect(() => {
+    if (isStudentChatOpen) {
+      chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [studentChatMessages, isStudentChatOpen]);
+
+  // إرسال رسالة في شات الصف التفاعلي
+  const handleSendChatMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInputText.trim() || (!isTeacher && !livePermissions.allowChat)) return;
+
+    const newMsg = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      sender: currentUser.name + (isTeacher ? ' (المعلم) 🎓' : ''),
+      isTeacher: isTeacher,
+      text: chatInputText.trim(),
+      time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setStudentChatMessages(prev => [...prev, newMsg]);
+    setChatInputText('');
+
+    // بث الرسالة عبر Supabase Realtime لجميع الحاضرين
+    try {
+      const channel = supabase.channel('lwm-realtime-sync');
+      channel.send({
+        type: 'broadcast',
+        event: 'live_chat_message',
+        payload: {
+          roomName: currentRoomName || activeSession?.roomName,
+          message: newMsg
+        }
+      });
+    } catch (err) {
+      console.warn('Realtime chat broadcast failed:', err);
+    }
+
+    // إرسال الرسالة إلى شات Jitsi أيضاً إن وُجد
+    if (jitsiApiRef.current) {
+      try {
+        jitsiApiRef.current.executeCommand('sendChatMessage', newMsg.text);
+      } catch (err) {}
+    }
+  };
+
   // فحص الجلسات الحية النشطة والتحقق الصارم من Supabase
   useEffect(() => {
     const checkActiveSession = async () => {
@@ -120,6 +202,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
         if (isTeacher) {
           const teacherSession = cloudSessions.find(s => s.isActive && s.teacherId === currentUser.id) || null;
           setActiveSession(teacherSession);
+          if (teacherSession?.permissions) {
+            setLivePermissions(teacherSession.permissions);
+            prevPermissionsRef.current = teacherSession.permissions;
+          }
           if (teacherSession?.serverDomain) {
             setSelectedServer(sanitizeServerDomain(teacherSession.serverDomain));
           }
@@ -127,6 +213,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
           const studentGrade = currentUser.grade || selectedGrade;
           const gradeSession = cloudSessions.find(s => s.isActive && (s.grade === studentGrade || s.grade === 'all')) || null;
           setActiveSession(gradeSession);
+          if (gradeSession?.permissions) {
+            setLivePermissions(gradeSession.permissions);
+            prevPermissionsRef.current = gradeSession.permissions;
+          }
           if (gradeSession?.serverDomain) {
             setSelectedServer(sanitizeServerDomain(gradeSession.serverDomain));
           }
@@ -136,10 +226,18 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
         if (isTeacher) {
           const teacherSession = getActiveLiveClassForTeacher(currentUser.id);
           setActiveSession(teacherSession);
+          if (teacherSession?.permissions) {
+            setLivePermissions(teacherSession.permissions);
+            prevPermissionsRef.current = teacherSession.permissions;
+          }
         } else {
           const studentGrade = currentUser.grade || selectedGrade;
           const gradeSession = getActiveLiveClassForGrade(studentGrade);
           setActiveSession(gradeSession);
+          if (gradeSession?.permissions) {
+            setLivePermissions(gradeSession.permissions);
+            prevPermissionsRef.current = gradeSession.permissions;
+          }
         }
       }
     };
@@ -149,6 +247,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     // الاستماع للتحديثات اللحظية عبر Supabase Broadcast
     try {
       const channel = supabase.channel('lwm-realtime-sync');
+      
+      // استقبال تحديث الجلسة وتحديث الصلاحيات اللحظي
       channel.on('broadcast', { event: 'live_session_update' }, (payload: any) => {
         if (payload?.payload) {
           const updated: LiveClassSession = payload.payload;
@@ -158,9 +258,30 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
             if (updated.serverDomain) {
               setSelectedServer(sanitizeServerDomain(updated.serverDomain));
             }
+            if (updated.permissions) {
+              handleIncomingPermissions(updated.permissions);
+            }
             if (!updated.isActive && isMeetingActive && !isTeacher) {
               handleEndOrLeave();
             }
+          }
+        }
+      });
+
+      // استقبال رسائل الدردشة الصفيّة الفورية
+      channel.on('broadcast', { event: 'live_chat_message' }, (payload: any) => {
+        if (payload?.payload) {
+          const { roomName, message } = payload.payload;
+          const myRoom = currentRoomName || activeSession?.roomName;
+          if (message && (!roomName || roomName === myRoom)) {
+            setStudentChatMessages(prev => {
+              if (prev.some(m => m.id === message.id)) return prev;
+              return [...prev, message];
+            });
+            // نغمة خفيفة عند وصول رسالة جديدة
+            try {
+              challengeAudio.playTick();
+            } catch (e) {}
           }
         }
       });
@@ -168,6 +289,142 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       console.warn('Realtime channel subscribe warning in LiveClassroom:', e);
     }
   }, [currentUser, isTeacher, selectedGrade, isMeetingActive]);
+
+  // دالة معالجة الصلاحيات الجديدة الواردة من السحابة أو البث اللحظي
+  const handleIncomingPermissions = (newPerms: LiveClassPermissions) => {
+    const prev = prevPermissionsRef.current;
+    setLivePermissions(newPerms);
+    prevPermissionsRef.current = newPerms;
+
+    // إذا كان المستخدم طالباً: تفعيل الإشعارات وتكييف الواجهة و Jitsi
+    if (!isTeacher) {
+      // 1. فحص تبدل صلاحية الدردشة
+      if (!prev.allowChat && newPerms.allowChat) {
+        showMousaToast('المعلم فتح الدردشة الصفيّة! شارك بأدب وفصاحة 💬', 'chat');
+        try { challengeAudio.playCorrect(); } catch (e) {}
+      } else if (prev.allowChat && !newPerms.allowChat) {
+        // إغلاق أي نافذة دردشة مفتوحة فوراً لمنع التشتت والعبث
+        setIsStudentChatOpen(false);
+      }
+
+      // 2. فحص تبدل صلاحية مشاركة الشاشة
+      if (!prev.allowScreenShare && newPerms.allowScreenShare) {
+        showMousaToast('يمكنك الآن مشاركة شاشتك وعرض إبداعك 🖥️', 'screen');
+        try { challengeAudio.playCorrect(); } catch (e) {}
+      }
+
+      // 3. تحديث أزرار شريط أدوات Jitsi ديناميكياً بحسب الصلاحيات المحدثة
+      updateStudentJitsiToolbar(newPerms);
+    }
+  };
+
+  // إظهار إشعار موسى التفاعلي اللطيف للطالب
+  const showMousaToast = (text: string, icon: 'chat' | 'screen' | 'mute') => {
+    setMousaToast({
+      id: Math.random().toString(),
+      text,
+      icon
+    });
+    setTimeout(() => {
+      setMousaToast(prev => (prev?.text === text ? null : prev));
+    }, 6000);
+  };
+
+  // تحديث شريط أدوات Jitsi للطالب حياً عند تغيير الصلاحيات
+  const updateStudentJitsiToolbar = (perms: LiveClassPermissions) => {
+    if (!jitsiApiRef.current) return;
+    try {
+      const buttons = ['microphone', 'camera', 'raisehand', 'hangup'];
+      if (perms.allowChat) buttons.push('chat');
+      if (perms.allowScreenShare) buttons.push('desktop');
+
+      // بعض إصدارات Jitsi تدعم setToolbarButtons أو executeCommand
+      if (typeof jitsiApiRef.current.executeCommand === 'function') {
+        try {
+          jitsiApiRef.current.executeCommand('setToolbarButtons', buttons);
+        } catch (e) {
+          // بديل: تعديل عناصر التحكم أو إعادة ضبط جودة الفيديو دون قطع المكالمة
+          jitsiApiRef.current.executeCommand('setVideoQuality', 720);
+        }
+      }
+    } catch (e) {
+      console.warn('Error dynamically updating Jitsi student toolbar:', e);
+    }
+  };
+
+  // تبديل المعلم لصلاحيات الحصة المباشرة وبثها سحابياً ولحظياً
+  const handleTogglePermission = async (key: keyof LiveClassPermissions) => {
+    if (!isTeacher || !activeSession || isUpdatingPermissions) return;
+
+    setIsUpdatingPermissions(true);
+    const updatedPermissions: LiveClassPermissions = {
+      ...livePermissions,
+      [key]: !livePermissions[key]
+    };
+
+    setLivePermissions(updatedPermissions);
+    prevPermissionsRef.current = updatedPermissions;
+
+    try {
+      const updatedSession: LiveClassSession = {
+        ...activeSession,
+        permissions: updatedPermissions
+      };
+
+      setActiveSession(updatedSession);
+      await saveLiveClassSession(updatedSession);
+      try { challengeAudio.playTick(); } catch (e) {}
+    } catch (err) {
+      console.error('Failed to update live permissions:', err);
+    } finally {
+      setIsUpdatingPermissions(false);
+    }
+  };
+
+  // أمر كتم أصوات جميع الطلاب بنقرة واحدة (Mute Everyone) للمعلم المشرف
+  const handleMuteEveryone = () => {
+    if (!isTeacher || !jitsiApiRef.current) return;
+    try {
+      if (typeof jitsiApiRef.current.executeCommand === 'function') {
+        jitsiApiRef.current.executeCommand('muteEveryone');
+        try { challengeAudio.playCorrect(); } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('Jitsi muteEveryone command error:', err);
+    }
+  };
+
+  // تنفيذ أمر رفع اليد للطالب
+  const handleStudentRaiseHand = () => {
+    if (jitsiApiRef.current && typeof jitsiApiRef.current.executeCommand === 'function') {
+      try {
+        jitsiApiRef.current.executeCommand('toggleRaiseHand');
+        try { challengeAudio.playTick(); } catch (e) {}
+      } catch (err) {}
+    }
+  };
+
+  // تنفيذ أمر مشاركة الشاشة للطالب عند السماح له
+  const handleStudentToggleDesktop = () => {
+    if (!livePermissions.allowScreenShare) return;
+    if (jitsiApiRef.current && typeof jitsiApiRef.current.executeCommand === 'function') {
+      try {
+        jitsiApiRef.current.executeCommand('toggleShareScreen');
+        try { challengeAudio.playTick(); } catch (e) {}
+      } catch (err) {}
+    }
+  };
+
+  // تنفيذ فتح أو إغلاق الدردشة للطالب
+  const handleStudentToggleChat = () => {
+    if (!livePermissions.allowChat) return;
+    setIsStudentChatOpen(prev => !prev);
+    if (jitsiApiRef.current && typeof jitsiApiRef.current.executeCommand === 'function') {
+      try {
+        jitsiApiRef.current.executeCommand('toggleChat');
+      } catch (err) {}
+    }
+  };
 
   // تحميل سكريبت Jitsi ديناميكياً من الخوادم المعتمدة
   useEffect(() => {
@@ -300,28 +557,44 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       jitsiContainerRef.current.innerHTML = '';
     }
 
+    // بناء قائمة أزرار الطالب في Jitsi ديناميكياً حسب صلاحيات الجلسة
+    const studentButtons = ['microphone', 'camera', 'raisehand', 'hangup'];
+    if (livePermissions.allowChat) {
+      studentButtons.push('chat');
+    }
+    if (livePermissions.allowScreenShare) {
+      studentButtons.push('desktop');
+    }
+
     // ضبط خصائص مكالمة Jitsi للطلاب لمنع المشتتات ومنع دعوة غرباء
     const studentConfigOverwrite = {
       disableDeepLinking: true,
       prejoinPageEnabled: false,
       disableInviteFunctions: true, // منع دعوة أي شخص خارجي تماماً وإخفاء زر Invite someone
       enableInsecureRoomNameWarning: false,
-      toolbarButtons: [
-        'microphone', 'camera', 'raisehand', 'hangup'
-      ] // شريط أدوات مصغر ومناسب للطفل فقط (المايك، الكاميرا، رفع اليد، الخروج)
+      toolbarButtons: studentButtons
     };
 
     const studentInterfaceConfigOverwrite = {
-      TOOLBAR_BUTTONS: ['microphone', 'camera', 'raisehand', 'hangup'],
+      TOOLBAR_BUTTONS: studentButtons,
       SETTINGS_SECTIONS: ['devices'], // إخفاء إعدادات الأمان والإشراف
       HIDE_INVITE_MORE_HEADER: true
     };
 
+    // إعدادات المعلم كمشرف كامل (Moderator)
     const teacherConfigOverwrite = {
       startWithAudioMuted: false,
       startWithVideoMuted: false,
       disableDeepLinking: true,
-      prejoinPageEnabled: false
+      prejoinPageEnabled: false,
+      enableUserRolesBasedOnToken: false,
+      toolbarButtons: [
+        'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+        'fodeviceselection', 'hangup', 'profile', 'chat', 'recording',
+        'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
+        'videoquality', 'filmstrip', 'invite', 'feedback', 'stats', 'shortcuts',
+        'tileview', 'videobackgroundblur', 'download', 'help', 'mute-everyone', 'security'
+      ]
     };
 
     const options: any = {
@@ -330,7 +603,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       height: '100%',
       parentNode: jitsiContainerRef.current,
       userInfo: {
-        displayName: isTeacher ? `${currentUser.name} (المعلم)` : currentUser.name
+        displayName: isTeacher ? `${currentUser.name} (المعلم)` : currentUser.name,
+        role: isTeacher ? 'moderator' : 'participant'
       },
       configOverwrite: isTeacher ? teacherConfigOverwrite : studentConfigOverwrite
     };
@@ -421,6 +695,13 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     const teacherId = currentUser.id;
     const roomName = computeRoomName(selectedGrade, teacherId);
 
+    const initialPerms: LiveClassPermissions = {
+      allowChat: false,
+      allowScreenShare: false
+    };
+    setLivePermissions(initialPerms);
+    prevPermissionsRef.current = initialPerms;
+
     const newSession: LiveClassSession = {
       id: `live_${selectedGrade}_${Date.now()}`,
       roomName,
@@ -431,7 +712,8 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       title: lessonTopic.trim() || 'حصة تفاعلية مباشرة مع موسى',
       isActive: true,
       startedAt: new Date().toISOString(),
-      serverDomain: selectedServer
+      serverDomain: selectedServer,
+      permissions: initialPerms
     };
 
     await saveLiveClassSession(newSession);
@@ -444,6 +726,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
     const targetDomain = activeSession?.serverDomain || selectedServer;
     setSelectedServer(targetDomain);
     const roomName = activeSession?.roomName || computeRoomName(currentUser.grade || selectedGrade, currentUser.teacherId || 'usr_teacher');
+    if (activeSession?.permissions) {
+      setLivePermissions(activeSession.permissions);
+      prevPermissionsRef.current = activeSession.permissions;
+    }
     startJitsiSession(roomName, targetDomain);
   };
 
@@ -457,6 +743,9 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
       setActiveSession(found);
       if (found?.serverDomain) {
         setSelectedServer(sanitizeServerDomain(found.serverDomain));
+      }
+      if (found?.permissions) {
+        handleIncomingPermissions(found.permissions);
       }
     } finally {
       setTimeout(() => {
@@ -505,6 +794,7 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
 
     setIsMeetingActive(false);
     setIsLoadingMeeting(false);
+    setIsStudentChatOpen(false);
 
     if (isTeacher && activeSession) {
       await endLiveClassSession(activeSession.id);
@@ -616,9 +906,112 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
         </div>
       </header>
 
+      {/* ============================================================================== */}
+      {/* 1. شريط أدوات صلاحيات الحصة للمعلم (Teacher Live Permissions Bar) */}
+      {/* ============================================================================== */}
+      {isMeetingActive && isTeacher && (
+        <div 
+          id="teacher-live-permissions-bar"
+          className="bg-slate-950/95 border-b border-emerald-500/30 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 z-30 shadow-md backdrop-blur-md"
+        >
+          <div className="flex items-center gap-2 text-xs">
+            <span className="flex items-center gap-1.5 font-black text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>تحكم الصلاحيات الحية للطلاب:</span>
+            </span>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">
+              (تُبث التغييرات لحظياً لجميع الطلاب دون إعادة تحميل الصفحة)
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* مفتاح تبديل الدردشة الصفيّة */}
+            <button
+              id="toggle-live-chat-btn"
+              type="button"
+              onClick={() => handleTogglePermission('allowChat')}
+              disabled={isUpdatingPermissions}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                livePermissions.allowChat
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-600/20 animate-pulse'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title={livePermissions.allowChat ? 'انقر لتعطيل الدردشة الصفيّة للطلاب' : 'انقر للسماح بالدردشة الصفيّة للطلاب'}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>
+                {livePermissions.allowChat ? '💬 الدردشة الصفيّة: مفعّلة للطلاب' : '💬 الدردشة: معطلة (افتراضي)'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${livePermissions.allowChat ? 'bg-emerald-200' : 'bg-slate-500'}`} />
+            </button>
+
+            {/* مفتاح تبديل مشاركة الشاشة للطلاب */}
+            <button
+              id="toggle-live-screenshare-btn"
+              type="button"
+              onClick={() => handleTogglePermission('allowScreenShare')}
+              disabled={isUpdatingPermissions}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                livePermissions.allowScreenShare
+                  ? 'bg-teal-600 hover:bg-teal-500 text-white border-teal-400 shadow-lg shadow-teal-600/20 animate-pulse'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title={livePermissions.allowScreenShare ? 'انقر لمنع الطلاب من مشاركة الشاشة' : 'انقر للسماح للطلاب بمشاركة الشاشة'}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>
+                {livePermissions.allowScreenShare ? '🖥️ مشاركة الشاشة: مسموحة' : '🖥️ مشاركة الشاشة: معطلة'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${livePermissions.allowScreenShare ? 'bg-teal-200' : 'bg-slate-500'}`} />
+            </button>
+
+            {/* زر المشرف: كتم صوت الجميع بنقرة واحدة (Mute Everyone) */}
+            <button
+              id="mute-everyone-btn"
+              type="button"
+              onClick={handleMuteEveryone}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 border border-amber-500/40 rounded-xl text-xs font-bold transition cursor-pointer"
+              title="كتم أصوات جميع ميكروفونات الطلاب بنقرة واحدة"
+            >
+              <VolumeX className="w-3.5 h-3.5 text-amber-400" />
+              <span>كتم صوت الجميع 🔇</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* مساحة العرض الرئيسية */}
       <div className="flex-1 relative flex flex-col items-center justify-center p-2 sm:p-4 bg-slate-900 overflow-hidden">
         
+        {/* ============================================================================== */}
+        {/* 4. إشعار تفاعلي لطيف للطالب بصوت ورسالة موسى الذكية */}
+        {/* ============================================================================== */}
+        {mousaToast && !isTeacher && (
+          <div 
+            id="mousa-live-permission-toast"
+            className="absolute top-4 right-4 sm:right-6 z-50 max-w-sm w-full bg-gradient-to-r from-emerald-900/95 via-teal-900/95 to-slate-900/95 border-2 border-emerald-400 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300"
+          >
+            <div className="w-11 h-11 rounded-2xl overflow-hidden border-2 border-emerald-300 shadow-md bg-white shrink-0 p-0.5">
+              <img src="/mousa-avatar.png" alt="موسى" className="w-full h-full object-cover rounded-xl" />
+            </div>
+            <div className="flex-1 text-right">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-300">
+                <Sparkles className="w-3 h-3 text-emerald-300 animate-spin" />
+                <span>رسالة من مُوسَى المباشر:</span>
+              </div>
+              <p className="text-xs font-bold text-white mt-0.5 leading-snug">
+                {mousaToast.text}
+              </p>
+            </div>
+            <button
+              onClick={() => setMousaToast(null)}
+              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* تنبيه الخطأ أو التبديل التلقائي إن وُجد (للمعلم فقط) */}
         {scriptError && isTeacher && (
           <div className="absolute top-2 left-4 right-4 z-40 p-3 bg-amber-500/20 border border-amber-500/40 rounded-2xl text-xs text-amber-200 flex items-center justify-between gap-2 shadow-xl backdrop-blur-md animate-in fade-in">
@@ -643,6 +1036,130 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
             isMeetingActive ? 'block' : 'hidden'
           }`}
         />
+
+        {/* ============================================================================== */}
+        {/* 2 & 3. شريط أدوات الطالب الديناميكي المتكيف لحظياً مع صلاحيات المعلم */}
+        {/* ============================================================================== */}
+        {isMeetingActive && !isTeacher && (
+          <div 
+            id="student-live-action-bar"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 bg-slate-950/90 border border-slate-700/80 px-4 py-2 rounded-2xl shadow-2xl backdrop-blur-lg flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2"
+          >
+            {/* زر رفع اليد الدائم */}
+            <button
+              type="button"
+              onClick={handleStudentRaiseHand}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition cursor-pointer"
+              title="رفع اليد لطلب الكلمة من المعلم"
+            >
+              <Hand className="w-3.5 h-3.5 text-amber-400" />
+              <span>رفع اليد ✋</span>
+            </button>
+
+            {/* زر الدردشة الصفيّة: يظهر فقط إذا سمح المعلم (allowChat === true) */}
+            {livePermissions.allowChat ? (
+              <button
+                id="student-chat-action-btn"
+                type="button"
+                onClick={handleStudentToggleChat}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer animate-in zoom-in-95 ${
+                  isStudentChatOpen
+                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-600/30'
+                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                }`}
+                title="فتح أو إغلاق الدردشة الصفيّة"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                <span>الدردشة 💬</span>
+              </button>
+            ) : null}
+
+            {/* زر مشاركة الشاشة: يظهر فقط إذا سمح المعلم (allowScreenShare === true) */}
+            {livePermissions.allowScreenShare ? (
+              <button
+                id="student-screenshare-action-btn"
+                type="button"
+                onClick={handleStudentToggleDesktop}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 rounded-xl text-xs font-bold transition cursor-pointer animate-in zoom-in-95"
+                title="مشاركة الشاشة وعرض أعمالك للمعلم والزملاء"
+              >
+                <Monitor className="w-3.5 h-3.5 text-teal-400" />
+                <span>مشاركة الشاشة 🖥️</span>
+              </button>
+            ) : null}
+
+            {/* زر مغادرة الحصة */}
+            <button
+              type="button"
+              onClick={handleEndOrLeave}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/40 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              <PhoneOff className="w-3.5 h-3.5 text-red-400" />
+              <span>مغادرة 🚪</span>
+            </button>
+          </div>
+        )}
+
+        {/* صندوق الدردشة الصفيّة التفاعلي المباشر (عند فتحها للطالب أو المعلم) */}
+        {isMeetingActive && isStudentChatOpen && (
+          <div 
+            id="student-live-chat-panel"
+            className="absolute bottom-16 left-4 sm:left-6 z-50 w-80 sm:w-96 max-h-[420px] h-[380px] bg-slate-950/95 border-2 border-emerald-500/40 rounded-3xl shadow-2xl backdrop-blur-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 zoom-in-95"
+          >
+            {/* رأس صندوق الشات */}
+            <div className="bg-emerald-950/80 px-4 py-2.5 border-b border-emerald-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-black text-white">الدردشة الصفيّة التفاعلية 💬</h4>
+              </div>
+              <button
+                onClick={() => setIsStudentChatOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* قائمة الرسائل */}
+            <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-right">
+              {studentChatMessages.map((msg) => (
+                <div 
+                  key={msg.id}
+                  className={`p-2.5 rounded-2xl text-xs max-w-[85%] ${
+                    msg.isTeacher 
+                      ? 'bg-emerald-900/60 border border-emerald-500/30 text-emerald-100 mr-auto'
+                      : 'bg-slate-900/80 border border-slate-800 text-slate-200 ml-auto'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 mb-1">
+                    <span className="font-bold text-white">{msg.sender}</span>
+                    <span>{msg.time}</span>
+                  </div>
+                  <p className="leading-relaxed break-words">{msg.text}</p>
+                </div>
+              ))}
+              <div ref={chatMessagesEndRef} />
+            </div>
+
+            {/* نموذج كتابة الرسالة */}
+            <form onSubmit={handleSendChatMessage} className="p-2.5 bg-slate-900/90 border-t border-slate-800 flex gap-2">
+              <input
+                type="text"
+                value={chatInputText}
+                onChange={(e) => setChatInputText(e.target.value)}
+                placeholder="اكتب رسالتك بأدب وفصاحة..."
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={!chatInputText.trim()}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer shadow-md shadow-emerald-600/20"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* بطاقة حل الطوارئ التلقائي الفوري (Pop-out) عند حدوث أي خلل في الـ Iframe */}
         {isMeetingActive && popoutNotice && (
@@ -773,7 +1290,7 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({
                     غرفة التحكم في البث المباشر 🎙️
                   </h3>
                   <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                    تقنية فصل موسى التفاعلي تتيح بث الصوت والصورة ومشاركة الشاشة ورفع اليد بجودة عالية ومجانية 100% دون أي قيود.
+                    تقنية فصل موسى التفاعلي تتيح بث الصوت والصورة ومشاركة الشاشة ورفع اليد وإدارة صلاحيات الطلاب الحية بسهولة تامة.
                   </p>
                 </div>
 

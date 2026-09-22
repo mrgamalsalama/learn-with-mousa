@@ -287,12 +287,43 @@ DROP POLICY IF EXISTS "Enable all for anon on challenge_rooms" ON public.challen
 CREATE POLICY "Enable all for anon on challenge_rooms" ON public.challenge_rooms FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
--- 8. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
+-- 8. جدول جلسات فصل موسى المباشر وصلاحيات البث (Live Class Sessions & Live Permissions)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.live_class_sessions (
+   id TEXT PRIMARY KEY,
+   room_name TEXT NOT NULL,
+   grade TEXT NOT NULL,
+   track TEXT DEFAULT 'arabic-a',
+   teacher_id TEXT NOT NULL,
+   teacher_name TEXT NOT NULL,
+   title TEXT NOT NULL,
+   is_active BOOLEAN NOT NULL DEFAULT true,
+   started_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+   ended_at TIMESTAMP WITH TIME ZONE,
+   server_domain TEXT DEFAULT 'framatalk.org',
+   permissions JSONB NOT NULL DEFAULT '{"allowChat": false, "allowScreenShare": false}'::jsonb,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.live_class_sessions ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{"allowChat": false, "allowScreenShare": false}'::jsonb;
+ALTER TABLE public.live_class_sessions ADD COLUMN IF NOT EXISTS server_domain TEXT DEFAULT 'framatalk.org';
+
+CREATE INDEX IF NOT EXISTS idx_live_class_grade ON public.live_class_sessions(grade);
+CREATE INDEX IF NOT EXISTS idx_live_class_teacher ON public.live_class_sessions(teacher_id);
+
+ALTER TABLE public.live_class_sessions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for anon on live_class_sessions" ON public.live_class_sessions;
+CREATE POLICY "Enable all for anon on live_class_sessions" ON public.live_class_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 9. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
 -- ==============================================================================
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts, public.challenge_quizzes, public.challenge_rooms;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts, public.challenge_quizzes, public.challenge_rooms, public.live_class_sessions;
   EXCEPTION
     WHEN duplicate_object THEN NULL;
     WHEN undefined_object THEN NULL;

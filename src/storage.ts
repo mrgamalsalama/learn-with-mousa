@@ -3076,9 +3076,10 @@ export const saveLiveClassSession = async (session: LiveClassSession): Promise<L
       teacher_id: session.teacherId,
       teacher_name: session.teacherName,
       title: session.title,
-      is_active: true,
+      is_active: session.isActive !== false,
       started_at: session.startedAt || new Date().toISOString(),
-      server_domain: session.serverDomain || 'framatalk.org'
+      server_domain: session.serverDomain || 'framatalk.org',
+      permissions: session.permissions || { allowChat: false, allowScreenShare: false }
     });
   } catch (e) {}
 
@@ -3190,7 +3191,8 @@ export const syncLiveClassSessionsFromCloud = async (): Promise<LiveClassSession
           title: row.title,
           isActive: true,
           startedAt: row.started_at || row.startedAt,
-          serverDomain: row.server_domain || row.serverDomain || 'framatalk.org'
+          serverDomain: row.server_domain || row.serverDomain || 'framatalk.org',
+          permissions: row.permissions || { allowChat: false, allowScreenShare: false }
         }));
 
         localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(mapped));

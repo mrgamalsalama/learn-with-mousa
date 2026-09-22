@@ -568,6 +568,11 @@ export interface ChallengeRoom {
 }
 
 // ===================== فصل موسى المباشر (Live Classroom System) =====================
+export interface LiveClassPermissions {
+  allowChat: boolean;
+  allowScreenShare: boolean;
+}
+
 export interface LiveClassSession {
   id: string;
   roomName: string;
@@ -581,5 +586,6 @@ export interface LiveClassSession {
   endedAt?: string;
   participantsCount?: number;
   serverDomain?: string;
+  permissions?: LiveClassPermissions;
 }
 
