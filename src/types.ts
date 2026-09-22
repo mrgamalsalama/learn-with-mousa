@@ -567,3 +567,18 @@ export interface ChallengeRoom {
   updated_at?: string;
 }
 
+// ===================== فصل موسى المباشر (Live Classroom System) =====================
+export interface LiveClassSession {
+  id: string;
+  roomName: string;
+  grade: GradeLevel | string;
+  track?: ArabicTrack | string;
+  teacherId: string;
+  teacherName: string;
+  title: string;
+  isActive: boolean;
+  startedAt: string;
+  endedAt?: string;
+  participantsCount?: number;
+}
+

@@ -1,4 +1,4 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer } from './types';
+import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -28,6 +28,8 @@ export const PADLET_BOARDS_KEY = 'lwm_padlet_boards';
 export const PADLET_POSTS_KEY = 'lwm_padlet_posts';
 export const CHALLENGE_QUIZZES_KEY = 'lwm_challenge_quizzes';
 export const CHALLENGE_ROOMS_KEY = 'lwm_challenge_rooms';
+export const LIVE_CLASS_SESSIONS_KEY = 'lwm_live_class_sessions';
+export const LIVE_CLASS_SYNC_ID = 'live_class_sync';
 
 export const INITIAL_EXAMS: Exam[] = [
   {
@@ -1140,6 +1142,7 @@ export const subscribeToCloudChanges = (callbacks: {
   onDelegatedPermissionsChange?: (map: Record<string, DelegatedAdminPermissions>) => void;
   onPadletBoardsChange?: () => void;
   onPadletPostsChange?: (payload?: any) => void;
+  onLiveClassChange?: (sessions: LiveClassSession[]) => void;
 }) => {
   try {
     const channel = supabase
@@ -1148,6 +1151,15 @@ export const subscribeToCloudChanges = (callbacks: {
         callbacks.onUsersChange?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload: any) => {
+        // فحص هل النشاط المعدل هو جلسات الحصة المباشرة
+        if (payload?.new && (payload.new.id === LIVE_CLASS_SYNC_ID || payload.new.title === 'LIVE_CLASS_SESSIONS')) {
+          try {
+            const sessions: LiveClassSession[] = JSON.parse(payload.new.passage);
+            localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
+            callbacks.onLiveClassChange?.(sessions);
+          } catch (e) {}
+        }
+
         // فحص هل النشاط المعدل هو سجل حوكمة وسياسات الذكاء الاصطناعي
         if (payload?.new && (payload.new.id === AI_GOVERNANCE_SYNC_ID || payload.new.title === 'AI_GOVERNANCE_RULES')) {
           try {
@@ -2964,5 +2976,131 @@ export const syncChallengeQuizzesFromCloud = async (): Promise<ChallengeQuiz[]> 
     console.warn('فشل جلب تحديات موسى سحابياً:', err);
   }
   return getChallengeQuizzes();
+};
+
+// ================= جلسات فصل موسى المباشر (Live Classroom Sessions) =================
+
+export const getLiveClassSessions = (): LiveClassSession[] => {
+  try {
+    const raw = localStorage.getItem(LIVE_CLASS_SESSIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Error reading live class sessions from storage:', e);
+  }
+  return [];
+};
+
+export const getActiveLiveClassForGrade = (grade: string): LiveClassSession | null => {
+  const sessions = getLiveClassSessions();
+  return sessions.find(s => s.isActive && (s.grade === grade || s.grade === 'all')) || null;
+};
+
+export const getActiveLiveClassForTeacher = (teacherId: string): LiveClassSession | null => {
+  const sessions = getLiveClassSessions();
+  return sessions.find(s => s.isActive && s.teacherId === teacherId) || null;
+};
+
+export const saveLiveClassSession = async (session: LiveClassSession): Promise<LiveClassSession> => {
+  const sessions = getLiveClassSessions();
+  const existingIdx = sessions.findIndex(s => s.id === session.id);
+  if (existingIdx >= 0) {
+    sessions[existingIdx] = session;
+  } else {
+    sessions.unshift(session);
+  }
+
+  localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
+
+  // بث التحديث سحابياً عبر جدول activities
+  try {
+    await supabase.from('activities').upsert({
+      id: LIVE_CLASS_SYNC_ID,
+      title: 'LIVE_CLASS_SESSIONS',
+      passage: JSON.stringify(sessions),
+      teacher_id: session.teacherId,
+      teacher_name: session.teacherName,
+      stage: 'primary',
+      grade: typeof session.grade === 'string' ? session.grade : 'grade-1',
+      track: typeof session.track === 'string' ? session.track : 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('فشل حفظ جلسة الحصة المباشرة سحابياً:', e);
+  }
+
+  // بث الإشعار اللحظي لقناة Supabase
+  try {
+    const channel = supabase.channel('lwm-realtime-sync');
+    channel.send({
+      type: 'broadcast',
+      event: 'live_session_update',
+      payload: session
+    });
+  } catch (e) {
+    console.warn('Broadcast notice:', e);
+  }
+
+  return session;
+};
+
+export const endLiveClassSession = async (sessionId: string): Promise<void> => {
+  const sessions = getLiveClassSessions();
+  const session = sessions.find(s => s.id === sessionId);
+  if (session) {
+    session.isActive = false;
+    session.endedAt = new Date().toISOString();
+    localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
+
+    try {
+      await supabase.from('activities').upsert({
+        id: LIVE_CLASS_SYNC_ID,
+        title: 'LIVE_CLASS_SESSIONS',
+        passage: JSON.stringify(sessions),
+        teacher_id: session.teacherId,
+        teacher_name: session.teacherName,
+        stage: 'primary',
+        grade: typeof session.grade === 'string' ? session.grade : 'grade-1',
+        track: typeof session.track === 'string' ? session.track : 'arabic-a',
+        questions: [],
+        created_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('فشل إنهاء الحصة المباشرة سحابياً:', e);
+    }
+
+    try {
+      const channel = supabase.channel('lwm-realtime-sync');
+      channel.send({
+        type: 'broadcast',
+        event: 'live_session_update',
+        payload: { ...session, isActive: false }
+      });
+    } catch (e) {}
+  }
+};
+
+export const syncLiveClassSessionsFromCloud = async (): Promise<LiveClassSession[]> => {
+  try {
+    const { data } = await supabase
+      .from('activities')
+      .select('passage')
+      .eq('id', LIVE_CLASS_SYNC_ID)
+      .maybeSingle();
+
+    if (data?.passage) {
+      const sessions: LiveClassSession[] = JSON.parse(data.passage);
+      if (Array.isArray(sessions)) {
+        localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
+        return sessions;
+      }
+    }
+  } catch (err) {
+    console.warn('تعذر جلب جلسات الحصة المباشرة سحابياً:', err);
+  }
+  return getLiveClassSessions();
 };
 

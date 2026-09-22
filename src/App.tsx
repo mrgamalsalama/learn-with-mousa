@@ -7,14 +7,14 @@ import {
   Bot, Palette, Brain, Printer, MessageCircle, Star,
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
-  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw
+  ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
   ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
-  TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS
+  TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -25,7 +25,8 @@ import {
   getOfflineSubmissionsQueue, drainOfflineQueue,
   getAIGovernanceRules, syncAIGovernanceRulesFromCloud, isAIFeatureAllowed, canUserUseAI,
   getExams, getExamSessions, syncExamsFromCloud, syncExamSessionsFromCloud,
-  getTeacherTasks, syncTeacherTasksFromCloud
+  getTeacherTasks, syncTeacherTasksFromCloud,
+  getLiveClassSessions, syncLiveClassSessionsFromCloud
 } from './storage';
 import { 
   canManageTeacherGrades, 
@@ -55,6 +56,7 @@ import { TeacherTasksManager } from './components/TeacherTasksManager';
 import { TeacherTasksReadOnlyView } from './components/TeacherTasksReadOnlyView';
 import { PadletBoardView } from './components/PadletBoard';
 import { MousaChallenge } from './components/MousaChallenge';
+import { LiveClassroom } from './components/LiveClassroom';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
   generateAIPassage, 
@@ -87,19 +89,20 @@ const normalizeTabName = (rawTab: string | null | undefined): string => {
   if (t === 'students' || t === 'طلاب') return 'students';
   if (t === 'parents' || t === 'أولياء_أمور') return 'parents';
   if (t === 'bank' || t === 'بنك_القصص') return 'bank';
+  if (t === 'live' || t === 'classroom' || t === 'فصل' || t === 'مباشر' || t === 'بث') return 'live';
   return t;
 };
 
 const isValidTabForRole = (tab: string, role?: UserRole | string): boolean => {
   if (!tab || !role) return false;
   if (role === 'student') {
-    return ['ai_studio', 'games', 'activities', 'library', 'exams', 'padlet', 'challenge'].includes(tab);
+    return ['ai_studio', 'games', 'activities', 'library', 'exams', 'padlet', 'challenge', 'live'].includes(tab);
   }
   if (role === 'teacher') {
-    return ['activities', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge'].includes(tab);
+    return ['activities', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge', 'live'].includes(tab);
   }
   if (role === 'hod') {
-    return ['overview', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'ai_governance'].includes(tab);
+    return ['overview', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
   }
   if (role === 'super_admin' || role === 'admin') {
     return ['teachers', 'hods', 'students', 'parents', 'bank', 'ai_governance', 'teacher_tasks', 'tasks'].includes(tab);
@@ -171,13 +174,13 @@ export default function App() {
   });
 
   // تبويبات لوحة رئيس القسم مع استعادة التبويب النشط
-  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'ai_governance'>(() => {
+  const [hodTab, setHodTab] = useState<'overview' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'hod', 'overview') as any;
   });
 
   // تبويبات لوحة المعلم مع استعادة التبويب النشط
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge'>(() => {
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge' | 'live'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'teacher', 'activities') as any;
   });
@@ -192,10 +195,13 @@ export default function App() {
   const [selectedTeacherForGrades, setSelectedTeacherForGrades] = useState<UserProfile | null>(null);
 
   // تبويبات لوحة الطالب مع استعادة التبويب النشط
-  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge'>(() => {
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge' | 'live'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'student', 'ai_studio') as any;
   });
+
+  // قائمة جلسات الحصة المباشرة والتفاعل الصفي
+  const [liveSessionsList, setLiveSessionsList] = useState<LiveClassSession[]>(() => getLiveClassSessions());
 
   // قائمة الاختبارات والجلسات وحالة الاختبار النشط للطالب
   const [examsList, setExamsList] = useState<Exam[]>(getExams());
@@ -223,12 +229,25 @@ export default function App() {
     switch (currentUser.role) {
       case 'student': return studentTab;
       case 'teacher': return teacherTab;
-      case 'hod': return hodTab === 'teacher_tasks' ? 'tasks' : hodTab;
+      case 'hod': return hodTab === 'live' ? 'live' : (hodTab === 'teacher_tasks' ? 'tasks' : hodTab);
       case 'super_admin': return adminTab === 'teacher_tasks' ? 'tasks' : adminTab;
       case 'parent': return parentTab;
       default: return null;
     }
   }, [currentUser?.role, studentTab, teacherTab, hodTab, adminTab, parentTab]);
+
+  // فحص هل هناك حصة مباشرة جارية ومتاحة لصف الطالب
+  const activeLiveSessionForStudent = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'student') return null;
+    const studentGrade = currentUser.grade || 'grade-1';
+    return liveSessionsList.find(s => s.isActive && (s.grade === studentGrade || s.grade === 'all')) || null;
+  }, [currentUser, liveSessionsList]);
+
+  // فحص هل المعلم لديه حصة مباشرة جارية حالياً
+  const isTeacherLiveActive = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'teacher') return false;
+    return liveSessionsList.some(s => s.isActive && s.teacherId === currentUser.id);
+  }, [currentUser, liveSessionsList]);
 
   // مزامنة التبويب النشط في الرابط (URL Query Parameter: ?tab=...) وفي التخزين المحلي (localStorage)
   useEffect(() => {
@@ -376,6 +395,7 @@ export default function App() {
     syncExamsFromCloud().then(e => setExamsList(e));
     syncExamSessionsFromCloud().then(s => setExamSessionsList(s));
     syncTeacherTasksFromCloud().then(tasks => setTeacherTasks(tasks));
+    syncLiveClassSessionsFromCloud().then(sessions => setLiveSessionsList(sessions));
 
     // الاشتراك اللحظي في تحديثات Supabase Realtime
     const unsubscribe = subscribeToCloudChanges({
@@ -392,6 +412,7 @@ export default function App() {
       onExamsChange: () => syncExamsFromCloud().then(e => setExamsList(e)),
       onExamSessionsChange: () => syncExamSessionsFromCloud().then(s => setExamSessionsList(s)),
       onTeacherTasksChange: (tasks) => setTeacherTasks(tasks),
+      onLiveClassChange: (sessions) => setLiveSessionsList(sessions),
       onDelegatedPermissionsChange: () => {
         syncUsersFromCloud().then(u => {
           setUsers(u);
@@ -2173,7 +2194,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className={hodTab === 'challenge' ? "w-full px-2 sm:px-4 py-2 space-y-3" : "max-w-6xl mx-auto px-4 py-8 space-y-6"}>
+        <main className={hodTab === 'challenge' || hodTab === 'live' ? "w-full px-2 sm:px-4 py-2 space-y-3" : "max-w-6xl mx-auto px-4 py-8 space-y-6"}>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setHodTab('overview')}
@@ -2223,6 +2244,16 @@ export default function App() {
               }`}
             >
               <Trophy className="w-4 h-4 text-amber-400" /> تَحَدِّي مُوسَى 🏆
+            </button>
+            <button
+              onClick={() => setHodTab('live')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'live'
+                  ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-md shadow-red-600/20'
+                  : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+            >
+              <Video className="w-4 h-4 text-rose-500" /> فصل موسى المباشر 🎥
             </button>
             {canControlAIGovernance(currentUser) && (
               <button
@@ -2428,6 +2459,17 @@ export default function App() {
               />
             </div>
           )}
+
+          {hodTab === 'live' && (
+            <div className="space-y-6">
+              <LiveClassroom
+                currentUser={currentUser}
+                initialGrade={hodGrades[0] || 'grade-1'}
+                initialTrack={currentUser.allowedTracks?.[0] || 'arabic-a'}
+                onLeave={() => setHodTab('overview')}
+              />
+            </div>
+          )}
         </main>
         {renderSharedReader()}
       </div>
@@ -2460,7 +2502,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className={teacherTab === 'challenge' ? "w-full px-2 sm:px-4 py-2" : "max-w-6xl mx-auto px-4 py-8"}>
+        <main className={teacherTab === 'challenge' || teacherTab === 'live' ? "w-full px-2 sm:px-4 py-2" : "max-w-6xl mx-auto px-4 py-8"}>
           <div className="flex flex-wrap gap-2 mb-6">
             <button
               onClick={() => setTeacherTab('activities')}
@@ -2548,6 +2590,25 @@ export default function App() {
               }`}
             >
               <Trophy className="w-4 h-4 text-amber-500" /> تَحَدِّي مُوسَى 🏆
+            </button>
+            <button
+              onClick={() => setTeacherTab('live')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'live'
+                  ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-md shadow-red-600/20'
+                  : isTeacherLiveActive
+                    ? 'bg-red-50 border-2 border-red-500 text-red-700 hover:bg-red-100 shadow-md shadow-red-500/10'
+                    : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+            >
+              <Video className="w-4 h-4 text-rose-500" />
+              <span>فصل موسى المباشر 🎥</span>
+              {isTeacherLiveActive && (
+                <span className="flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping inline-block" />
+                  البث جارٍ 🔴
+                </span>
+              )}
             </button>
           </div>
 
@@ -3294,6 +3355,17 @@ export default function App() {
               />
             </div>
           )}
+
+          {teacherTab === 'live' && (
+            <div className="space-y-6">
+              <LiveClassroom
+                currentUser={currentUser}
+                initialGrade={teacherAllowedGrades[0] || 'grade-1'}
+                initialTrack={teacherAllowedTracks[0] || 'arabic-a'}
+                onLeave={() => setTeacherTab('activities')}
+              />
+            </div>
+          )}
         </main>
 
         {/* نافذة تخصيص إسناد الكتاب لصفوف المعلم */}
@@ -3712,7 +3784,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className={studentTab === 'challenge' ? "w-full px-2 sm:px-4 py-2" : "max-w-5xl mx-auto px-4 py-8"}>
+        <main className={studentTab === 'challenge' || studentTab === 'live' ? "w-full px-2 sm:px-4 py-2" : "max-w-5xl mx-auto px-4 py-8"}>
           <div className="flex flex-wrap gap-2 mb-6">
             <button
               onClick={() => setStudentTab('ai_studio')}
@@ -3784,6 +3856,25 @@ export default function App() {
             >
               <Trophy className="w-4 h-4 text-amber-400" /> تَحَدِّي مُوسَى 🏆
             </button>
+            <button
+              onClick={() => setStudentTab('live')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'live' 
+                  ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-md shadow-red-600/20' 
+                  : activeLiveSessionForStudent
+                    ? 'bg-red-50 border-2 border-red-500 text-red-700 hover:bg-red-100 shadow-md shadow-red-500/10'
+                    : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+            >
+              <Video className="w-4 h-4 text-rose-500" />
+              <span>فصل موسى المباشر 🎥</span>
+              {activeLiveSessionForStudent && (
+                <span className="flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping inline-block" />
+                  مباشر الآن 🔴
+                </span>
+              )}
+            </button>
 
             {/* زر استعادة رفيق موسى في شريط التبويبات عند الإخفاء */}
             {isMusaDismissed && canUserUseAI(currentUser, aiGovernanceRules).allowed && isAIFeatureAllowed('student').allowed && (
@@ -3800,6 +3891,36 @@ export default function App() {
               </button>
             )}
           </div>
+
+          {/* إشعار وتنبيه البث المباشر الفوري لصف الطالب إن وجد */}
+          {activeLiveSessionForStudent && studentTab !== 'live' && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white rounded-2xl shadow-xl shadow-red-600/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-red-400/40 animate-in fade-in slide-in-from-top-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white flex-shrink-0">
+                  <Video className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-white text-red-700 text-[10px] font-black animate-pulse">
+                      🔴 بث مباشر الآن
+                    </span>
+                    <h3 className="font-black text-sm">
+                      {activeLiveSessionForStudent.title}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-red-100 mt-0.5">
+                    المعلم: <b>{activeLiveSessionForStudent.teacherName}</b> بدأ حصة تفاعلية مباشرة لصفك الآن!
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStudentTab('live')}
+                className="px-5 py-2.5 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer flex-shrink-0"
+              >
+                <span>انضم إلى البث المباشر فوراً 🚀</span>
+              </button>
+            </div>
+          )}
 
           {studentTab === 'ai_studio' && (
             <div className="space-y-6">
@@ -4760,6 +4881,17 @@ export default function App() {
                 currentUser={currentUser}
                 initialGrade={currentUser.grade || 'grade-1'}
                 initialTrack={currentUser.track || 'arabic-a'}
+              />
+            </div>
+          )}
+
+          {studentTab === 'live' && (
+            <div className="space-y-6">
+              <LiveClassroom
+                currentUser={currentUser}
+                initialGrade={currentUser.grade || 'grade-1'}
+                initialTrack={currentUser.track || 'arabic-a'}
+                onLeave={() => setStudentTab('ai_studio')}
               />
             </div>
           )}
