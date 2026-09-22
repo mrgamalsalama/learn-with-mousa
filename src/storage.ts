@@ -1222,6 +1222,23 @@ export const subscribeToCloudChanges = (callbacks: {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'padlet_posts' }, (payload: any) => {
         callbacks.onPadletPostsChange?.(payload);
       })
+      .on('broadcast', { event: 'live_session_update' }, (payload: any) => {
+        const update = payload?.payload;
+        if (update) {
+          const sessions = getLiveClassSessions();
+          if (update.isActive) {
+            const idx = sessions.findIndex(s => s.id === update.id);
+            if (idx >= 0) sessions[idx] = update;
+            else sessions.unshift(update);
+          } else {
+            const idx = sessions.findIndex(s => s.id === update.id);
+            if (idx >= 0) sessions.splice(idx, 1);
+          }
+          const activeOnly = sessions.filter(s => s.isActive);
+          localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(activeOnly));
+          callbacks.onLiveClassChange?.(activeOnly);
+        }
+      })
       .subscribe();
 
     return () => {
@@ -2986,10 +3003,30 @@ export const getLiveClassSessions = (): LiveClassSession[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map((s: LiveClassSession) => ({
-          ...s,
-          serverDomain: (!s.serverDomain || s.serverDomain === 'meet.ffrn.de' || s.serverDomain === 'jitsi.hamburg.ccc.de') ? 'framatalk.org' : s.serverDomain
-        }));
+        const now = Date.now();
+        // تصفية وحذف أي جلسات وهمية قديمة أو منتهية لمنع ظهور مؤشرات نشطة خاطئة
+        const validSessions = parsed
+          .filter((s: LiveClassSession) => {
+            if (!s.isActive) return false;
+            if (s.startedAt) {
+              const start = new Date(s.startedAt).getTime();
+              // إذا بدأت الجلسة قبل أكثر من 3 ساعات، تعتبر منتهية تلقائياً
+              if (now - start > 3 * 60 * 60 * 1000) {
+                return false;
+              }
+            }
+            return true;
+          })
+          .map((s: LiveClassSession) => ({
+            ...s,
+            serverDomain: (!s.serverDomain || s.serverDomain === 'meet.ffrn.de' || s.serverDomain === 'jitsi.hamburg.ccc.de') ? 'framatalk.org' : s.serverDomain
+          }));
+
+        // تنظيف التخزين المحلي فوراً إذا تم استبعاد أي جلسة منتهية
+        if (validSessions.length !== parsed.length) {
+          localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(validSessions));
+        }
+        return validSessions;
       }
     }
   } catch (e) {
@@ -3000,12 +3037,22 @@ export const getLiveClassSessions = (): LiveClassSession[] => {
 
 export const getActiveLiveClassForGrade = (grade: string): LiveClassSession | null => {
   const sessions = getLiveClassSessions();
-  return sessions.find(s => s.isActive && (s.grade === grade || s.grade === 'all')) || null;
+  const now = Date.now();
+  return sessions.find(s => {
+    if (!s.isActive) return false;
+    if (s.startedAt && now - new Date(s.startedAt).getTime() > 3 * 60 * 60 * 1000) return false;
+    return s.grade === grade || s.grade === 'all';
+  }) || null;
 };
 
 export const getActiveLiveClassForTeacher = (teacherId: string): LiveClassSession | null => {
   const sessions = getLiveClassSessions();
-  return sessions.find(s => s.isActive && s.teacherId === teacherId) || null;
+  const now = Date.now();
+  return sessions.find(s => {
+    if (!s.isActive) return false;
+    if (s.startedAt && now - new Date(s.startedAt).getTime() > 3 * 60 * 60 * 1000) return false;
+    return s.teacherId === teacherId;
+  }) || null;
 };
 
 export const saveLiveClassSession = async (session: LiveClassSession): Promise<LiveClassSession> => {
@@ -3018,6 +3065,22 @@ export const saveLiveClassSession = async (session: LiveClassSession): Promise<L
   }
 
   localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
+
+  // محاولة الحفظ المباشر في جدول live_class_sessions إن وُجد
+  try {
+    await supabase.from('live_class_sessions').upsert({
+      id: session.id,
+      room_name: session.roomName,
+      grade: typeof session.grade === 'string' ? session.grade : 'grade-1',
+      track: typeof session.track === 'string' ? session.track : 'arabic-a',
+      teacher_id: session.teacherId,
+      teacher_name: session.teacherName,
+      title: session.title,
+      is_active: true,
+      started_at: session.startedAt || new Date().toISOString(),
+      server_domain: session.serverDomain || 'framatalk.org'
+    });
+  } catch (e) {}
 
   // بث التحديث سحابياً عبر جدول activities
   try {
@@ -3037,7 +3100,7 @@ export const saveLiveClassSession = async (session: LiveClassSession): Promise<L
     console.warn('فشل حفظ جلسة الحصة المباشرة سحابياً:', e);
   }
 
-  // بث الإشعار اللحظي لقناة Supabase
+  // بث الإشعار اللحظي لجميع الطلاب والمعلمين عبر Supabase Broadcast
   try {
     const channel = supabase.channel('lwm-realtime-sync');
     channel.send({
@@ -3058,38 +3121,84 @@ export const endLiveClassSession = async (sessionId: string): Promise<void> => {
   if (session) {
     session.isActive = false;
     session.endedAt = new Date().toISOString();
-    localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
-
-    try {
-      await supabase.from('activities').upsert({
-        id: LIVE_CLASS_SYNC_ID,
-        title: 'LIVE_CLASS_SESSIONS',
-        passage: JSON.stringify(sessions),
-        teacher_id: session.teacherId,
-        teacher_name: session.teacherName,
-        stage: 'primary',
-        grade: typeof session.grade === 'string' ? session.grade : 'grade-1',
-        track: typeof session.track === 'string' ? session.track : 'arabic-a',
-        questions: [],
-        created_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-    } catch (e) {
-      console.warn('فشل إنهاء الحصة المباشرة سحابياً:', e);
-    }
-
-    try {
-      const channel = supabase.channel('lwm-realtime-sync');
-      channel.send({
-        type: 'broadcast',
-        event: 'live_session_update',
-        payload: { ...session, isActive: false }
-      });
-    } catch (e) {}
   }
+
+  // تنظيف التخزين المحلي وحذف الجلسة المنتهية فوراً
+  const remainingActive = sessions.filter(s => s.id !== sessionId && s.isActive);
+  localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(remainingActive));
+
+  // تحديث جدول live_class_sessions إن وُجد
+  try {
+    await supabase.from('live_class_sessions').update({
+      is_active: false,
+      ended_at: new Date().toISOString()
+    }).eq('id', sessionId);
+  } catch (e) {}
+
+  // تحديث سجل الأنشطة السحابي
+  try {
+    await supabase.from('activities').upsert({
+      id: LIVE_CLASS_SYNC_ID,
+      title: 'LIVE_CLASS_SESSIONS',
+      passage: JSON.stringify(remainingActive),
+      teacher_id: session?.teacherId || 'usr_teacher',
+      teacher_name: session?.teacherName || 'المعلم',
+      stage: 'primary',
+      grade: typeof session?.grade === 'string' ? session.grade : 'grade-1',
+      track: typeof session?.track === 'string' ? session.track : 'arabic-a',
+      questions: [],
+      created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('فشل إنهاء الحصة المباشرة سحابياً:', e);
+  }
+
+  // بث التحديث الفوري لإغلاق شاشة البث وشارات الإشعار عند جميع الطلاب
+  try {
+    const channel = supabase.channel('lwm-realtime-sync');
+    channel.send({
+      type: 'broadcast',
+      event: 'live_session_update',
+      payload: { id: sessionId, isActive: false }
+    });
+  } catch (e) {}
 };
 
 export const syncLiveClassSessionsFromCloud = async (): Promise<LiveClassSession[]> => {
   try {
+    // 1. الفحص الصارم من جدول live_class_sessions المخصص أولاً إن وُجد
+    try {
+      const { data: tableData, error: tableErr } = await supabase
+        .from('live_class_sessions')
+        .select('*')
+        .eq('is_active', true);
+
+      if (!tableErr && Array.isArray(tableData)) {
+        if (tableData.length === 0) {
+          // لا توجد حصص نشطة على الإطلاق -> تفريغ التخزين المحلي لتفادي أي مؤشرات وهمية
+          localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify([]));
+          return [];
+        }
+
+        const mapped: LiveClassSession[] = tableData.map((row: any) => ({
+          id: row.id,
+          roomName: row.room_name || row.roomName,
+          grade: row.grade,
+          track: row.track,
+          teacherId: row.teacher_id || row.teacherId,
+          teacherName: row.teacher_name || row.teacherName,
+          title: row.title,
+          isActive: true,
+          startedAt: row.started_at || row.startedAt,
+          serverDomain: row.server_domain || row.serverDomain || 'framatalk.org'
+        }));
+
+        localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(mapped));
+        return mapped;
+      }
+    } catch (e) {}
+
+    // 2. الفحص من جدول activities كقناة مزامنة معتمدة
     const { data } = await supabase
       .from('activities')
       .select('passage')
@@ -3099,9 +3208,14 @@ export const syncLiveClassSessionsFromCloud = async (): Promise<LiveClassSession
     if (data?.passage) {
       const sessions: LiveClassSession[] = JSON.parse(data.passage);
       if (Array.isArray(sessions)) {
-        localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(sessions));
-        return sessions;
+        const activeOnly = sessions.filter(s => s.isActive);
+        localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify(activeOnly));
+        return activeOnly;
       }
+    } else {
+      // لا توجد أي جلسة نشطة سحابياً -> مسح التخزين المحلي
+      localStorage.setItem(LIVE_CLASS_SESSIONS_KEY, JSON.stringify([]));
+      return [];
     }
   } catch (err) {
     console.warn('تعذر جلب جلسات الحصة المباشرة سحابياً:', err);
