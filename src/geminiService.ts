@@ -1576,7 +1576,7 @@ function playAudioBuffer(buffer: AudioBuffer, onEnd?: () => void) {
 /**
  * القارئ الاحتياطي عبر متصفح الويب (SpeechSynthesis) عند تعذر الاتصال أو انتهاء الحصة
  */
-function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
+function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, customRate?: number) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     if (onEnd) onEnd();
     return;
@@ -1586,7 +1586,23 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ar-SA';
-    utterance.rate = 0.95;
+    
+    // احترام سرعة القراءة المحددة أو التفضيل المحفوظ للمستخدم
+    let speed = customRate;
+    if (!speed && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('learn_mousa_current_user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.preferences?.voiceSpeed) {
+            speed = Number(parsed.preferences.voiceSpeed);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    utterance.rate = speed && speed > 0 ? speed : 0.95;
     utterance.pitch = 1.05;
 
     const voices = window.speechSynthesis.getVoices();
@@ -1609,6 +1625,13 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void) {
   } catch (e) {
     if (onEnd) onEnd();
   }
+}
+
+/**
+ * نطق صوتي مع دعم تحديد سرعة القراءة وسرعة تفضيلات المستخدم
+ */
+export function speakMousa(cleanText: string, onEnd?: () => void, customRate?: number): void {
+  speakBrowserSpeechSynthesis(cleanText, onEnd, customRate);
 }
 
 /**

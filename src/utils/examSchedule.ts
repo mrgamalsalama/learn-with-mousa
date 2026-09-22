@@ -40,33 +40,36 @@ export function fromDatetimeLocalString(localStr?: string): string | null {
 }
 
 /**
- * تنسيق التاريخ والوقت باللغة العربية الواضحة وفق التوقيت المحلي للمستخدم
+ * تنسيق التاريخ والوقت باللغة العربية الواضحة وفق التوقيت المحدد للمستخدم أو توقيت متصفحه
  */
-export function formatArabicDateTime(dateInput?: string | Date | null): string {
+export function formatArabicDateTime(dateInput?: string | Date | null, timeZone?: string): string {
   if (!dateInput) return 'غير محدد';
   const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   if (isNaN(d.getTime())) return 'غير محدد';
 
+  const tz = timeZone || undefined;
+
   try {
-    const dayName = d.toLocaleDateString('ar-EG', { weekday: 'long' });
-    const datePart = d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
-    const timePart = d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const dayName = d.toLocaleDateString('ar-EG', { timeZone: tz, weekday: 'long' });
+    const datePart = d.toLocaleDateString('ar-EG', { timeZone: tz, day: 'numeric', month: 'long', year: 'numeric' });
+    const timePart = d.toLocaleTimeString('ar-EG', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true });
 
     return `يوم ${dayName} ${datePart} الساعة ${timePart}`;
   } catch {
-    return d.toLocaleString('ar-EG');
+    return d.toLocaleString('ar-EG', { timeZone: tz });
   }
 }
 
 /**
- * تنسيق الوقت فقط باللغة العربية
+ * تنسيق الوقت فقط باللغة العربية مع دعم النطاق الزمني
  */
-export function formatArabicTimeOnly(dateInput?: string | Date | null): string {
+export function formatArabicTimeOnly(dateInput?: string | Date | null, timeZone?: string): string {
   if (!dateInput) return '';
   const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   if (isNaN(d.getTime())) return '';
+  const tz = timeZone || undefined;
   try {
-    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString('ar-EG', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true });
   } catch {
     return '';
   }

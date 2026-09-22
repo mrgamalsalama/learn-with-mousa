@@ -90,7 +90,10 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
   const [activeRoom, setActiveRoom] = useState<ChallengeRoom | null>(null);
   const [userRoleInRoom, setUserRoleInRoom] = useState<'host' | 'player'>('player');
   const [pinInput, setPinInput] = useState('');
-  const [playerNameInput, setPlayerNameInput] = useState(currentUser.name || '');
+  const defaultPlayerName = currentUser.preferences?.anonymousInLeaderboard
+    ? `بطل التحدي 🌟 (${currentUser.name.slice(0, 1)}***)`
+    : (currentUser.name || '');
+  const [playerNameInput, setPlayerNameInput] = useState(defaultPlayerName);
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 

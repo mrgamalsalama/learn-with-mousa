@@ -48,13 +48,25 @@ export interface TeacherTask {
   createdAt: string;
 }
 
+// تفضيلات تجربة التعلم والخصوصية
+export interface UserPreferences {
+  soundEffects?: boolean;
+  voiceSpeed?: number; // 0.8, 1.0, 1.2
+  anonymousInLeaderboard?: boolean;
+  bio?: string;
+}
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
   name: string;
   username: string;
+  email?: string;
   role: UserRole;
   password?: string;
+  avatar?: string;
+  timezone?: string;
+  preferences?: UserPreferences;
   
   // التحكم الفردي الدقيق في صلاحيات الذكاء الاصطناعي للمستخدم
   ai_access_status?: AIAccessStatus;

@@ -57,6 +57,9 @@ import { TeacherTasksReadOnlyView } from './components/TeacherTasksReadOnlyView'
 import { PadletBoardView } from './components/PadletBoard';
 import { MousaChallenge } from './components/MousaChallenge';
 import { LiveClassroom } from './components/LiveClassroom';
+import { UserProfileModal } from './components/UserProfileModal';
+import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
+import { challengeAudio } from './utils/challengeAudio';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
   generateAIPassage, 
@@ -193,6 +196,24 @@ export default function App() {
   const [selectedUserForDelegation, setSelectedUserForDelegation] = useState<UserProfile | null>(null);
   const [isEditTeacherGradesModalOpen, setIsEditTeacherGradesModalOpen] = useState(false);
   const [selectedTeacherForGrades, setSelectedTeacherForGrades] = useState<UserProfile | null>(null);
+
+  // حالة نافذة إعدادات الملف الشخصي والحساب لجميع المستخدمين
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+
+  const handleUserUpdate = useCallback((updated: UserProfile) => {
+    setUser(updated);
+    setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+    if (updated.preferences?.soundEffects !== undefined) {
+      challengeAudio.setEnabled(updated.preferences.soundEffects);
+    }
+  }, []);
+
+  // ضبط حالة الصوت الافتراضية وفق تفضيلات المستخدم
+  useEffect(() => {
+    if (currentUser?.preferences?.soundEffects !== undefined) {
+      challengeAudio.setEnabled(currentUser.preferences.soundEffects);
+    }
+  }, [currentUser?.preferences?.soundEffects]);
 
   // تبويبات لوحة الطالب مع استعادة التبويب النشط
   const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge' | 'live'>(() => {
@@ -1434,6 +1455,16 @@ export default function App() {
             }}
           />
         )}
+
+        {/* User Profile & Account Settings Modal */}
+        {isProfileModalOpen && currentUser && (
+          <UserProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            currentUser={currentUser}
+            onUserUpdate={handleUserUpdate}
+          />
+        )}
       </>
     );
   };
@@ -1612,12 +1643,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <UserNavbarProfileButton
+              user={currentUser}
+              onClick={() => setIsProfileModalOpen(true)}
+            />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
+            </button>
+          </div>
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -2186,12 +2224,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <UserNavbarProfileButton
+              user={currentUser}
+              onClick={() => setIsProfileModalOpen(true)}
+            />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
+            </button>
+          </div>
         </header>
 
         <main className={hodTab === 'challenge' || hodTab === 'live' ? "w-full px-2 sm:px-4 py-2 space-y-3" : "max-w-6xl mx-auto px-4 py-8 space-y-6"}>
@@ -2494,12 +2539,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <UserNavbarProfileButton
+              user={currentUser}
+              onClick={() => setIsProfileModalOpen(true)}
+            />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
+            </button>
+          </div>
         </header>
 
         <main className={teacherTab === 'challenge' || teacherTab === 'live' ? "w-full px-2 sm:px-4 py-2" : "max-w-6xl mx-auto px-4 py-8"}>
@@ -3776,12 +3828,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> خروج
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <UserNavbarProfileButton
+              user={currentUser}
+              onClick={() => setIsProfileModalOpen(true)}
+            />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> خروج
+            </button>
+          </div>
         </header>
 
         <main className={studentTab === 'challenge' || studentTab === 'live' ? "w-full px-2 sm:px-4 py-2" : "max-w-5xl mx-auto px-4 py-8"}>
@@ -4953,12 +5012,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <UserNavbarProfileButton
+              user={currentUser}
+              onClick={() => setIsProfileModalOpen(true)}
+            />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> تسجيل خروج
+            </button>
+          </div>
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">

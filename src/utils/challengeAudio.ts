@@ -1,8 +1,18 @@
 // محاكي الأصوات الحماسية والمؤثرات الصوتية لتحدي موسى باستخدام Web Audio API
 class ChallengeSoundEngine {
   private ctx: AudioContext | null = null;
+  private enabled: boolean = true;
+
+  setEnabled(val: boolean) {
+    this.enabled = val;
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
+  }
 
   private initCtx() {
+    if (!this.enabled) return;
     if (!this.ctx && typeof window !== 'undefined') {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
@@ -16,6 +26,7 @@ class ChallengeSoundEngine {
 
   // صوت تكتكة المؤقت التنازلي الحماسي (Tick)
   playTick() {
+    if (!this.enabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -41,6 +52,7 @@ class ChallengeSoundEngine {
 
   // صوت الثواني الأخيرة العاجلة (Urgent Warning Beep)
   playUrgent() {
+    if (!this.enabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -66,6 +78,7 @@ class ChallengeSoundEngine {
 
   // صوت الإجابة الصحيحة والنجاح الساحق (Ding Fanfare)
   playCorrect() {
+    if (!this.enabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -96,6 +109,7 @@ class ChallengeSoundEngine {
 
   // صوت الإجابة الخاطئة اللطيف (Soft Buzz)
   playWrong() {
+    if (!this.enabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -121,6 +135,7 @@ class ChallengeSoundEngine {
 
   // صوت التتويج والمنصة (Victory / Podium Fanfare)
   playPodium() {
+    if (!this.enabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;

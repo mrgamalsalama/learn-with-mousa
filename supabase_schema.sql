@@ -19,8 +19,17 @@ CREATE TABLE IF NOT EXISTS public.users (
   allowed_tracks JSONB,
   login_count INTEGER DEFAULT 0,
   last_login TEXT,
+  avatar TEXT,
+  email TEXT,
+  timezone TEXT DEFAULT 'Africa/Cairo',
+  preferences JSONB DEFAULT '{"soundEffects": true, "voiceSpeed": 1.0, "anonymousInLeaderboard": false}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Africa/Cairo';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS preferences JSONB;
 
 -- 2. جدول الأنشطة والاختبارات التفاعلية وحزمة الألعاب
 CREATE TABLE IF NOT EXISTS public.activities (

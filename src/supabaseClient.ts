@@ -36,12 +36,15 @@ export async function upsertUserInSupabase(user: {
   lastLogin?: string | null;
   ai_access_status?: 'inherit' | 'allowed' | 'blocked';
   delegated_admin_permissions?: any;
+  avatar?: string;
+  email?: string;
+  timezone?: string;
+  preferences?: any;
 }): Promise<{ data: any; error: any }> {
   // 1. ضمان وجود معرّف سليم (نصي أو UUID)
   const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
 
   // 2. تصفية الحقول لتطابق تماماً أعمدة جدول users في قاعدة بيانات Supabase
-  // الأعمدة المعتمدة في الجدول: id, name, username, password, role, stage, grade, track, student_id, allowed_grades, allowed_tracks, login_count, last_login, ai_access_status
   const userData: Record<string, any> = {
     id: safeId,
     name: user.name,
@@ -51,6 +54,18 @@ export async function upsertUserInSupabase(user: {
 
   if (user.password !== undefined) {
     userData.password = user.password;
+  }
+  if (user.email !== undefined) {
+    userData.email = user.email;
+  }
+  if (user.avatar !== undefined) {
+    userData.avatar = user.avatar;
+  }
+  if (user.timezone !== undefined) {
+    userData.timezone = user.timezone;
+  }
+  if (user.preferences !== undefined) {
+    userData.preferences = user.preferences;
   }
   if (user.ai_access_status !== undefined) {
     userData.ai_access_status = user.ai_access_status;
@@ -89,12 +104,17 @@ export async function upsertUserInSupabase(user: {
       .upsert(userData, { onConflict: 'id' })
       .select();
 
-    // في حال عدم وجود عمود delegated_admin_permissions في جدول users سحابياً (كود 42703)، نعيد المحاولة بدونه
-    if (error && error.code === '42703' && userData.delegated_admin_permissions !== undefined) {
-      delete userData.delegated_admin_permissions;
+    // في حال عدم وجود بعض الأعمدة الإضافية في جدول users سحابياً (كود 42703)، نعيد المحاولة تدريجياً
+    if (error && error.code === '42703') {
+      const copy = { ...userData };
+      // فحص الأعمدة غير الأساسية وإزالتها في حال غيابها في قاعدة البيانات القديمة
+      const optionalCols = ['avatar', 'timezone', 'preferences', 'email', 'delegated_admin_permissions'];
+      for (const col of optionalCols) {
+        delete copy[col];
+      }
       const retry = await supabase
         .from('users')
-        .upsert(userData, { onConflict: 'id' })
+        .upsert(copy, { onConflict: 'id' })
         .select();
       data = retry.data;
       error = retry.error;

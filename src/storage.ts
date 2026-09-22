@@ -273,7 +273,11 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
           allowedStages: Array.isArray(u.allowed_stages) ? u.allowed_stages : (u.stage ? [u.stage] : ['primary']),
           allowedTracks: Array.isArray(u.allowed_tracks) ? u.allowed_tracks : ['arabic-a'],
           loginCount: u.login_count || 0,
-          lastLogin: u.last_login || undefined
+          lastLogin: u.last_login || undefined,
+          avatar: u.avatar || undefined,
+          email: u.email || undefined,
+          timezone: u.timezone || undefined,
+          preferences: u.preferences || undefined
         };
       });
 
