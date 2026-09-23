@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { 
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 
@@ -146,7 +147,7 @@ const getInitialTabForRole = (role: UserRole | string | undefined, defaultTab: s
   return defaultTab;
 };
 
-export default function App() {
+function AppContent() {
   const [currentUser, setUser] = useState<UserProfile | null>(() => getCurrentUser());
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -5041,3 +5042,13 @@ export default function App() {
     </>
   );
 }
+
+export default function App() {
+  return (
+    <>
+      <AppContent />
+      <Analytics />
+    </>
+  );
+}
+
