@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { pageview } from '@vercel/analytics';
 import { Analytics, track } from '@vercel/analytics/react';
 import { 
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
@@ -298,31 +297,17 @@ function AppContent() {
     }
   }, [currentUser?.role, currentActiveTab]);
 
-  // تتبع تبديل التبويبات والمسارات في Vercel Analytics متضمناً معلمات الاستعلام الكاملة (مثل /?tab=live)
-  const lastTrackedPathRef = useRef<string>('');
+  // تتبع تبديل التبويبات والمسارات في Vercel Analytics عبر track('tab_view') الرسمي
+  const lastTrackedTabRef = useRef<string>('');
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const currentTab = currentActiveTab || (currentUser ? 'overview' : 'auth');
-    const url = new URL(window.location.href);
-    if (currentActiveTab) {
-      url.searchParams.set('tab', currentActiveTab);
-    }
-    const fullPath = url.pathname + url.search;
-
-    if (lastTrackedPathRef.current !== fullPath) {
-      lastTrackedPathRef.current = fullPath;
+    if (lastTrackedTabRef.current !== currentTab) {
+      lastTrackedTabRef.current = currentTab;
       try {
-        // إرسال pageview للمسار الكامل متضمناً معلمات الرابط
-        pageview({
-          route: fullPath,
-          path: fullPath,
-        });
-
-        // تسجيل حدث مخصص لتغيير التبويب
-        track('tab_change', {
+        track('tab_view', {
           tab: currentTab,
-          path: fullPath,
           role: currentUser?.role || 'guest',
         });
       } catch (err) {
@@ -5083,77 +5068,11 @@ function AppContent() {
   );
 }
 
-// دالة تنظيف مسار التحليلات لمنع تكرار معلمات الاستعلام أو ترميز علامة الاستفهام (%3F)
-const cleanAnalyticsPath = (rawUrl: string, fallbackSearch: string = ''): string => {
-  try {
-    if (!rawUrl) {
-      const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-      return pathname + (fallbackSearch || '');
-    }
-
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://analytics.local';
-    const urlObj = rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
-      ? new URL(rawUrl)
-      : new URL(rawUrl, base);
-
-    // فك ترميز المسار في حال كان يحتوي على %3F أو %3D أو غيرها
-    let decodedPathname = decodeURIComponent(urlObj.pathname);
-    let cleanPathname = decodedPathname;
-    const combinedParams = new URLSearchParams(urlObj.search);
-
-    // إذا كان المسار المفكوك يحتوي على علامة استفهام (مثل /?tab=games داخل الـ pathname)
-    if (decodedPathname.includes('?')) {
-      const qIndex = decodedPathname.indexOf('?');
-      cleanPathname = decodedPathname.slice(0, qIndex) || '/';
-      const embeddedSearch = decodedPathname.slice(qIndex + 1);
-      const embeddedParams = new URLSearchParams(embeddedSearch);
-      embeddedParams.forEach((value, key) => {
-        if (!combinedParams.has(key)) {
-          combinedParams.set(key, value);
-        }
-      });
-    }
-
-    // دمج معلمات البحث من fallbackSearch إن لم تكن موجودة
-    if (fallbackSearch) {
-      const searchToParse = fallbackSearch.startsWith('?') ? fallbackSearch.slice(1) : fallbackSearch;
-      const windowParams = new URLSearchParams(searchToParse);
-      windowParams.forEach((value, key) => {
-        if (!combinedParams.has(key)) {
-          combinedParams.set(key, value);
-        }
-      });
-    }
-
-    const searchStr = combinedParams.toString();
-    const finalSearch = searchStr ? `?${searchStr}` : '';
-    const finalPath = cleanPathname.startsWith('/') ? cleanPathname : `/${cleanPathname}`;
-    return `${finalPath}${finalSearch}`;
-  } catch (err) {
-    return rawUrl;
-  }
-};
-
 export default function App() {
   return (
     <>
       <AppContent />
-      <Analytics 
-        beforeSend={(event) => {
-          if (typeof window !== 'undefined' && event.type === 'pageview') {
-            try {
-              const cleanedUrl = cleanAnalyticsPath(event.url, window.location.search);
-              return {
-                ...event,
-                url: cleanedUrl,
-              };
-            } catch (e) {
-              return event;
-            }
-          }
-          return event;
-        }}
-      />
+      <Analytics />
     </>
   );
 }
