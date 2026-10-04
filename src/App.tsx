@@ -10,7 +10,7 @@ import {
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
   ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video,
-  FileSpreadsheet, Building2
+  FileSpreadsheet, Building2, ChevronDown, ChevronUp
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -1615,18 +1615,29 @@ function AppContent() {
   // ================= 1. شاشة تسجيل الدخول =================
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-200/80">
+      <div className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl shadow-slate-200/70 p-7 sm:p-8 border border-slate-200/90 relative">
           {/* صورة موسى في شاشة تسجيل الدخول */}
-          <div className="w-24 h-24 rounded-3xl overflow-hidden shadow-xl shadow-emerald-600/20 mx-auto mb-4 border-2 border-emerald-500/40 bg-white p-1">
+          <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-emerald-700/15 mx-auto mb-3.5 border-2 border-emerald-500/30 bg-white p-0.5">
             <img 
               src={MOUSA_AVATAR_SRC} 
               alt="منصة تعلَّم مع موسى" 
-              className="w-full h-full object-cover rounded-2xl" 
+              className="w-full h-full object-cover rounded-xl" 
             />
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-1">منصة تعلَّم مع موسى</h1>
-          <p className="text-slate-500 text-xs text-center mb-6">بوابة الدخول للنظام المركزي</p>
+          
+          {/* الهوية والشعار المعتمد */}
+          <h1 className="text-2xl font-black text-slate-800 text-center mb-1.5 tracking-tight">
+            منصة تعلَّم مع موسى
+          </h1>
+          <div className="text-center mb-6">
+            <p className="text-emerald-800 text-sm font-extrabold tracking-wide">
+              «صُممت للضاد وليست معرّبة»
+            </p>
+            <p className="text-slate-400 text-[11px] font-semibold tracking-wider mt-0.5" dir="ltr">
+              "Built for Arabic, not translated into it"
+            </p>
+          </div>
 
           {loginError && (
             <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl text-center font-medium">
@@ -1636,117 +1647,54 @@ function AppContent() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                اسم المستخدم أو البريد الإلكتروني
+              </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
+                <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
                 <input
                   type="text"
                   required
-                  placeholder="اسم المستخدم"
+                  autoComplete="username"
+                  placeholder="اسم المستخدم أو البريد الإلكتروني"
                   value={loginUsername}
                   onChange={(e) => setLoginUsername(e.target.value)}
-                  className="w-full pr-10 pl-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
+                  className="w-full pr-10 pl-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/60 placeholder:text-slate-400 text-slate-800 transition"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                كلمة المرور
+              </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
+                <Lock className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
                 <input
                   type="password"
                   required
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full pr-10 pl-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
+                  className="w-full pr-10 pl-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/60 placeholder:text-slate-400 text-slate-800 transition"
                 />
               </div>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition shadow-lg shadow-emerald-600/20"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold rounded-xl text-sm transition shadow-lg shadow-emerald-600/20 cursor-pointer"
             >
               تسجيل الدخول
             </button>
           </form>
 
-          {/* تجربة الأدوار بنقرة واحدة */}
-          <div className="mt-6 pt-4 border-t border-slate-100">
-            <span className="block text-[11px] font-bold text-slate-500 mb-2 text-center">
-              تجربة المنصة الفورية (اختر دوراً للدخول المباشر):
-            </span>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('student', '123')}
-                className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl font-bold border border-emerald-200 transition text-center"
-              >
-                👦 الطالب (موسى)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('teacher', '123')}
-                className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl font-bold border border-indigo-200 transition text-center"
-              >
-                👩‍🏫 المعلمة (فاطمة)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('parent', '123')}
-                className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl font-bold border border-amber-200 transition text-center"
-              >
-                👨‍👩‍👧 ولي الأمر (عمر)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('hod', '123')}
-                className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-xl font-bold border border-purple-200 transition text-center"
-              >
-                👔 رئيس القسم (د. أحمد)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin', '123')}
-                className="col-span-2 p-2.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-xl font-bold border border-indigo-500/30 transition text-center flex items-center justify-center gap-2 shadow-sm"
-              >
-                <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                <span>المؤسس والمدير العام للمنصة (Super Admin) 🛡️</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('principal', '123')}
-                className="col-span-2 p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 rounded-xl font-bold border border-indigo-200 transition text-center flex items-center justify-center gap-2"
-              >
-                <Building2 className="w-4 h-4 text-indigo-600" />
-                <span>لوحة الإدارة العليا للمدرسة (School Admin Portal) 🏫</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const suspendedTeacher: UserProfile = {
-                    id: 'usr_suspended_teacher',
-                    name: 'معلم مدرسة النور (المعلقة للاختبار)',
-                    username: 'suspended_user',
-                    role: 'teacher',
-                    school_id: '00000000-0000-0000-0000-000000000002',
-                    allowedStages: ['primary'],
-                    allowedGrades: ['grade-1'],
-                    allowedTracks: ['arabic-a'],
-                    loginCount: 1,
-                    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
-                  };
-                  setUser(suspendedTeacher);
-                  setCurrentUser(suspendedTeacher);
-                }}
-                className="col-span-2 p-2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl font-bold border border-rose-200 transition text-center flex items-center justify-center gap-1.5"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                <span>تجربة دخول مدرسة معلقة ⛔ (اختبار شاشة المنع الفوري)</span>
-              </button>
-            </div>
+          {/* تذييل رسمي للبطاقة */}
+          <div className="mt-8 pt-4 border-t border-slate-100 text-center">
+            <p className="text-[11px] text-slate-400 font-medium">
+              جميع الحقوق محفوظة © {new Date().getFullYear()} منصة تعلَّم مع موسى
+            </p>
           </div>
         </div>
 
