@@ -67,6 +67,7 @@ import { ParentProgressTab } from './components/ParentProgressTab';
 import { GradebookManager } from './components/GradebookManager';
 import { SuspendedSchoolNotice } from './components/SuspendedSchoolNotice';
 import { SuperAdminSchoolsDashboard } from './components/SuperAdminSchoolsDashboard';
+import { SchoolAdminPortal } from './components/SchoolAdminPortal';
 import { challengeAudio } from './utils/challengeAudio';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
@@ -115,8 +116,11 @@ const isValidTabForRole = (tab: string, role?: UserRole | string): boolean => {
   if (role === 'hod') {
     return ['overview', 'grades', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
   }
-  if (role === 'super_admin' || role === 'admin') {
-    return ['teachers', 'hods', 'students', 'parents', 'bank', 'ai_governance', 'teacher_tasks', 'tasks'].includes(tab);
+  if (role === 'super_admin') {
+    return ['schools', 'analytics', 'global_ai'].includes(tab);
+  }
+  if (role === 'school_admin' || role === 'admin') {
+    return ['users', 'ai_controls', 'reports', 'teachers', 'hods', 'students', 'parents', 'tasks'].includes(tab);
   }
   if (role === 'parent') {
     return ['progress', 'library'].includes(tab);
@@ -1663,9 +1667,18 @@ function AppContent() {
               <button
                 type="button"
                 onClick={() => handleQuickLogin('admin', '123')}
-                className="col-span-2 p-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold border border-slate-300 transition text-center"
+                className="col-span-2 p-2.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-xl font-bold border border-indigo-500/30 transition text-center flex items-center justify-center gap-2 shadow-sm"
               >
-                🛡️ المشرف العام (الإدارة العليا)
+                <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                <span>المؤسس والمدير العام للمنصة (Super Admin) 🛡️</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('principal', '123')}
+                className="col-span-2 p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 rounded-xl font-bold border border-indigo-200 transition text-center flex items-center justify-center gap-2"
+              >
+                <Building2 className="w-4 h-4 text-indigo-600" />
+                <span>لوحة الإدارة العليا للمدرسة (School Admin Portal) 🏫</span>
               </button>
               <button
                 type="button"
@@ -1717,22 +1730,17 @@ function AppContent() {
     );
   }
 
-  // ================= 2. واجهة المشرف العام =================
+  // ================= 2. واجهة المؤسس والمدير العام للمنصة (Platform Founder / Super Admin - المسار: /super-admin) =================
   if (currentUser.role === 'super_admin') {
-    const hodsList = users.filter((u) => u.role === 'hod');
-    const teachersList = users.filter((u) => u.role === 'teacher');
-    const studentsList = users.filter((u) => u.role === 'student');
-    const parentsList = users.filter((u) => u.role === 'parent');
-
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
             {renderHeaderLogo()}
             <div>
-              <h1 className="font-extrabold text-base text-slate-800">تعلَّم مع موسى | لوحة المؤسس والإدارة العليا</h1>
-              <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> المشرف العام: {currentUser.name}
+              <h1 className="font-extrabold text-base text-slate-900">تعلَّم مع موسى | لوحة المؤسس والمدير العام للمنصة</h1>
+              <p className="text-xs text-indigo-600 font-semibold flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> المشرف العام المركزي: {currentUser.name}
               </p>
             </div>
           </div>
@@ -1752,626 +1760,34 @@ function AppContent() {
           </div>
         </header>
 
-        {/* شريط التبويبات الرئيسي للمشرف العام */}
-        <div className="bg-white border-b border-slate-200 px-6 py-3 sticky top-[73px] z-20">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setAdminTab('schools')}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
-                  adminTab === 'schools'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                <Building2 className="w-4 h-4 text-indigo-400" />
-                <span>إدارة المدارس والاشتراكات المركزية ({schoolsList.length})</span>
-              </button>
-
-              <button
-                onClick={() => setAdminTab('teachers')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab !== 'schools' && adminTab !== 'ai_governance' && adminTab !== 'teacher_tasks'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>إدارة المستخدمين والكادر ({users.length})</span>
-              </button>
-
-              <button
-                onClick={() => setAdminTab('teacher_tasks')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab === 'teacher_tasks'
-                    ? 'bg-teal-700 text-white shadow-xs'
-                    : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
-                }`}
-              >
-                <ListTodo className="w-3.5 h-3.5 text-teal-600" />
-                <span>مهام وتكليفات المعلمين</span>
-              </button>
-
-              <button
-                onClick={() => setAdminTab('ai_governance')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab === 'ai_governance'
-                    ? 'bg-rose-700 text-white shadow-xs'
-                    : aiGovernanceRules.master_ai_killswitch
-                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                    : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-                }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>التحكم الشامل في الذكاء الاصطناعي</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
         <main className="max-w-7xl mx-auto px-4 py-8">
-          {adminTab === 'schools' ? (
-            <SuperAdminSchoolsDashboard
-              currentUser={currentUser}
-              onSchoolsUpdated={() => setSchoolsList(getSchools())}
-              onSimulateUser={(simUser) => {
-                setUser(simUser);
-                setCurrentUser(simUser);
-              }}
-            />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-5">
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-              <h2 className="font-bold text-base mb-4 flex items-center gap-2 text-slate-800">
-                <Plus className="w-5 h-5 text-emerald-600" /> إضافة مستخدم جديد
-              </h2>
-
-              <div className="grid grid-cols-2 gap-1.5 mb-5">
-                <button
-                  type="button"
-                  onClick={() => setFormRole('hod')}
-                  className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
-                    formRole === 'hod' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  <UserCheck className="w-3.5 h-3.5" /> رئيس قسم
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormRole('teacher')}
-                  className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
-                    formRole === 'teacher' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" /> معلم
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormRole('student')}
-                  className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
-                    formRole === 'student' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  <GraduationCap className="w-3.5 h-3.5" /> طالب
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormRole('parent')}
-                  className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
-                    formRole === 'parent' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  <HeartHandshake className="w-3.5 h-3.5" /> ولي أمر
-                </button>
-              </div>
-
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الاسم الكامل</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="الاسم الكامل"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">اسم الدخول</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Username"
-                      value={formUsername}
-                      onChange={(e) => setFormUsername(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">كلمة السر</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Password"
-                      value={formPassword}
-                      onChange={(e) => setFormPassword(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {(formRole === 'teacher' || formRole === 'hod') && (
-                  <div className="pt-4 border-t border-slate-100 space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">المسار المصرح به:</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleTrack('arabic-a')}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                            selectedTracks.includes('arabic-a') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <span>ناطقين (Arabic A)</span>
-                          {selectedTracks.includes('arabic-a') && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleTrack('arabic-b')}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                            selectedTracks.includes('arabic-b') ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <span>غير ناطقين (Arabic B)</span>
-                          {selectedTracks.includes('arabic-b') && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-2">الصفوف المصرح بها:</label>
-                      <div className="space-y-3 max-h-56 overflow-y-auto pr-1 border border-slate-100 p-2 rounded-2xl bg-slate-50/50">
-                        {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
-                          <div key={st} className="space-y-1">
-                            <span className="text-[11px] font-bold text-slate-500 block">{STAGES_CONFIG[st].nameAr}</span>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {STAGES_CONFIG[st].grades.map((g) => (
-                                <button
-                                  key={g.id}
-                                  type="button"
-                                  onClick={() => toggleGrade(g.id)}
-                                  className={`p-2 rounded-lg border text-right text-[11px] font-semibold transition flex items-center justify-between ${
-                                    selectedGrades.includes(g.id) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  <span>{g.labelAr}</span>
-                                  {selectedGrades.includes(g.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {formRole === 'student' && (
-                  <div className="pt-3 border-t border-slate-100 space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">المرحلة الدراسية</label>
-                      <select
-                        value={studentStage}
-                        onChange={(e) => {
-                          const s = e.target.value as SchoolStage;
-                          setStudentStage(s);
-                          setStudentGrade(STAGES_CONFIG[s].grades[0].id);
-                        }}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-                      >
-                        {(Object.keys(STAGES_CONFIG) as SchoolStage[]).map((st) => (
-                          <option key={st} value={st}>{STAGES_CONFIG[st].nameAr}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">الصف التابع له</label>
-                      <select
-                        value={studentGrade}
-                        onChange={(e) => setStudentGrade(e.target.value as GradeLevel)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-                      >
-                        {STAGES_CONFIG[studentStage].grades.map((g) => (
-                          <option key={g.id} value={g.id}>{g.labelAr}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">المسار اللغوي</label>
-                      <select
-                        value={studentTrack}
-                        onChange={(e) => setStudentTrack(e.target.value as ArabicTrack)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-                      >
-                        <option value="arabic-a">الناطقين باللغة العربية (Arabic A)</option>
-                        <option value="arabic-b">الناطقين بغيرها (Arabic B)</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                {formRole === 'parent' && (
-                  <div className="pt-3 border-t border-slate-100 space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">اختر الطالب التابع له:</label>
-                      {studentsList.length === 0 ? (
-                        <p className="text-xs text-rose-500 font-medium">يجب إضافة حساب طالب أولاً.</p>
-                      ) : (
-                        <select
-                          value={selectedStudentId}
-                          onChange={(e) => setSelectedStudentId(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
-                        >
-                          {studentsList.map((st) => (
-                            <option key={st.id} value={st.id}>
-                              {st.name} ({getGradeLabel(st.grade!)})
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-md shadow-emerald-600/20"
-                >
-                  حفظ وتأكيد الحساب
-                </button>
-              </form>
-            </div>
-          </div>
-
-          <div className="lg:col-span-7">
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-              <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-slate-100">
-                <button
-                  onClick={() => setAdminTab('schools')}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200"
-                >
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>المدارس والاشتراكات ({schoolsList.length})</span>
-                </button>
-                <button
-                  onClick={() => setAdminTab('teachers')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    adminTab === 'teachers' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  المعلمون ({teachersList.length})
-                </button>
-                <button
-                  onClick={() => setAdminTab('hods')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    adminTab === 'hods' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  رؤساء الأقسام ({hodsList.length})
-                </button>
-                <button
-                  onClick={() => setAdminTab('students')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    adminTab === 'students' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  الطلاب ({studentsList.length})
-                </button>
-                <button
-                  onClick={() => setAdminTab('parents')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    adminTab === 'parents' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  أولياء الأمور ({parentsList.length})
-                </button>
-                <button
-                  onClick={() => setAdminTab('bank')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                    adminTab === 'bank' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                  }`}
-                >
-                  <Library className="w-3.5 h-3.5" /> بنك القصص الإسلامية ({storyBank.length})
-                </button>
-                <button
-                  onClick={() => setAdminTab('teacher_tasks')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
-                    adminTab === 'teacher_tasks'
-                      ? 'bg-teal-700 text-white'
-                      : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
-                  }`}
-                >
-                  <ListTodo className="w-3.5 h-3.5 text-teal-600" />
-                  <span>مهام وتكليفات المعلمين</span>
-                  {teacherTasks.filter(t => !t.completed).length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-teal-600 text-white text-[10px] font-bold">
-                      {teacherTasks.filter(t => !t.completed).length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setAdminTab('ai_governance')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
-                    adminTab === 'ai_governance'
-                      ? 'bg-rose-700 text-white'
-                      : aiGovernanceRules.master_ai_killswitch
-                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-                  }`}
-                >
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  <span>التحكم في الذكاء الاصطناعي</span>
-                  {aiGovernanceRules.master_ai_killswitch && (
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                  )}
-                </button>
-              </div>
-
-              {adminTab === 'teacher_tasks' && (
-                <TeacherTasksManager
-                  actorUser={currentUser}
-                  teachers={teachersList}
-                  onTasksUpdated={() => setTeacherTasks(getTeacherTasks())}
-                />
-              )}
-
-              {adminTab === 'ai_governance' && (
-                <AdminAIGovernancePanel
-                  rules={aiGovernanceRules}
-                  onRulesUpdated={(newRules) => setAiGovernanceRules(newRules)}
-                  adminName={currentUser?.name || 'المشرف العام'}
-                  users={users}
-                  onUserUpdated={(updatedUser) => {
-                    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-                    if (currentUser && currentUser.id === updatedUser.id) {
-                      setUser(updatedUser);
-                    }
-                  }}
-                />
-              )}
-
-              {adminTab === 'bank' && (
-                <div className="space-y-3">
-                  {storyBank.map((s) => (
-                    <div key={s.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40">
-                      <div className="flex items-center justify-between mb-1">
-                        <h4 className="font-extrabold text-sm text-slate-800">{s.title}</h4>
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
-                          {s.moralTopic}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 mb-2 line-clamp-2 leading-relaxed">{s.passage}</p>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
-                        <span>المستوى: {getGradeLabel(s.grade)}</span>
-                        <span>•</span>
-                        <span>المسار: {s.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}</span>
-                        <span>•</span>
-                        <span>الأسئلة: {s.questions.length} أسئلة</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {adminTab === 'teachers' && (
-                <div className="space-y-3">
-                  {teachersList.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-8">لم يتم إضافة معلمين بعد.</p>
-                  ) : (
-                    teachersList.map((t) => {
-                      const delegatedCount = countDelegatedPermissions(t.delegated_admin_permissions);
-                      return (
-                        <div key={t.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-3">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-bold text-sm text-slate-800">{t.name}</h4>
-                                {delegatedCount > 0 && (
-                                  <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold border border-indigo-200 flex items-center gap-1">
-                                    <KeyRound className="w-3 h-3 text-indigo-600" />
-                                    {delegatedCount} صلاحيات مفوضة
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[11px] text-slate-500">اسم المستخدم: <b>{t.username}</b> • كلمة السر: <b>{t.password}</b></span>
-                            </div>
-
-                            <button
-                              onClick={() => handleDeleteUser(t.id)}
-                              className="self-end sm:self-center p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                              title="حذف المعلم"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          <div className="flex flex-wrap gap-1.5 items-center">
-                            {t.allowedTracks?.map((tr) => (
-                              <span key={tr} className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
-                                {tr === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
-                              </span>
-                            ))}
-                            {t.allowedGrades?.map((gId) => (
-                              <span key={gId} className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
-                                {getGradeLabel(gId)}
-                              </span>
-                            ))}
-                          </div>
-
-                          {/* أزرار الإدارة الحصرية: تعديل الصفوف والمراحل + إسناد المهام + تفويض الصلاحيات */}
-                          <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setSelectedTeacherForGrades(t);
-                                setIsEditTeacherGradesModalOpen(true);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 flex items-center gap-1.5 transition-colors"
-                            >
-                              <GraduationCap className="w-3.5 h-3.5" />
-                              تعديل الصفوف والمراحل
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setAdminTab('teacher_tasks');
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-xs border border-teal-200 flex items-center gap-1.5 transition-colors"
-                            >
-                              <ListTodo className="w-3.5 h-3.5" />
-                              إدارة التكليفات
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setSelectedUserForDelegation(t);
-                                setIsAdminDelegationModalOpen(true);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 flex items-center gap-1.5 transition-colors"
-                            >
-                              <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-                              تفويض الصلاحيات الإدارية 🛡️
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-
-              {adminTab === 'hods' && (
-                <div className="space-y-3">
-                  {hodsList.map((h) => {
-                    const delegatedCount = countDelegatedPermissions(h.delegated_admin_permissions);
-                    return (
-                      <div key={h.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-bold text-sm text-slate-800">{h.name}</h4>
-                              {delegatedCount > 0 && (
-                                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold border border-indigo-200 flex items-center gap-1">
-                                  <KeyRound className="w-3 h-3 text-indigo-600" />
-                                  {delegatedCount} صلاحيات مفوضة
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[11px] text-slate-500">اسم الدخول: <b>{h.username}</b> • كلمة السر: <b>{h.password}</b></span>
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {h.allowedGrades?.map((gId) => (
-                                <span key={gId} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold">
-                                  {getGradeLabel(gId)}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteUser(h.id)}
-                            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                            title="حذف رئيس القسم"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {/* زر تفويض الصلاحيات لرئيس القسم */}
-                        <div className="pt-2 border-t border-slate-200/60 flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedUserForDelegation(h);
-                              setIsAdminDelegationModalOpen(true);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 flex items-center gap-1.5 transition-colors"
-                          >
-                            <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-                            تفويض الصلاحيات الإدارية 🛡️
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {adminTab === 'students' && (
-                <div className="space-y-3">
-                  {studentsList.map((st) => (
-                    <div key={st.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-800">{st.name}</h4>
-                        <span className="text-[11px] text-slate-500">اسم الدخول: <b>{st.username}</b> • كلمة السر: <b>{st.password}</b></span>
-                        <div className="flex gap-2 mt-2">
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                            {st.stage ? STAGES_CONFIG[st.stage]?.nameAr : ''}
-                          </span>
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md text-[10px] font-bold">
-                            {getGradeLabel(st.grade!)}
-                          </span>
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">
-                            {st.track === 'arabic-a' ? 'ناطقين' : 'غير ناطقين'}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteUser(st.id)}
-                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {adminTab === 'parents' && (
-                <div className="space-y-3">
-                  {parentsList.map((p) => {
-                    const linkedStudent = users.find((u) => u.id === p.studentId);
-                    return (
-                      <div key={p.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-800">{p.name}</h4>
-                          <span className="text-[11px] text-slate-500">اسم الدخول: <b>{p.username}</b> • كلمة السر: <b>{p.password}</b></span>
-                          <div className="mt-2 text-xs">
-                            <span className="text-slate-500">ولي أمر الطالب: </span>
-                            <b className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                              {linkedStudent ? linkedStudent.name : 'غير محدد'}
-                            </b>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteUser(p.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          </div>
-        )}
+          <SuperAdminSchoolsDashboard
+            currentUser={currentUser}
+            onSchoolsUpdated={() => setSchoolsList(getSchools())}
+            onSimulateUser={(simUser) => {
+              setUser(simUser);
+              setCurrentUser(simUser);
+            }}
+          />
         </main>
         {renderSharedReader()}
+        {renderAIModals()}
+      </div>
+    );
+  }
+
+  // ================= 3. لوحة الإدارة العليا للمدرسة (School Admin Portal - المسار: /school-admin) =================
+  if (currentUser.role === 'school_admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-800">
+        <SchoolAdminPortal
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onUserProfileClick={() => setIsProfileModalOpen(true)}
+          renderLogo={renderHeaderLogo}
+        />
+        {renderSharedReader()}
+        {renderAIModals()}
       </div>
     );
   }

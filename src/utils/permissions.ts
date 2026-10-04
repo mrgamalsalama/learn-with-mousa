@@ -6,38 +6,38 @@ import { UserProfile, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS }
  */
 export function canManageTeacherGrades(user: UserProfile | null): boolean {
   if (!user) return false;
-  if (user.role === 'super_admin' || user.role === 'hod') return true;
+  if (user.role === 'super_admin' || user.role === 'school_admin' || user.role === 'hod') return true;
   return Boolean(user.delegated_admin_permissions?.can_manage_teacher_grades);
 }
 
 /**
  * فحص صلاحية إدارة وإسناد وحذف مهام المعلمين:
- * محصورة في الإدارة العليا ورئيس القسم، أو أي مستخدم فُوِّضت له الصلاحية صراحة.
+ * محصورة في الإدارة العليا ومدير المدرسة ورئيس القسم، أو أي مستخدم فُوِّضت له الصلاحية صراحة.
  * المعلم العادي لا يملك أي صلاحية لإضافة أو حذف المهام.
  */
 export function canManageTeacherTasks(user: UserProfile | null): boolean {
   if (!user) return false;
-  if (user.role === 'super_admin' || user.role === 'hod') return true;
+  if (user.role === 'super_admin' || user.role === 'school_admin' || user.role === 'hod') return true;
   return Boolean(user.delegated_admin_permissions?.can_manage_teacher_tasks);
 }
 
 /**
  * فحص صلاحية التحكم في حوكمة وقواعد الذكاء الاصطناعي وزر الطوارئ (Killswitch):
- * محصورة في الإدارة العليا حصراً، ما لم يتم تفويضها يدوياً للمستخدم.
+ * محصورة في الإدارة العليا ومدير المدرسة حصراً، ما لم يتم تفويضها يدوياً للمستخدم.
  */
 export function canControlAIGovernance(user: UserProfile | null): boolean {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.role === 'super_admin' || user.role === 'school_admin') return true;
   return Boolean(user.delegated_admin_permissions?.can_control_ai_governance);
 }
 
 /**
  * فحص صلاحية إنشاء أو ترقية حسابات رؤساء الأقسام (HOD):
- * محصورة في الإدارة العليا حصراً، ما لم يتم تفويضها يدوياً للمستخدم.
+ * محصورة في الإدارة العليا ومدير المدرسة حصراً، ما لم يتم تفويضها يدوياً للمستخدم.
  */
 export function canCreateHOD(user: UserProfile | null): boolean {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.role === 'super_admin' || user.role === 'school_admin') return true;
   return Boolean(user.delegated_admin_permissions?.can_create_hod);
 }
 

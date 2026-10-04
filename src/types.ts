@@ -83,6 +83,56 @@ export interface School {
   created_at?: string;
 }
 
+// مقاييس استهلاك الذكاء الاصطناعي والـ Tokens لكل مدرسة
+export interface SchoolAiMetrics {
+  schoolId: string;
+  schoolName: string;
+  totalRequests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  lastUsedAt?: string;
+  status: 'active' | 'suspended';
+}
+
+// نموذج بيانات الرفع المجمع للمدرسة عبر Excel
+export interface BulkSchoolOnboardingData {
+  school: {
+    name: string;
+    slug: string;
+    plan_tier: SchoolPlanTier;
+    durationDays: number;
+    max_students: number;
+  };
+  admin: {
+    name: string;
+    username: string;
+    password: string;
+    email?: string;
+  };
+  teachers: Array<{
+    name: string;
+    username: string;
+    password: string;
+    allowedGrades?: GradeLevel[];
+    allowedTracks?: ArabicTrack[];
+  }>;
+  students: Array<{
+    name: string;
+    username: string;
+    password: string;
+    stage: SchoolStage;
+    grade: GradeLevel;
+    track: ArabicTrack;
+  }>;
+  classes: Array<{
+    name: string;
+    stage: SchoolStage;
+    grade: GradeLevel;
+    track: ArabicTrack;
+  }>;
+}
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
