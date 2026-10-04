@@ -133,6 +133,17 @@ export interface BulkSchoolOnboardingData {
   }>;
 }
 
+// هيكل الفصل الدراسي للمدرسة
+export interface SchoolClass {
+  id: string;
+  school_id: string;
+  name: string;
+  stage: SchoolStage;
+  grade: GradeLevel;
+  track: ArabicTrack;
+  created_at?: string;
+}
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;

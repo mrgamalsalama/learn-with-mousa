@@ -13,17 +13,20 @@ import {
   getAIGovernanceRules, saveAIGovernanceRules, syncAIGovernanceRulesFromCloud
 } from '../storage';
 import { BulkSchoolOnboardingModal } from './BulkSchoolOnboardingModal';
+import { SchoolStaffManagementModal } from './SchoolStaffManagementModal';
 
 interface SuperAdminSchoolsDashboardProps {
   currentUser: UserProfile;
   onSchoolsUpdated?: () => void;
   onSimulateUser?: (user: UserProfile) => void;
+  onImpersonateSchool?: (school: School) => void;
 }
 
 export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProps> = ({
   currentUser,
   onSchoolsUpdated,
-  onSimulateUser
+  onSimulateUser,
+  onImpersonateSchool
 }) => {
   const [schools, setSchools] = useState<School[]>(() => getSchools());
   const [users, setUsers] = useState<UserProfile[]>(() => getUsers());
@@ -35,6 +38,7 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [selectedSchoolForStaff, setSelectedSchoolForStaff] = useState<School | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
@@ -605,6 +609,26 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
                     <span>تجربة محاكاة الدخول كمستخدم من هذه المدرسة (اختبار المنع)</span>
                   </button>
                 )}
+
+                {/* Primary Action: إدارة كادر وطلاب المدرسة 👥 */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedSchoolForStaff(school)}
+                  className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs transition shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>إدارة كادر وطلاب المدرسة 👥</span>
+                </button>
+
+                {/* Impersonate: دخول بلوحة المدرسة 🏫 */}
+                <button
+                  type="button"
+                  onClick={() => onImpersonateSchool?.(school)}
+                  className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-2xl text-xs transition shadow-xs flex items-center justify-center gap-2 border border-slate-700 cursor-pointer"
+                >
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                  <span>دخول بلوحة المدرسة 🏫</span>
+                </button>
               </div>
             </div>
           );
@@ -920,6 +944,16 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
             </form>
           </div>
         </div>
+      )}
+
+      {/* School Staff & Students Management Modal */}
+      {selectedSchoolForStaff && (
+        <SchoolStaffManagementModal
+          isOpen={Boolean(selectedSchoolForStaff)}
+          school={selectedSchoolForStaff}
+          onClose={() => setSelectedSchoolForStaff(null)}
+          onDataChanged={refreshData}
+        />
       )}
     </div>
   );

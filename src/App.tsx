@@ -185,6 +185,49 @@ function AppContent() {
   // قائمة المدارس المسجلة
   const [schoolsList, setSchoolsList] = useState<School[]>(() => getSchools());
 
+  // حالة انتحال / الدخول كمدير مدرسة للمؤسس العام (School Admin Impersonation)
+  const [impersonatedSchool, setImpersonatedSchool] = useState<School | null>(null);
+  const [originalSuperAdmin, setOriginalSuperAdmin] = useState<UserProfile | null>(null);
+
+  const handleImpersonateSchool = (targetSchool: School) => {
+    setOriginalSuperAdmin(currentUser);
+    setImpersonatedSchool(targetSchool);
+
+    // البحث عن مدير مسجل لهذه المدرسة أو توليد جلسة إدارة مؤقتة
+    const existingAdmin = users.find(u => u.school_id === targetSchool.id && u.role === 'school_admin');
+    const schoolAdminUser: UserProfile = existingAdmin || {
+      id: `usr_imp_adm_${targetSchool.id}`,
+      name: `مدير ${targetSchool.name}`,
+      username: `${targetSchool.slug}_admin`,
+      password: '123',
+      role: 'school_admin',
+      school_id: targetSchool.id,
+      loginCount: 1,
+      delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
+    };
+
+    setUser(schoolAdminUser);
+    setCurrentUser(schoolAdminUser);
+  };
+
+  const handleExitImpersonation = () => {
+    const fallbackSuperAdmin = originalSuperAdmin || users.find(u => u.role === 'super_admin') || {
+      id: 'usr_admin',
+      name: 'م. موسى الخالدي (المؤسس والمدير العام)',
+      username: 'admin',
+      password: '123',
+      role: 'super_admin',
+      school_id: '00000000-0000-0000-0000-000000000001',
+      loginCount: 5,
+      delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
+    };
+
+    setImpersonatedSchool(null);
+    setOriginalSuperAdmin(null);
+    setUser(fallbackSuperAdmin);
+    setCurrentUser(fallbackSuperAdmin);
+  };
+
   // تبويبات لوحة المشرف العام مع استعادة التبويب النشط
   const [adminTab, setAdminTab] = useState<'schools' | 'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>(() => {
     if (typeof window !== 'undefined' && window.location.hash.includes('super-admin/schools')) {
@@ -1768,6 +1811,7 @@ function AppContent() {
               setUser(simUser);
               setCurrentUser(simUser);
             }}
+            onImpersonateSchool={handleImpersonateSchool}
           />
         </main>
         {renderSharedReader()}
@@ -1782,6 +1826,8 @@ function AppContent() {
       <div className="min-h-screen bg-slate-50 text-slate-800">
         <SchoolAdminPortal
           currentUser={currentUser}
+          impersonatedSchool={impersonatedSchool}
+          onExitImpersonation={handleExitImpersonation}
           onLogout={handleLogout}
           onUserProfileClick={() => setIsProfileModalOpen(true)}
           renderLogo={renderHeaderLogo}

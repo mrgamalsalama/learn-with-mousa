@@ -4,7 +4,7 @@ import {
   CheckCircle2, XCircle, Clock, Calendar, Sparkles, ShieldCheck, 
   ShieldAlert, Sliders, AlertTriangle, UserCheck, HeartHandshake,
   Search, BookOpen, Layers, BarChart3, ListTodo, Award, FileText,
-  TrendingUp, Printer, Download, Check, RefreshCw
+  TrendingUp, Printer, Download, Check, RefreshCw, ArrowRight
 } from 'lucide-react';
 import { 
   School, UserProfile, SchoolStage, GradeLevel, ArabicTrack, 
@@ -21,6 +21,8 @@ import { TeacherTasksManager } from './TeacherTasksManager';
 
 interface SchoolAdminPortalProps {
   currentUser: UserProfile;
+  impersonatedSchool?: School | null;
+  onExitImpersonation?: () => void;
   onLogout?: () => void;
   onUserProfileClick?: () => void;
   renderLogo?: () => React.ReactNode;
@@ -28,6 +30,8 @@ interface SchoolAdminPortalProps {
 
 export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
   currentUser,
+  impersonatedSchool,
+  onExitImpersonation,
   onLogout,
   onUserProfileClick,
   renderLogo
@@ -205,6 +209,30 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans" dir="rtl">
+      {/* Impersonation Banner for Super Admin */}
+      {impersonatedSchool && (
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md sticky top-0 z-40 border-b border-amber-400/40 animate-fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-xl bg-white/20 text-white shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </span>
+            <span className="text-xs sm:text-sm font-extrabold">
+              أنت تتصفح مدرسة <span className="bg-white/20 px-2 py-0.5 rounded-md underline underline-offset-4">{impersonatedSchool.name}</span> بصفتك المؤسس العام 🛡️
+            </span>
+          </div>
+
+          {onExitImpersonation && (
+            <button
+              onClick={onExitImpersonation}
+              className="py-1.5 px-4 bg-white hover:bg-amber-50 text-amber-950 font-black rounded-xl text-xs transition shadow-md flex items-center gap-2 border border-white/40 cursor-pointer"
+            >
+              <span>العودة للوحة الرئيسية (/super-admin)</span>
+              <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Toast Notice */}
       {toastMessage && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl bg-emerald-600 text-white font-bold text-xs flex items-center gap-2 shadow-2xl animate-fade-in">

@@ -1,4 +1,4 @@
-import { UserProfile, School, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
+import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -421,6 +421,73 @@ export const checkSchoolAccess = (
     school,
     reason: 'ok'
   };
+};
+
+// ================= إدارة فصول المدارس (School Classes Storage) =================
+export const CLASSES_KEY = 'lwm_school_classes';
+
+export const INITIAL_CLASSES: SchoolClass[] = [
+  {
+    id: 'cls_demo_1',
+    school_id: '00000000-0000-0000-0000-000000000001',
+    name: 'الصف الأول (أ) - براعم الفصحى',
+    stage: 'primary',
+    grade: 'grade-1',
+    track: 'arabic-a',
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_demo_2',
+    school_id: '00000000-0000-0000-0000-000000000001',
+    name: 'الصف الثاني (أ) - رواد المعرفة',
+    stage: 'primary',
+    grade: 'grade-2',
+    track: 'arabic-a',
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_demo_3',
+    school_id: '00000000-0000-0000-0000-000000000001',
+    name: 'الصف الثاني (ب) - جسور اللغات (تأسيس)',
+    stage: 'primary',
+    grade: 'grade-2',
+    track: 'arabic-b',
+    created_at: '2026-01-01T00:00:00.000Z'
+  }
+];
+
+export const getClasses = (schoolId?: string): SchoolClass[] => {
+  try {
+    const raw = localStorage.getItem(CLASSES_KEY);
+    const list: SchoolClass[] = raw ? JSON.parse(raw) : INITIAL_CLASSES;
+    if (schoolId) {
+      return list.filter(c => c.school_id === schoolId);
+    }
+    return list;
+  } catch (e) {
+    return INITIAL_CLASSES;
+  }
+};
+
+export const saveClass = (cls: SchoolClass): SchoolClass[] => {
+  const all = getClasses();
+  const index = all.findIndex(c => c.id === cls.id);
+  let updated: SchoolClass[];
+  if (index >= 0) {
+    updated = [...all];
+    updated[index] = cls;
+  } else {
+    updated = [cls, ...all];
+  }
+  localStorage.setItem(CLASSES_KEY, JSON.stringify(updated));
+  return updated;
+};
+
+export const deleteClass = (classId: string): SchoolClass[] => {
+  const all = getClasses();
+  const updated = all.filter(c => c.id !== classId);
+  localStorage.setItem(CLASSES_KEY, JSON.stringify(updated));
+  return updated;
 };
 
 export const INITIAL_TEACHER_TASKS: TeacherTask[] = [
