@@ -1,11 +1,41 @@
 -- ==============================================================================
 -- إعداد جداول وقواعد أمان منصة "تعلّم مع موسى" (Supabase SQL Schema)
+-- Multi-Tenancy Architecture & School-Level Row Level Security (RLS)
 -- يرجى نسخ هذا الكود ولصقه في SQL Editor داخل لوحة تحكم Supabase والضغط على RUN
 -- ==============================================================================
+
+-- 0. جدول المدارس (Schools Entity)
+CREATE TABLE IF NOT EXISTS public.schools (
+  id TEXT PRIMARY KEY DEFAULT ('school_' || gen_random_uuid()::text),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- إدراج المدرسة النموذجية الافتراضية ليوم العرض (Demo Day School)
+INSERT INTO public.schools (id, name, code, is_active)
+VALUES ('school_demo_mousa', 'مدرسة موسى النموذجية الرائدة', 'MOUSA_DEMO', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 0.1 جدول الفصول الدراسية (Classes)
+CREATE TABLE IF NOT EXISTS public.classes (
+  id TEXT PRIMARY KEY DEFAULT ('cls_' || gen_random_uuid()::text),
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  stage TEXT NOT NULL DEFAULT 'primary',
+  grade TEXT NOT NULL DEFAULT 'grade-1',
+  track TEXT NOT NULL DEFAULT 'arabic-a',
+  teacher_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_classes_school_id ON public.classes(school_id);
 
 -- 1. جدول المستخدمين والحسابات
 CREATE TABLE IF NOT EXISTS public.users (
   id TEXT PRIMARY KEY,
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   username TEXT NOT NULL UNIQUE,
   password TEXT,
@@ -23,17 +53,27 @@ CREATE TABLE IF NOT EXISTS public.users (
   email TEXT,
   timezone TEXT DEFAULT 'Africa/Cairo',
   preferences JSONB DEFAULT '{"soundEffects": true, "voiceSpeed": 1.0, "anonymousInLeaderboard": false}'::jsonb,
+  ai_access_status TEXT DEFAULT 'inherit',
+  delegated_admin_permissions JSONB DEFAULT '{"can_manage_teacher_grades": false, "can_manage_teacher_tasks": false, "can_control_ai_governance": false, "can_create_hod": false}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT 'school_demo_mousa';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Africa/Cairo';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS preferences JSONB;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS ai_access_status TEXT DEFAULT 'inherit';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS delegated_admin_permissions JSONB;
+CREATE INDEX IF NOT EXISTS idx_users_school_id ON public.users(school_id);
+
+-- إنشاء منظر profiles متوافق مع Next.js/Supabase auth conventions
+CREATE OR REPLACE VIEW public.profiles AS SELECT * FROM public.users;
 
 -- 2. جدول الأنشطة والاختبارات التفاعلية وحزمة الألعاب
 CREATE TABLE IF NOT EXISTS public.activities (
   id TEXT PRIMARY KEY,
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   activity_type TEXT DEFAULT 'worksheet',
   game_data JSONB,
@@ -48,14 +88,30 @@ CREATE TABLE IF NOT EXISTS public.activities (
   created_at TEXT
 );
 
--- تحديث الأعمدة في حال كانت الجداول منشأة مسبقاً
+ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT 'school_demo_mousa';
 ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS activity_type TEXT DEFAULT 'worksheet';
 ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS game_data JSONB;
-ALTER TABLE public.badges ADD COLUMN IF NOT EXISTS category TEXT;
+CREATE INDEX IF NOT EXISTS idx_activities_school_id ON public.activities(school_id);
+
+-- إنشاء منظر quizzes للتوافق مع استعلامات الاختبارات
+CREATE OR REPLACE VIEW public.quizzes AS 
+SELECT 
+  id,
+  school_id,
+  title,
+  description,
+  teacher_id,
+  stage,
+  grade,
+  track,
+  questions,
+  created_at
+FROM public.activities;
 
 -- 3. جدول تسليمات ودرجات الطلاب
 CREATE TABLE IF NOT EXISTS public.submissions (
   id TEXT PRIMARY KEY,
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
   activity_id TEXT NOT NULL,
   activity_title TEXT NOT NULL,
   student_id TEXT NOT NULL,
@@ -67,6 +123,28 @@ CREATE TABLE IF NOT EXISTS public.submissions (
   submitted_at TEXT NOT NULL,
   answers JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT 'school_demo_mousa';
+CREATE INDEX IF NOT EXISTS idx_submissions_school_id ON public.submissions(school_id);
+
+-- 3.1 جدول خطط التعافي والتمكين العلاجي (Remedial Plans)
+CREATE TABLE IF NOT EXISTS public.remedial_plans (
+  id TEXT PRIMARY KEY DEFAULT ('rem_' || gen_random_uuid()::text),
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id TEXT NOT NULL,
+  student_name TEXT,
+  teacher_id TEXT NOT NULL,
+  target_skill TEXT NOT NULL,
+  weak_letters JSONB DEFAULT '[]'::jsonb,
+  recommended_game_type TEXT,
+  prescribed_activities JSONB DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'pending',
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_remedial_plans_school_id ON public.remedial_plans(school_id);
 
 -- 4. جدول الأوسمة والإنجازات (معزول تماماً برقم الطالب student_id)
 CREATE TABLE IF NOT EXISTS public.badges (
@@ -80,29 +158,58 @@ CREATE TABLE IF NOT EXISTS public.badges (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- مؤشر بحث سريع للأوسمة حسب الطالب
+ALTER TABLE public.badges ADD COLUMN IF NOT EXISTS category TEXT;
 CREATE INDEX IF NOT EXISTS idx_badges_student_id ON public.badges(student_id);
 
 -- ==============================================================================
--- 5. تفعيل سياسات الأمان Row Level Security (RLS) والسماح بالوصول الكامل لدور anon
+-- 5. تفعيل سياسات الأمان Row Level Security (RLS) وحوكمة عزل المدارس
 -- ==============================================================================
+ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.remedial_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.badges ENABLE ROW LEVEL SECURITY;
 
--- إتاحة القراءة والكتابة لدور anon (تطبيق الويب)
+CREATE OR REPLACE FUNCTION public.current_user_school_id() 
+RETURNS TEXT AS $$
+BEGIN
+  RETURN COALESCE(
+    current_setting('request.jwt.claims', true)::jsonb->'app_metadata'->>'school_id',
+    (SELECT school_id FROM public.users WHERE id = auth.uid()::text LIMIT 1),
+    'school_demo_mousa'
+  );
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+-- سياسات المدارس والفصول
+DROP POLICY IF EXISTS "Enable all for anon on schools" ON public.schools;
+CREATE POLICY "Enable all for anon on schools" ON public.schools FOR ALL TO anon, authenticated USING (is_active = true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for anon on classes" ON public.classes;
+CREATE POLICY "Enable all for anon on classes" ON public.classes FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+
+-- سياسات المستخدمين والأنشطة والتسليمات والخطط العلاجية المعزولة بالمدرسة
 DROP POLICY IF EXISTS "Enable all for anon on users" ON public.users;
-CREATE POLICY "Enable all for anon on users" ON public.users FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on users" ON public.users FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
 
 DROP POLICY IF EXISTS "Enable all for anon on activities" ON public.activities;
-CREATE POLICY "Enable all for anon on activities" ON public.activities FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on activities" ON public.activities FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
 
 DROP POLICY IF EXISTS "Enable all for anon on submissions" ON public.submissions;
-CREATE POLICY "Enable all for anon on submissions" ON public.submissions FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on submissions" ON public.submissions FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+
+DROP POLICY IF EXISTS "Enable all for anon on remedial_plans" ON public.remedial_plans;
+CREATE POLICY "Enable all for anon on remedial_plans" ON public.remedial_plans FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
 
 DROP POLICY IF EXISTS "Enable all for anon on badges" ON public.badges;
-CREATE POLICY "Enable all for anon on badges" ON public.badges FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on badges" ON public.badges FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- ==============================================================================
 -- 5. جدول الاختبارات وجلسات المراقبة الحية (Exams & Live Proctoring Sessions)
@@ -111,6 +218,7 @@ CREATE POLICY "Enable all for anon on badges" ON public.badges FOR ALL TO anon U
 -- جدول الاختبارات والتقييمات
 CREATE TABLE IF NOT EXISTS public.exams (
   id TEXT PRIMARY KEY,
+  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   teacher_id TEXT NOT NULL,
   teacher_name TEXT,
@@ -128,6 +236,7 @@ CREATE TABLE IF NOT EXISTS public.exams (
 );
 
 -- تحديثات الأعمدة في حال كان الجدول منشأ مسبقاً بنقص في الأعمدة
+ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT 'school_demo_mousa';
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS teacher_name TEXT;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS target_track TEXT DEFAULT 'arabic-a';
@@ -138,6 +247,7 @@ ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS questions JSONB NOT NULL DEFAU
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_start TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS scheduled_end TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_exams_school_id ON public.exams(school_id);
 
 -- جدول جلسات الاختبار والمراقبة الحية للطلاب
 CREATE TABLE IF NOT EXISTS public.exam_sessions (
@@ -162,10 +272,24 @@ ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_sessions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Enable all for anon on exams" ON public.exams;
-CREATE POLICY "Enable all for anon on exams" ON public.exams FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on exams" ON public.exams FOR ALL TO anon, authenticated 
+USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
 
 DROP POLICY IF EXISTS "Enable all for anon on exam_sessions" ON public.exam_sessions;
-CREATE POLICY "Enable all for anon on exam_sessions" ON public.exam_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for anon on exam_sessions" ON public.exam_sessions FOR ALL TO anon, authenticated 
+USING (
+  EXISTS (
+    SELECT 1 FROM public.exams 
+    WHERE exams.id = exam_sessions.exam_id 
+    AND exams.school_id = public.current_user_school_id()
+  )
+) WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.exams 
+    WHERE exams.id = exam_sessions.exam_id 
+    AND exams.school_id = public.current_user_school_id()
+  )
+);
 
 -- ==============================================================================
 -- 6. جدول الجدار التفاعلي والمنشورات (Padlet Boards & Posts)

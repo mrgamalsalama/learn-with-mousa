@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { AIGovernanceRules, UserProfile, AIAccessStatus, UserRole } from '../types';
 import { saveAIGovernanceRules, saveUser, getUsers, canUserUseAI } from '../storage';
+import { executeDemoDaySanitization, SanitizationResult } from '../utils/demoSeedSanitizer';
 
 interface AdminAIGovernancePanelProps {
   rules: AIGovernanceRules;
@@ -33,6 +34,31 @@ export const AdminAIGovernancePanel: React.FC<AdminAIGovernancePanelProps> = ({
   const [overrideFilter, setOverrideFilter] = useState<'all' | AIAccessStatus>('all');
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [userActionNotice, setUserActionNotice] = useState<{ id: string; text: string } | null>(null);
+
+  // حالة تشغيل سكريبت تنظيف وإعادة بذر حساب العرض النموذجي (Demo Day Sanitization)
+  const [isSanitizing, setIsSanitizing] = useState(false);
+  const [sanitizationNotice, setSanitizationNotice] = useState<string | null>(null);
+
+  const handleRunSanitization = async () => {
+    if (!confirm('هل أنت متأكد من تنظيف كافة السجلات التجريبية والوهمية وإعادة بذر حساب العرض النموذجي (Demo Day Seed) لمدرسة موسى؟')) {
+      return;
+    }
+    setIsSanitizing(true);
+    setSanitizationNotice(null);
+    try {
+      const res: SanitizationResult = await executeDemoDaySanitization('school_demo_mousa');
+      setSanitizationNotice(res.message);
+      // تحديث قائمة المستخدمين محلياً
+      const freshUsers = getUsers();
+      setLocalUsers(freshUsers);
+      freshUsers.forEach(u => onUserUpdated?.(u));
+    } catch (err: any) {
+      alert('حدث خطأ أثناء تنظيف البيانات: ' + (err.message || 'خطأ غير متوقع'));
+    } finally {
+      setIsSanitizing(false);
+      setTimeout(() => setSanitizationNotice(null), 6000);
+    }
+  };
 
   // مزامنة المستخدمين عند تغير propUsers
   React.useEffect(() => {
@@ -157,7 +183,18 @@ export const AdminAIGovernancePanel: React.FC<AdminAIGovernancePanelProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start md:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            <button
+              type="button"
+              disabled={isSanitizing}
+              onClick={handleRunSanitization}
+              className="flex items-center gap-1.5 text-xs text-amber-200 font-extrabold bg-amber-600/30 hover:bg-amber-600/50 border border-amber-400/40 px-3.5 py-2 rounded-xl transition shadow-md cursor-pointer disabled:opacity-50"
+              title="تنظيف كافة السجلات التجريبية وإعادة ضبط حساب العرض النموذجي والمدرسة"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSanitizing ? 'animate-spin text-amber-300' : 'text-amber-400'}`} />
+              <span>{isSanitizing ? 'جاري التنظيف والبذر...' : 'تنظيف وبذر حساب العرض (Demo Seed) 🧹'}</span>
+            </button>
+
             {isSaving && (
               <span className="flex items-center gap-1.5 text-xs text-amber-300 font-bold bg-amber-500/20 px-3 py-1.5 rounded-xl border border-amber-400/30">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" /> جاري التحديث السحابي...
@@ -170,6 +207,13 @@ export const AdminAIGovernancePanel: React.FC<AdminAIGovernancePanelProps> = ({
             )}
           </div>
         </div>
+
+        {sanitizationNotice && (
+          <div className="mt-4 p-3 bg-emerald-500/20 border border-emerald-400/40 rounded-2xl flex items-center gap-2 text-xs text-emerald-200 font-bold animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{sanitizationNotice}</span>
+          </div>
+        )}
       </div>
 
       {/* زر الطوارئ الرئيسي - Master Kill-Switch */}

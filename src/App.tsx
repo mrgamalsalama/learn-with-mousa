@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Analytics, track } from '@vercel/analytics/react';
+const Analytics = () => null;
+const track = (..._args: any[]) => {};
 import { 
   ShieldCheck, Users, GraduationCap, LogOut, Plus, Trash2, 
   Lock, User, BookOpen, Award, CheckCircle2, FileText, Send, Sparkles, Check, 

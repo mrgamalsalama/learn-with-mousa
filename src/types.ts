@@ -56,6 +56,15 @@ export interface UserPreferences {
   bio?: string;
 }
 
+// كيان المدرسة للمنظومة متعددة المدارس (Multi-Tenancy)
+export interface School {
+  id: string;
+  name: string;
+  code?: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
 // بيانات المستخدم وتتبع نشاطه
 export interface UserProfile {
   id: string;
@@ -67,6 +76,7 @@ export interface UserProfile {
   avatar?: string;
   timezone?: string;
   preferences?: UserPreferences;
+  school_id?: string; // معرّف عزل المدرسة متعدد المدارس (Multi-Tenancy)
   
   // التحكم الفردي الدقيق في صلاحيات الذكاء الاصطناعي للمستخدم
   ai_access_status?: AIAccessStatus;
@@ -125,6 +135,7 @@ export interface Exam {
   title: string;
   teacher_id: string;
   teacher_name?: string;
+  school_id?: string;             // معرّف عزل المدرسة
   target_grade: GradeLevel;
   target_track?: ArabicTrack;
   duration_minutes: number;       // مدة الاختبار بالدقائق (0 = مفتوح)
@@ -230,11 +241,29 @@ export interface Activity {
   passage?: string;
   teacherId: string;
   teacherName: string;
+  school_id?: string; // معرّف عزل المدرسة
   stage: SchoolStage;
   grade: GradeLevel;
   track: ArabicTrack;
   questions: Question[];
   createdAt: string;
+}
+
+// خطة التعافي والتمكين العلاجي المخصصة للطلاب (Remedial Plan)
+export interface RemedialPlan {
+  id: string;
+  student_id: string;
+  student_name?: string;
+  teacher_id: string;
+  school_id?: string;
+  target_skill: string;
+  weak_letters?: string[];
+  recommended_game_type?: AIGameType | string;
+  prescribed_activities?: string[];
+  status: 'pending' | 'in_progress' | 'mastered';
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 // رصد درجات وتسليمات الطلاب مع بيانات التشخيص والتعلم التكيفي
@@ -244,6 +273,7 @@ export interface StudentSubmission {
   activityTitle: string;
   studentId: string;
   studentName: string;
+  school_id?: string; // معرّف عزل المدرسة
   grade?: GradeLevel;
   track?: ArabicTrack;
   score: number;

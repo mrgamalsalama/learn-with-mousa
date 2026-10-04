@@ -40,6 +40,7 @@ export async function upsertUserInSupabase(user: {
   email?: string;
   timezone?: string;
   preferences?: any;
+  school_id?: string;
 }): Promise<{ data: any; error: any }> {
   // 1. ضمان وجود معرّف سليم (نصي أو UUID)
   const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
@@ -50,6 +51,7 @@ export async function upsertUserInSupabase(user: {
     name: user.name,
     username: user.username.trim().toLowerCase(),
     role: user.role,
+    school_id: user.school_id || 'school_demo_mousa',
   };
 
   if (user.password !== undefined) {

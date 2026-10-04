@@ -17,7 +17,7 @@ const CURRENT_USER_KEY = 'lwm_current_user';
 const BOOKS_KEY = 'lwm_books_repository';
 const BADGES_KEY = 'lwm_student_badges';
 const PHONICS_RECORDS_KEY = 'lwm_student_phonics';
-const AI_GOVERNANCE_KEY = 'lwm_ai_governance_rules';
+export const AI_GOVERNANCE_KEY = 'lwm_ai_governance_rules';
 const EXAMS_KEY = 'lwm_exams';
 const EXAM_SESSIONS_KEY = 'lwm_exam_sessions';
 export const AI_GOVERNANCE_SYNC_ID = 'ai_governance_rules_sync';
@@ -37,6 +37,7 @@ export const INITIAL_EXAMS: Exam[] = [
     title: 'تَقْيِيمُ مُنْتَصَفِ الفَصْلِ: مَهَارَاتُ اللُّغَةِ العَرَبِيَّةِ وَالقِرَاءَةِ 📝',
     teacher_id: 'usr_teacher',
     teacher_name: 'الأستاذة فاطمة الزهراء',
+    school_id: 'school_demo_mousa',
     target_grade: 'grade-1',
     target_track: 'arabic-a',
     duration_minutes: 15,
@@ -143,6 +144,7 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'admin',
     password: '123',
     role: 'super_admin',
+    school_id: 'school_demo_mousa',
     loginCount: 5,
     delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   },
@@ -152,6 +154,7 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'hod',
     password: '123',
     role: 'hod',
+    school_id: 'school_demo_mousa',
     allowedStages: ['primary'],
     allowedGrades: ['grade-1', 'grade-2', 'grade-3', 'grade-4'],
     allowedTracks: ['arabic-a', 'arabic-b'],
@@ -164,6 +167,7 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'teacher',
     password: '123',
     role: 'teacher',
+    school_id: 'school_demo_mousa',
     allowedStages: ['primary'],
     allowedGrades: ['grade-1', 'grade-2'],
     allowedTracks: ['arabic-a', 'arabic-b'],
@@ -176,6 +180,7 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'student',
     password: '123',
     role: 'student',
+    school_id: 'school_demo_mousa',
     stage: 'primary',
     grade: 'grade-1',
     track: 'arabic-a',
@@ -189,6 +194,7 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'parent',
     password: '123',
     role: 'parent',
+    school_id: 'school_demo_mousa',
     studentId: 'usr_student_mousa',
     loginCount: 6,
     delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
@@ -277,7 +283,8 @@ export const syncUsersFromCloud = async (): Promise<UserProfile[]> => {
           avatar: u.avatar || undefined,
           email: u.email || undefined,
           timezone: u.timezone || undefined,
-          preferences: u.preferences || undefined
+          preferences: u.preferences || undefined,
+          school_id: u.school_id || 'school_demo_mousa'
         };
       });
 
@@ -751,6 +758,7 @@ export const saveActivity = async (activity: Activity): Promise<void> => {
     const payload: any = {
       id: activity.id,
       title: activity.title,
+      school_id: activity.school_id || 'school_demo_mousa',
       description: activity.description || null,
       passage: activity.passage || (activity.gameData ? `__GAME__:${JSON.stringify({ activityType: 'game', gameData: activity.gameData })}` : null),
       teacher_id: activity.teacherId,
@@ -936,6 +944,7 @@ export const saveSubmission = async (submission: StudentSubmission): Promise<voi
       activity_title: submission.activityTitle,
       student_id: submission.studentId,
       student_name: submission.studentName,
+      school_id: submission.school_id || 'school_demo_mousa',
       grade: submission.grade || null,
       track: submission.track || null,
       score: submission.score,
@@ -1678,6 +1687,7 @@ export const saveExam = async (exam: Exam): Promise<{ exam: Exam; error?: any }>
       title: exam.title,
       teacher_id: exam.teacher_id,
       teacher_name: exam.teacher_name || null,
+      school_id: exam.school_id || 'school_demo_mousa',
       target_grade: exam.target_grade,
       target_track: exam.target_track || 'arabic-a',
       duration_minutes: exam.duration_minutes || 0,
