@@ -39,6 +39,217 @@ async function startServer() {
     res.json({ status: 'ok', serverTime: new Date().toISOString() });
   });
 
+  // ================= Super Admin Multi-Tenant SaaS APIs =================
+
+  // 1. استرجاع جميع المدارس مع الإحصائيات
+  app.get('/api/super-admin/schools', async (_req, res) => {
+    try {
+      const { data: schools, error } = await supabaseServer
+        .from('schools')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Supabase schools fetch notice:', error.message);
+      }
+
+      // حساب عدد الطلاب والمعلمين
+      const { data: usersData } = await supabaseServer
+        .from('users')
+        .select('school_id, role');
+
+      const counts: Record<string, { students: number; teachers: number }> = {};
+      (usersData || []).forEach((u: any) => {
+        const sId = u.school_id || '';
+        if (!counts[sId]) counts[sId] = { students: 0, teachers: 0 };
+        if (u.role === 'student') counts[sId].students++;
+        if (u.role === 'teacher') counts[sId].teachers++;
+      });
+
+      const enriched = (schools || []).map((s: any) => ({
+        ...s,
+        student_count: counts[s.id]?.students || 0,
+        teacher_count: counts[s.id]?.teachers || 0,
+      }));
+
+      res.json({ schools: enriched });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error fetching schools' });
+    }
+  });
+
+  // 2. إنشاء مدرسة جديدة وتحديد اشتراكها وتعيين مديرها
+  app.post('/api/super-admin/schools', async (req, res) => {
+    try {
+      const {
+        name,
+        slug,
+        plan_tier = 'trial',
+        subscription_start_date,
+        subscription_end_date,
+        ai_enabled = true,
+        max_students = 500,
+        adminName,
+        adminUsername,
+        adminPassword,
+        adminEmail
+      } = req.body || {};
+
+      if (!name || !slug) {
+        return res.status(400).json({ error: 'اسم المدرسة والـ slug مطلوبان' });
+      }
+
+      const cleanSlug = slug.trim().toLowerCase().replace(/\s+/g, '-');
+      const startDate = subscription_start_date || new Date().toISOString();
+      const endDate = subscription_end_date || new Date(Date.now() + (plan_tier === 'trial' ? 30 : 365) * 86400000).toISOString();
+
+      const { data: newSchool, error: schoolErr } = await supabaseServer
+        .from('schools')
+        .insert({
+          name,
+          slug: cleanSlug,
+          status: 'active',
+          plan_tier,
+          subscription_start_date: startDate,
+          subscription_end_date: endDate,
+          ai_enabled: Boolean(ai_enabled),
+          max_students: Number(max_students) || 500,
+        })
+        .select()
+        .single();
+
+      if (schoolErr) {
+        return res.status(400).json({ error: schoolErr.message });
+      }
+
+      // إنشاء حساب مدير المدرسة
+      let adminCreated = null;
+      if (adminUsername && adminPassword && newSchool) {
+        const adminId = 'adm_' + (typeof crypto !== 'undefined' ? crypto.randomUUID() : Date.now());
+        const { data: adm, error: admErr } = await supabaseServer
+          .from('users')
+          .insert({
+            id: adminId,
+            school_id: newSchool.id,
+            name: adminName || `مدير ${name}`,
+            username: adminUsername.trim(),
+            password: adminPassword,
+            role: 'school_admin',
+            email: adminEmail || null,
+            allowed_stages: ['primary', 'middle', 'high'],
+            allowed_grades: ['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'],
+            allowed_tracks: ['arabic-a', 'arabic-b'],
+            login_count: 0
+          })
+          .select()
+          .single();
+
+        if (!admErr) adminCreated = adm;
+      }
+
+      res.status(201).json({
+        success: true,
+        school: newSchool,
+        admin: adminCreated,
+        message: 'تم إنشاء المدرسة بنجاح'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error creating school' });
+    }
+  });
+
+  // 3. تعديل حالة المدرسة (تفعيل / تعليق / تمديد الاشتراك / تبديل الذكاء الاصطناعي)
+  app.patch('/api/super-admin/schools/:id', async (req, res) => {
+    try {
+      const schoolId = req.params.id;
+      const body = req.body || {};
+      const updatePayload: Record<string, any> = {};
+
+      if (body.status && ['active', 'suspended', 'expired'].includes(body.status)) {
+        updatePayload.status = body.status;
+      }
+
+      if (typeof body.ai_enabled === 'boolean') {
+        updatePayload.ai_enabled = body.ai_enabled;
+      }
+
+      if (body.subscription_end_date) {
+        updatePayload.subscription_end_date = body.subscription_end_date;
+      }
+
+      if (body.plan_tier && ['trial', 'annual'].includes(body.plan_tier)) {
+        updatePayload.plan_tier = body.plan_tier;
+      }
+
+      if (body.max_students) {
+        updatePayload.max_students = Number(body.max_students);
+      }
+
+      if (body.extendDays && Number(body.extendDays) > 0) {
+        const { data: current } = await supabaseServer
+          .from('schools')
+          .select('subscription_end_date')
+          .eq('id', schoolId)
+          .maybeSingle();
+
+        const currentEnd = current?.subscription_end_date 
+          ? new Date(current.subscription_end_date).getTime() 
+          : Date.now();
+        const base = Math.max(currentEnd, Date.now());
+        updatePayload.subscription_end_date = new Date(base + Number(body.extendDays) * 86400000).toISOString();
+        if (updatePayload.status === 'expired' || !updatePayload.status) {
+          updatePayload.status = 'active';
+        }
+      }
+
+      const { data: updated, error } = await supabaseServer
+        .from('schools')
+        .update(updatePayload)
+        .eq('id', schoolId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+
+      res.json({ success: true, school: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error updating school' });
+    }
+  });
+
+  // 4. فحص حالة المدرسة للاشتراك (للاستخدام مع Middleware أو فحص الجلسة)
+  app.get('/api/school-status/:schoolId', async (req, res) => {
+    try {
+      const schoolId = req.params.schoolId;
+      const { data: school, error } = await supabaseServer
+        .from('schools')
+        .select('id, name, slug, status, subscription_end_date, ai_enabled')
+        .eq('id', schoolId)
+        .maybeSingle();
+
+      if (error || !school) {
+        return res.status(404).json({ error: 'School not found' });
+      }
+
+      const isSuspended = school.status === 'suspended';
+      const isExpired = school.status === 'expired' || 
+        (school.subscription_end_date && new Date(school.subscription_end_date).getTime() < Date.now());
+
+      res.json({
+        id: school.id,
+        name: school.name,
+        status: isSuspended ? 'suspended' : isExpired ? 'expired' : 'active',
+        is_accessible: !isSuspended && !isExpired,
+        ai_enabled: school.ai_enabled,
+        subscription_end_date: school.subscription_end_date
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Error checking school status' });
+    }
+  });
+
   // Local Room State Fallback (ذاكرة تخزين غرف التحدي المحلية لضمان اللعب عبر الشبكة دون انقطاع)
   const localChallengeRooms = new Map<string, any>();
 
@@ -263,6 +474,191 @@ async function startServer() {
 
     localChallengeRooms.set(pin, room);
     res.json({ status: 'ok', room, answer: newAnswerRecord });
+  });
+
+  // ==============================================================================
+  // مسارات واجهة برمجة التطبيقات لإدارة المدارس والاشتراكات (Super Admin Schools API)
+  // ==============================================================================
+
+  // جلب كافة المدارس المسجلة
+  app.get('/api/super-admin/schools', async (_req, res) => {
+    try {
+      const { data, error } = await supabaseServer
+        .from('schools')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Supabase schools fetch warning:', error.message);
+        // Fallback to local default school
+        return res.json({
+          schools: [
+            {
+              id: 'a0000000-0000-0000-0000-000000000001',
+              name: 'مدرسة موسى النموذجية الرائدة',
+              slug: 'mousa-demo-school',
+              status: 'active',
+              plan_tier: 'annual',
+              subscription_start_date: new Date().toISOString(),
+              subscription_end_date: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+              ai_enabled: true,
+              max_students: 1000,
+              created_at: new Date().toISOString()
+            }
+          ]
+        });
+      }
+
+      res.json({ schools: data || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error fetching schools' });
+    }
+  });
+
+  // إنشاء مدرسة جديدة وتعيين حساب مديرها
+  app.post('/api/super-admin/schools', async (req, res) => {
+    try {
+      const {
+        name,
+        slug,
+        plan_tier = 'trial',
+        duration_days = 30,
+        ai_enabled = true,
+        max_students = 500,
+        admin_name,
+        admin_username,
+        admin_password = '123'
+      } = req.body || {};
+
+      if (!name || !slug) {
+        return res.status(400).json({ error: 'اسم المدرسة والـ Slug مطلوبان' });
+      }
+
+      const cleanSlug = String(slug).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      const startDate = new Date();
+      const endDate = new Date(Date.now() + Number(duration_days) * 24 * 3600 * 1000);
+
+      // 1. إدراج المدرسة في جدول schools
+      const { data: school, error: schoolErr } = await supabaseServer
+        .from('schools')
+        .insert({
+          name: name.trim(),
+          slug: cleanSlug,
+          status: 'active',
+          plan_tier,
+          subscription_start_date: startDate.toISOString(),
+          subscription_end_date: endDate.toISOString(),
+          ai_enabled: Boolean(ai_enabled),
+          max_students: Number(max_students) || 500
+        })
+        .select()
+        .single();
+
+      if (schoolErr) {
+        console.error('Create school error:', schoolErr);
+        return res.status(400).json({ error: schoolErr.message });
+      }
+
+      // 2. إنشاء حساب مدير المدرسة school_admin إن تم توفيره
+      let createdAdmin = null;
+      if (admin_username && admin_name) {
+        const adminId = 'usr_admin_' + Date.now();
+        const { data: adminUser, error: adminErr } = await supabaseServer
+          .from('users')
+          .insert({
+            id: adminId,
+            school_id: school.id,
+            name: admin_name,
+            username: admin_username.trim().toLowerCase(),
+            password: admin_password,
+            role: 'school_admin',
+            allowed_grades: ['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'],
+            allowed_tracks: ['arabic-a', 'arabic-b'],
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (adminErr) {
+          console.warn('Warning creating school admin user:', adminErr.message);
+        } else {
+          createdAdmin = adminUser;
+        }
+      }
+
+      res.status(201).json({
+        message: 'تم إنشاء المدرسة بنجاح وتفعيل اشتراكها 🌟',
+        school,
+        admin: createdAdmin
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error creating school' });
+    }
+  });
+
+  // تحديث حالة المدرسة والاشتراك ومفتاح الـ AI Kill Switch
+  app.patch('/api/super-admin/schools/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        status, // 'active' | 'suspended' | 'expired'
+        ai_enabled, // boolean
+        plan_tier,
+        extend_days, // تمديد الاشتراك بعدد من الأيام
+        max_students
+      } = req.body || {};
+
+      const updateData: Record<string, any> = {};
+
+      if (status !== undefined) {
+        updateData.status = status;
+      }
+      if (ai_enabled !== undefined) {
+        updateData.ai_enabled = Boolean(ai_enabled);
+      }
+      if (plan_tier !== undefined) {
+        updateData.plan_tier = plan_tier;
+      }
+      if (max_students !== undefined) {
+        updateData.max_students = Number(max_students);
+      }
+
+      // تمديد تاريخ انتهاء الاشتراك
+      if (extend_days && Number(extend_days) > 0) {
+        const { data: currentSchool } = await supabaseServer
+          .from('schools')
+          .select('subscription_end_date')
+          .eq('id', id)
+          .single();
+
+        const baseTime = currentSchool?.subscription_end_date 
+          ? Math.max(new Date(currentSchool.subscription_end_date).getTime(), Date.now())
+          : Date.now();
+
+        const newEndDate = new Date(baseTime + Number(extend_days) * 24 * 3600 * 1000);
+        updateData.subscription_end_date = newEndDate.toISOString();
+        // إعادة التفعيل تلقائياً عند تمديد الاشتراك
+        updateData.status = 'active';
+      }
+
+      const { data: updated, error } = await supabaseServer
+        .from('schools')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+
+      res.json({
+        message: 'تم تحديث بيانات وحالة المدرسة بنجاح ✨',
+        school: updated
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Server error updating school' });
+    }
   });
 
   // Gemini API Proxy with intelligent fallback across modern models

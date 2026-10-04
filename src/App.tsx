@@ -10,11 +10,11 @@ import {
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
   ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video,
-  FileSpreadsheet
+  FileSpreadsheet, Building2
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
-  UserProfile, UserRole, SchoolStage, GradeLevel, ArabicTrack, 
+  UserProfile, UserRole, School, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
   ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
   TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession
@@ -29,7 +29,8 @@ import {
   getAIGovernanceRules, syncAIGovernanceRulesFromCloud, isAIFeatureAllowed, canUserUseAI,
   getExams, getExamSessions, syncExamsFromCloud, syncExamSessionsFromCloud,
   getTeacherTasks, syncTeacherTasksFromCloud,
-  getLiveClassSessions, syncLiveClassSessionsFromCloud
+  getLiveClassSessions, syncLiveClassSessionsFromCloud,
+  getSchools, checkSchoolAccess, getSchoolById, syncSchoolsFromCloud
 } from './storage';
 import { 
   canManageTeacherGrades, 
@@ -64,6 +65,8 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
 import { ParentProgressTab } from './components/ParentProgressTab';
 import { GradebookManager } from './components/GradebookManager';
+import { SuspendedSchoolNotice } from './components/SuspendedSchoolNotice';
+import { SuperAdminSchoolsDashboard } from './components/SuperAdminSchoolsDashboard';
 import { challengeAudio } from './utils/challengeAudio';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
@@ -175,11 +178,31 @@ function AppContent() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [aiGovernanceRules, setAiGovernanceRules] = useState<AIGovernanceRules>(getAIGovernanceRules());
 
+  // قائمة المدارس المسجلة
+  const [schoolsList, setSchoolsList] = useState<School[]>(() => getSchools());
+
   // تبويبات لوحة المشرف العام مع استعادة التبويب النشط
-  const [adminTab, setAdminTab] = useState<'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>(() => {
+  const [adminTab, setAdminTab] = useState<'schools' | 'hods' | 'teachers' | 'students' | 'parents' | 'bank' | 'ai_governance' | 'teacher_tasks'>(() => {
+    if (typeof window !== 'undefined' && window.location.hash.includes('super-admin/schools')) {
+      return 'schools';
+    }
     const initialUser = getCurrentUser();
-    return getInitialTabForRole(initialUser?.role || 'super_admin', 'teachers') as any;
+    return (getInitialTabForRole(initialUser?.role || 'super_admin', 'schools') as any) || 'schools';
   });
+
+  // الاستماع لتغيير رابط الـ Hash للمسار /super-admin/schools
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (typeof window !== 'undefined' && (window.location.hash === '#super-admin/schools' || window.location.hash.includes('schools'))) {
+        if (currentUser?.role === 'super_admin') {
+          setAdminTab('schools');
+        }
+      }
+    };
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [currentUser?.role]);
 
   // تبويبات لوحة رئيس القسم مع استعادة التبويب النشط
   const [hodTab, setHodTab] = useState<'overview' | 'grades' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
@@ -1644,10 +1667,51 @@ function AppContent() {
               >
                 🛡️ المشرف العام (الإدارة العليا)
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const suspendedTeacher: UserProfile = {
+                    id: 'usr_suspended_teacher',
+                    name: 'معلم مدرسة النور (المعلقة للاختبار)',
+                    username: 'suspended_user',
+                    role: 'teacher',
+                    school_id: '00000000-0000-0000-0000-000000000002',
+                    allowedStages: ['primary'],
+                    allowedGrades: ['grade-1'],
+                    allowedTracks: ['arabic-a'],
+                    loginCount: 1,
+                    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
+                  };
+                  setUser(suspendedTeacher);
+                  setCurrentUser(suspendedTeacher);
+                }}
+                className="col-span-2 p-2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl font-bold border border-rose-200 transition text-center flex items-center justify-center gap-1.5"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                <span>تجربة دخول مدرسة معلقة ⛔ (اختبار شاشة المنع الفوري)</span>
+              </button>
             </div>
           </div>
         </div>
 
+        {renderAIModals()}
+      </div>
+    );
+  }
+
+  // ================= فحص حالة اشتراك المدرسة والحظر التلقائي (Access Enforcement) =================
+  const schoolAccess = checkSchoolAccess(currentUser.school_id, currentUser.role);
+  if (!schoolAccess.allowed && currentUser.role !== 'super_admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 font-sans" dir="rtl">
+        <SuspendedSchoolNotice
+          user={currentUser}
+          school={schoolAccess.school}
+          reason={schoolAccess.reason}
+          message={schoolAccess.message}
+          onLogout={handleLogout}
+          onSwitchToDemoSchool={() => handleQuickLogin('admin', '123')}
+        />
         {renderAIModals()}
       </div>
     );
@@ -1688,8 +1752,76 @@ function AppContent() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5">
+        {/* شريط التبويبات الرئيسي للمشرف العام */}
+        <div className="bg-white border-b border-slate-200 px-6 py-3 sticky top-[73px] z-20">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAdminTab('schools')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+                  adminTab === 'schools'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <Building2 className="w-4 h-4 text-indigo-400" />
+                <span>إدارة المدارس والاشتراكات المركزية ({schoolsList.length})</span>
+              </button>
+
+              <button
+                onClick={() => setAdminTab('teachers')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab !== 'schools' && adminTab !== 'ai_governance' && adminTab !== 'teacher_tasks'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>إدارة المستخدمين والكادر ({users.length})</span>
+              </button>
+
+              <button
+                onClick={() => setAdminTab('teacher_tasks')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab === 'teacher_tasks'
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
+                }`}
+              >
+                <ListTodo className="w-3.5 h-3.5 text-teal-600" />
+                <span>مهام وتكليفات المعلمين</span>
+              </button>
+
+              <button
+                onClick={() => setAdminTab('ai_governance')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab === 'ai_governance'
+                    ? 'bg-rose-700 text-white shadow-xs'
+                    : aiGovernanceRules.master_ai_killswitch
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                    : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>التحكم الشامل في الذكاء الاصطناعي</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <main className="max-w-7xl mx-auto px-4 py-8">
+          {adminTab === 'schools' ? (
+            <SuperAdminSchoolsDashboard
+              currentUser={currentUser}
+              onSchoolsUpdated={() => setSchoolsList(getSchools())}
+              onSimulateUser={(simUser) => {
+                setUser(simUser);
+                setCurrentUser(simUser);
+              }}
+            />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-5">
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <h2 className="font-bold text-base mb-4 flex items-center gap-2 text-slate-800">
                 <Plus className="w-5 h-5 text-emerald-600" /> إضافة مستخدم جديد
@@ -1910,6 +2042,13 @@ function AppContent() {
           <div className="lg:col-span-7">
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
               <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-slate-100">
+                <button
+                  onClick={() => setAdminTab('schools')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200"
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>المدارس والاشتراكات ({schoolsList.length})</span>
+                </button>
                 <button
                   onClick={() => setAdminTab('teachers')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
@@ -2229,6 +2368,8 @@ function AppContent() {
               )}
             </div>
           </div>
+          </div>
+        )}
         </main>
         {renderSharedReader()}
       </div>

@@ -1,27 +1,87 @@
 -- ==============================================================================
 -- إعداد جداول وقواعد أمان منصة "تعلّم مع موسى" (Supabase SQL Schema)
--- Multi-Tenancy Architecture & School-Level Row Level Security (RLS)
+-- Multi-Tenancy SaaS Architecture, Super Admin Control & School-Level RLS
 -- يرجى نسخ هذا الكود ولصقه في SQL Editor داخل لوحة تحكم Supabase والضغط على RUN
 -- ==============================================================================
 
--- 0. جدول المدارس (Schools Entity)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- إنشاء أو تحديث enum أدوار المستخدمين
+DO $$ BEGIN
+  CREATE TYPE user_role_enum AS ENUM (
+    'super_admin',
+    'school_admin',
+    'supervisor',
+    'hod',
+    'teacher',
+    'parent',
+    'student'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- 0. جدول المدارس والاشتراكات (Schools SaaS Entity)
 CREATE TABLE IF NOT EXISTS public.schools (
-  id TEXT PRIMARY KEY DEFAULT ('school_' || gen_random_uuid()::text),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  code TEXT UNIQUE,
-  is_active BOOLEAN NOT NULL DEFAULT true,
+  slug TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'expired')),
+  plan_tier TEXT NOT NULL DEFAULT 'trial' CHECK (plan_tier IN ('trial', 'annual')),
+  subscription_start_date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  subscription_end_date TIMESTAMP WITH TIME ZONE DEFAULT (timezone('utc'::text, now()) + interval '365 days'),
+  ai_enabled BOOLEAN NOT NULL DEFAULT true, -- مفتاح الـ AI Kill Switch الخاص بالمدرسة
+  max_students INTEGER NOT NULL DEFAULT 500,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+-- ضمان وجود كافة الحقول إذا كان الجدول منشأً سابقاً
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS slug TEXT;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS plan_tier TEXT NOT NULL DEFAULT 'trial';
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS subscription_start_date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS max_students INTEGER NOT NULL DEFAULT 500;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_slug ON public.schools(slug);
+
 -- إدراج المدرسة النموذجية الافتراضية ليوم العرض (Demo Day School)
-INSERT INTO public.schools (id, name, code, is_active)
-VALUES ('school_demo_mousa', 'مدرسة موسى النموذجية الرائدة', 'MOUSA_DEMO', true)
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.schools (id, name, slug, status, plan_tier, subscription_start_date, subscription_end_date, ai_enabled, max_students)
+VALUES (
+  '00000000-0000-0000-0000-000000000001'::uuid, 
+  'مدرسة موسى النموذجية الرائدة', 
+  'mousa-demo', 
+  'active', 
+  'annual', 
+  timezone('utc'::text, now()), 
+  timezone('utc'::text, now() + interval '365 days'), 
+  true, 
+  500
+)
+ON CONFLICT (slug) DO UPDATE SET
+  status = 'active',
+  ai_enabled = true;
+
+-- إدراج مدرسة تجريبية معلقة للاختبار والتدقيق الأمني
+INSERT INTO public.schools (id, name, slug, status, plan_tier, subscription_start_date, subscription_end_date, ai_enabled, max_students)
+VALUES (
+  '00000000-0000-0000-0000-000000000002'::uuid, 
+  'مدرسة النور التجريبية (معلقة للاختبار)', 
+  'al-noor-suspended', 
+  'suspended', 
+  'trial', 
+  timezone('utc'::text, now() - interval '60 days'), 
+  timezone('utc'::text, now() - interval '10 days'), 
+  false, 
+  100
+)
+ON CONFLICT (slug) DO NOTHING;
 
 -- 0.1 جدول الفصول الدراسية (Classes)
 CREATE TABLE IF NOT EXISTS public.classes (
   id TEXT PRIMARY KEY DEFAULT ('cls_' || gen_random_uuid()::text),
-  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
+  school_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
   name TEXT NOT NULL,
   stage TEXT NOT NULL DEFAULT 'primary',
   grade TEXT NOT NULL DEFAULT 'grade-1',
@@ -35,11 +95,11 @@ CREATE INDEX IF NOT EXISTS idx_classes_school_id ON public.classes(school_id);
 -- 1. جدول المستخدمين والحسابات
 CREATE TABLE IF NOT EXISTS public.users (
   id TEXT PRIMARY KEY,
-  school_id TEXT NOT NULL DEFAULT 'school_demo_mousa' REFERENCES public.schools(id) ON DELETE CASCADE,
+  school_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
   name TEXT NOT NULL,
   username TEXT NOT NULL UNIQUE,
   password TEXT,
-  role TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'student',
   stage TEXT,
   grade TEXT,
   track TEXT,
@@ -58,7 +118,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT 'school_demo_mousa';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS school_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Africa/Cairo';
@@ -163,6 +223,7 @@ CREATE INDEX IF NOT EXISTS idx_badges_student_id ON public.badges(student_id);
 
 -- ==============================================================================
 -- 5. تفعيل سياسات الأمان Row Level Security (RLS) وحوكمة عزل المدارس
+-- Multi-Tenancy Isolation, Super Admin Bypass & Subscription Suspension Enforcement
 -- ==============================================================================
 ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classes ENABLE ROW LEVEL SECURITY;
@@ -172,41 +233,164 @@ ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.remedial_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.badges ENABLE ROW LEVEL SECURITY;
 
+-- دالة للتحقق من هوية المشرف العام (Super Admin)
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  -- التحقق من دور service_role أو مطالبات JWT أو جدول المستخدمين
+  IF current_setting('request.jwt.claims', true)::jsonb->>'role' = 'service_role' THEN
+    RETURN true;
+  END IF;
+
+  IF current_setting('request.jwt.claims', true)::jsonb->'app_metadata'->>'role' = 'super_admin' THEN
+    RETURN true;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()::text
+    AND role = 'super_admin'
+  );
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+-- دالة لاستخراج معرّف مدرسة المستخدم الحالي
 CREATE OR REPLACE FUNCTION public.current_user_school_id() 
 RETURNS TEXT AS $$
 BEGIN
   RETURN COALESCE(
     current_setting('request.jwt.claims', true)::jsonb->'app_metadata'->>'school_id',
     (SELECT school_id FROM public.users WHERE id = auth.uid()::text LIMIT 1),
-    'school_demo_mousa'
+    '00000000-0000-0000-0000-000000000001'
   );
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
--- سياسات المدارس والفصول
+-- دالة للتحقق من صلاحية ونشاط اشتراك المدرسة (Active & Not Expired)
+CREATE OR REPLACE FUNCTION public.is_school_active(target_school_id TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+  -- المشرف العام مستثنى دائماً
+  IF public.is_super_admin() THEN
+    RETURN true;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.schools
+    WHERE (id::text = target_school_id OR slug = target_school_id)
+    AND status = 'active'
+    AND (subscription_end_date IS NULL OR subscription_end_date >= timezone('utc'::text, now()))
+  );
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+-- سياسات جدول المدارس (Schools RLS)
+DROP POLICY IF EXISTS "Schools access policy" ON public.schools;
 DROP POLICY IF EXISTS "Enable all for anon on schools" ON public.schools;
-CREATE POLICY "Enable all for anon on schools" ON public.schools FOR ALL TO anon, authenticated USING (is_active = true) WITH CHECK (true);
+CREATE POLICY "Schools access policy" ON public.schools
+  FOR ALL TO anon, authenticated
+  USING (
+    public.is_super_admin()
+    OR (id::text = public.current_user_school_id())
+  )
+  WITH CHECK (
+    public.is_super_admin()
+  );
 
+-- سياسات جدول الفصول (Classes RLS)
 DROP POLICY IF EXISTS "Enable all for anon on classes" ON public.classes;
-CREATE POLICY "Enable all for anon on classes" ON public.classes FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+CREATE POLICY "Classes access policy" ON public.classes 
+  FOR ALL TO anon, authenticated 
+  USING (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  ) 
+  WITH CHECK (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  );
 
--- سياسات المستخدمين والأنشطة والتسليمات والخطط العلاجية المعزولة بالمدرسة
+-- سياسات المستخدمين والملفات الشخصية (Users / Profiles RLS)
 DROP POLICY IF EXISTS "Enable all for anon on users" ON public.users;
-CREATE POLICY "Enable all for anon on users" ON public.users FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+CREATE POLICY "Users access policy" ON public.users 
+  FOR ALL TO anon, authenticated 
+  USING (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  ) 
+  WITH CHECK (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  );
 
+-- سياسات الأنشطة والاختبارات التفاعلية (Activities / Quizzes RLS)
 DROP POLICY IF EXISTS "Enable all for anon on activities" ON public.activities;
-CREATE POLICY "Enable all for anon on activities" ON public.activities FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+CREATE POLICY "Activities access policy" ON public.activities 
+  FOR ALL TO anon, authenticated 
+  USING (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  ) 
+  WITH CHECK (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  );
 
+-- سياسات التسليمات والدرجات (Submissions RLS)
 DROP POLICY IF EXISTS "Enable all for anon on submissions" ON public.submissions;
-CREATE POLICY "Enable all for anon on submissions" ON public.submissions FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+CREATE POLICY "Submissions access policy" ON public.submissions 
+  FOR ALL TO anon, authenticated 
+  USING (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  ) 
+  WITH CHECK (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  );
 
+-- سياسات الخطط العلاجية (Remedial Plans RLS)
 DROP POLICY IF EXISTS "Enable all for anon on remedial_plans" ON public.remedial_plans;
-CREATE POLICY "Enable all for anon on remedial_plans" ON public.remedial_plans FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
+CREATE POLICY "Remedial plans access policy" ON public.remedial_plans 
+  FOR ALL TO anon, authenticated 
+  USING (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  ) 
+  WITH CHECK (
+    public.is_super_admin()
+    OR (
+      school_id = public.current_user_school_id()
+      AND public.is_school_active(school_id)
+    )
+  );
 
 DROP POLICY IF EXISTS "Enable all for anon on badges" ON public.badges;
 CREATE POLICY "Enable all for anon on badges" ON public.badges FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
@@ -272,22 +456,38 @@ ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_sessions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Enable all for anon on exams" ON public.exams;
-CREATE POLICY "Enable all for anon on exams" ON public.exams FOR ALL TO anon, authenticated 
-USING (school_id = public.current_user_school_id()) WITH CHECK (school_id = public.current_user_school_id());
-
-DROP POLICY IF EXISTS "Enable all for anon on exam_sessions" ON public.exam_sessions;
-CREATE POLICY "Enable all for anon on exam_sessions" ON public.exam_sessions FOR ALL TO anon, authenticated 
+CREATE POLICY "Exams access policy" ON public.exams FOR ALL TO anon, authenticated 
 USING (
-  EXISTS (
-    SELECT 1 FROM public.exams 
-    WHERE exams.id = exam_sessions.exam_id 
-    AND exams.school_id = public.current_user_school_id()
+  public.is_super_admin()
+  OR (
+    school_id = public.current_user_school_id()
+    AND public.is_school_active(school_id)
   )
 ) WITH CHECK (
-  EXISTS (
+  public.is_super_admin()
+  OR (
+    school_id = public.current_user_school_id()
+    AND public.is_school_active(school_id)
+  )
+);
+
+DROP POLICY IF EXISTS "Enable all for anon on exam_sessions" ON public.exam_sessions;
+CREATE POLICY "Exam sessions access policy" ON public.exam_sessions FOR ALL TO anon, authenticated 
+USING (
+  public.is_super_admin()
+  OR EXISTS (
     SELECT 1 FROM public.exams 
     WHERE exams.id = exam_sessions.exam_id 
     AND exams.school_id = public.current_user_school_id()
+    AND public.is_school_active(exams.school_id)
+  )
+) WITH CHECK (
+  public.is_super_admin()
+  OR EXISTS (
+    SELECT 1 FROM public.exams 
+    WHERE exams.id = exam_sessions.exam_id 
+    AND exams.school_id = public.current_user_school_id()
+    AND public.is_school_active(exams.school_id)
   )
 );
 

@@ -1,4 +1,4 @@
-import { UserProfile, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
+import { UserProfile, School, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -10,6 +10,7 @@ import {
   getOfflineQueue as getIndexedDBOfflineQueue 
 } from './db/offlineCache';
 
+export const SCHOOLS_KEY = 'lwm_schools';
 const USERS_KEY = 'lwm_users';
 const ACTIVITIES_KEY = 'lwm_activities';
 const SUBMISSIONS_KEY = 'lwm_submissions';
@@ -30,6 +31,45 @@ export const CHALLENGE_QUIZZES_KEY = 'lwm_challenge_quizzes';
 export const CHALLENGE_ROOMS_KEY = 'lwm_challenge_rooms';
 export const LIVE_CLASS_SESSIONS_KEY = 'lwm_live_class_sessions';
 export const LIVE_CLASS_SYNC_ID = 'live_class_sync';
+
+export const INITIAL_SCHOOLS: School[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000001',
+    name: 'مدرسة موسى النموذجية الرائدة',
+    slug: 'mousa-demo',
+    status: 'active',
+    plan_tier: 'annual',
+    subscription_start_date: '2026-01-01T00:00:00.000Z',
+    subscription_end_date: '2027-12-31T23:59:59.000Z',
+    ai_enabled: true,
+    max_students: 500,
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000002',
+    name: 'مدرسة النور التجريبية (معلقة للاختبار)',
+    slug: 'al-noor-suspended',
+    status: 'suspended',
+    plan_tier: 'trial',
+    subscription_start_date: '2026-01-01T00:00:00.000Z',
+    subscription_end_date: '2026-03-01T00:00:00.000Z',
+    ai_enabled: false,
+    max_students: 100,
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000003',
+    name: 'أكاديمية الفرسان الدولية (اشتراك منتهي)',
+    slug: 'al-fursan-expired',
+    status: 'expired',
+    plan_tier: 'annual',
+    subscription_start_date: '2025-01-01T00:00:00.000Z',
+    subscription_end_date: '2026-01-01T00:00:00.000Z',
+    ai_enabled: true,
+    max_students: 300,
+    created_at: '2025-01-01T00:00:00.000Z'
+  }
+];
 
 export const INITIAL_EXAMS: Exam[] = [
   {
@@ -194,12 +234,184 @@ export const INITIAL_USERS: UserProfile[] = [
     username: 'parent',
     password: '123',
     role: 'parent',
-    school_id: 'school_demo_mousa',
+    school_id: '00000000-0000-0000-0000-000000000001',
     studentId: 'usr_student_mousa',
     loginCount: 6,
     delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
+  },
+  {
+    id: 'usr_suspended_teacher',
+    name: 'معلم مدرسة النور (المعلقة للاختبار)',
+    username: 'suspended_user',
+    password: '123',
+    role: 'teacher',
+    school_id: '00000000-0000-0000-0000-000000000002',
+    allowedStages: ['primary'],
+    allowedGrades: ['grade-1'],
+    allowedTracks: ['arabic-a'],
+    loginCount: 1,
+    delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },
   }
 ];
+
+// ================= إدارة المدارس والاشتراكات المركزية (Schools SaaS Storage) =================
+
+export const getSchools = (): School[] => {
+  try {
+    const raw = localStorage.getItem(SCHOOLS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Error reading schools:', e);
+  }
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(INITIAL_SCHOOLS));
+  return INITIAL_SCHOOLS;
+};
+
+export const saveSchool = async (school: School): Promise<School[]> => {
+  const current = getSchools();
+  const index = current.findIndex(s => s.id === school.id || s.slug === school.slug);
+  let updated: School[];
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = { ...updated[index], ...school };
+  } else {
+    updated = [school, ...current];
+  }
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(updated));
+
+  // مزامنة غير معطلة مع Supabase
+  try {
+    await supabase.from('schools').upsert({
+      id: school.id,
+      name: school.name,
+      slug: school.slug,
+      status: school.status,
+      plan_tier: school.plan_tier,
+      subscription_start_date: school.subscription_start_date,
+      subscription_end_date: school.subscription_end_date,
+      ai_enabled: school.ai_enabled,
+      max_students: school.max_students
+    });
+  } catch (err) {
+    console.warn('Failed to upsert school to cloud:', err);
+  }
+
+  return updated;
+};
+
+export const deleteSchool = async (schoolId: string): Promise<School[]> => {
+  const current = getSchools();
+  const updated = current.filter(s => s.id !== schoolId);
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(updated));
+  try {
+    await supabase.from('schools').delete().eq('id', schoolId);
+  } catch (err) {
+    console.warn('Failed to delete school from cloud:', err);
+  }
+  return updated;
+};
+
+export const syncSchoolsFromCloud = async (): Promise<School[]> => {
+  try {
+    const { data, error } = await supabase.from('schools').select('*').order('created_at', { ascending: false });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const mapped: School[] = data.map((d: any) => ({
+        id: String(d.id),
+        name: d.name,
+        slug: d.slug,
+        status: d.status || 'active',
+        plan_tier: d.plan_tier || 'annual',
+        subscription_start_date: d.subscription_start_date,
+        subscription_end_date: d.subscription_end_date,
+        ai_enabled: d.ai_enabled !== false,
+        max_students: Number(d.max_students) || 500,
+        created_at: d.created_at
+      }));
+      localStorage.setItem(SCHOOLS_KEY, JSON.stringify(mapped));
+      return mapped;
+    }
+  } catch (err) {
+    console.warn('Failed to sync schools from cloud:', err);
+  }
+  return getSchools();
+};
+
+export const getSchoolById = (schoolId?: string): School | undefined => {
+  if (!schoolId) return undefined;
+  const list = getSchools();
+  return list.find(s => s.id === schoolId || s.slug === schoolId);
+};
+
+export interface SchoolAccessCheckResult {
+  allowed: boolean;
+  status: 'active' | 'suspended' | 'expired';
+  school?: School;
+  reason?: 'suspended' | 'expired' | 'not_found' | 'ok';
+  message?: string;
+  isSuperAdmin?: boolean;
+}
+
+export const checkSchoolAccess = (
+  schoolId?: string,
+  userRole?: string
+): SchoolAccessCheckResult => {
+  // 1. المشرف العام مستثنى تماماً ويملك وصولاً كاملاً لكل المسارات
+  if (userRole === 'super_admin') {
+    return {
+      allowed: true,
+      status: 'active',
+      reason: 'ok',
+      isSuperAdmin: true
+    };
+  }
+
+  const targetId = schoolId || '00000000-0000-0000-0000-000000000001';
+  const school = getSchoolById(targetId) || getSchoolById('school_demo_mousa') || getSchools()[0];
+
+  if (!school) {
+    return {
+      allowed: true,
+      status: 'active',
+      reason: 'ok'
+    };
+  }
+
+  // 2. التحقق من التعليق
+  if (school.status === 'suspended') {
+    return {
+      allowed: false,
+      status: 'suspended',
+      school,
+      reason: 'suspended',
+      message: `تم تعليق وصول حساب مدرسة "${school.name}" إلى المنصة مؤقتاً بقرار إداري مركزي.`
+    };
+  }
+
+  // 3. التحقق من انتهاء الصلاحية
+  const isExpired = 
+    school.status === 'expired' ||
+    (school.subscription_end_date && new Date(school.subscription_end_date).getTime() < Date.now());
+
+  if (isExpired) {
+    return {
+      allowed: false,
+      status: 'expired',
+      school,
+      reason: 'expired',
+      message: `انتهت صلاحية اشتراك مدرسة "${school.name}". يرجى من إدارة المدرسة تجديد الاشتراك السنوي.`
+    };
+  }
+
+  return {
+    allowed: true,
+    status: 'active',
+    school,
+    reason: 'ok'
+  };
+};
 
 export const INITIAL_TEACHER_TASKS: TeacherTask[] = [
   {
@@ -1530,6 +1742,18 @@ export const canUserUseAI = (
       reason: 'جميع ميزات الذكاء الاصطناعي معطلة حالياً بقرار طوارئ من المشرف العام على كامل المنصة.',
       overrideStatus
     };
+  }
+
+  // 1.5. فحص مفتاح تعطيل الذكاء الاصطناعي الخاص بالمدرسة (School AI Kill Switch)
+  if (user?.role !== 'super_admin' && user?.school_id) {
+    const school = getSchoolById(user.school_id);
+    if (school && school.ai_enabled === false) {
+      return {
+        allowed: false,
+        reason: `ميزات الذكاء الاصطناعي معطلة حالياً لمدرسة "${school.name}" من لوحة التحكم المركزية (School AI Kill Switch).`,
+        overrideStatus
+      };
+    }
   }
 
   // 2. إذا كان حظر فردي محدد

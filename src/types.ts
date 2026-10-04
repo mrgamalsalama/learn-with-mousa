@@ -1,11 +1,24 @@
-// أدوار المستخدمين في المنظومة
-export type UserRole = 'super_admin' | 'hod' | 'teacher' | 'student' | 'parent';
+// أدوار المستخدمين في المنظومة (يدعم النموذج الموسع)
+export type UserRole = 
+  | 'super_admin' 
+  | 'school_admin' 
+  | 'supervisor' 
+  | 'hod' 
+  | 'teacher' 
+  | 'parent' 
+  | 'student';
 
 // مسارات اللغة العربية
 export type ArabicTrack = 'arabic-a' | 'arabic-b'; // A: ناطقين، B: غير ناطقين
 
 // المراحل التعليمية
 export type SchoolStage = 'kg' | 'primary' | 'middle' | 'high';
+
+// حالات اشتراك المدرسة
+export type SchoolStatus = 'active' | 'suspended' | 'expired';
+
+// خطط اشتراك المدارس
+export type SchoolPlanTier = 'trial' | 'annual';
 
 // قائمة الصفوف الدراسية كاملة
 export type GradeLevel =
@@ -56,12 +69,17 @@ export interface UserPreferences {
   bio?: string;
 }
 
-// كيان المدرسة للمنظومة متعددة المدارس (Multi-Tenancy)
+// كيان المدرسة للمنظومة متعددة المدارس (Multi-tenant SaaS School Entity)
 export interface School {
   id: string;
   name: string;
-  code?: string;
-  is_active: boolean;
+  slug: string;
+  status: SchoolStatus;
+  plan_tier: SchoolPlanTier;
+  subscription_start_date?: string | null;
+  subscription_end_date?: string | null;
+  ai_enabled: boolean; // مفتاح الذكاء الاصطناعي Kill Switch الخاص بالمدرسة
+  max_students: number;
   created_at?: string;
 }
 
