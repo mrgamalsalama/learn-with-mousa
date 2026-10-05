@@ -3804,7 +3804,9 @@ function AppContent() {
                                   title: assign.bookTitle,
                                   coverUrl: assign.bookCoverUrl,
                                   readUrl: assign.bookReadUrl,
-                                  author: assign.bookAuthor
+                                  author: assign.bookAuthor,
+                                  assignedGrades: currentUser.grade ? [currentUser.grade] : ['grade-1'],
+                                  assignedTracks: currentUser.track ? [currentUser.track] : ['arabic-a']
                                 })}
                                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
                               >
@@ -3889,7 +3891,7 @@ function AppContent() {
                                 type="button"
                                 onClick={() => {
                                   setSelectedActivityToSolve(act);
-                                  setUserAnswers({});
+                                  setStudentAnswers({});
                                   setQuizFinished(false);
                                 }}
                                 className={`w-full py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${

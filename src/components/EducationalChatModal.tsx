@@ -541,9 +541,9 @@ export const EducationalChatModal: React.FC<EducationalChatModalProps> = ({
                                 <span>{timeStr}</span>
                                 {isMe && (
                                   msg.read_at ? (
-                                    <CheckCheck className="w-3 h-3 text-cyan-200" title="تمت القراءة" />
+                                    <span title="تمت القراءة"><CheckCheck className="w-3 h-3 text-cyan-200" /></span>
                                   ) : (
-                                    <Check className="w-3 h-3 text-emerald-200" title="تم الإرسال" />
+                                    <span title="تم الإرسال"><Check className="w-3 h-3 text-emerald-200" /></span>
                                   )
                                 )}
                               </div>
