@@ -275,6 +275,29 @@ export interface BookItem {
   assignedByTeacherId?: string;
 }
 
+// نموذج إسناد القصص والكتب من المعلم (حرة أو نشاط قرائي)
+export interface ReadingBookAssignment {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  bookAuthor?: string;
+  bookCoverUrl: string;
+  bookReadUrl: string;
+  section?: string;
+  assignmentType: 'free_reading' | 'interactive_quiz';
+  targetType: 'class' | 'student';
+  targetGrade?: GradeLevel;
+  targetStudentId?: string;
+  targetStudentName?: string;
+  teacherId: string;
+  teacherName: string;
+  school_id?: string;
+  assignedAt: string;
+  dueDate?: string;
+  notes?: string;
+  activityId?: string; // معرّف النشاط المرتبط إذا تم تعيينه كنشاط قرائي تفاعلي
+}
+
 // أنواع الأنشطة والمهام
 export type ActivityType = 'worksheet' | 'story' | 'game';
 

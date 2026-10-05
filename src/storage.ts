@@ -1,4 +1,4 @@
-import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
+import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -1344,6 +1344,68 @@ export const updateBookAssignment = (
     books[bookIndex].assignedTracks = assignedTracks;
     books[bookIndex].assignedByTeacherId = teacherId;
     localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+  }
+};
+
+// ================= حوكمة رف القراءة وتكليفات الكتب القرائية =================
+const OPEN_LIBRARY_CLASSES_KEY = 'lwm_open_library_classes';
+const READING_ASSIGNMENTS_KEY = 'lwm_reading_book_assignments';
+
+export const isFullLibraryOpenForGrade = (grade: string, schoolId?: string): boolean => {
+  try {
+    const raw = localStorage.getItem(OPEN_LIBRARY_CLASSES_KEY);
+    if (!raw) return false;
+    const map = JSON.parse(raw);
+    const key = schoolId ? `${schoolId}_${grade}` : grade;
+    return !!map[key] || !!map[grade];
+  } catch {
+    return false;
+  }
+};
+
+export const setFullLibraryOpenForGrade = (grade: string, isOpen: boolean, schoolId?: string): void => {
+  try {
+    const raw = localStorage.getItem(OPEN_LIBRARY_CLASSES_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    const key = schoolId ? `${schoolId}_${grade}` : grade;
+    map[key] = isOpen;
+    map[grade] = isOpen;
+    localStorage.setItem(OPEN_LIBRARY_CLASSES_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Error saving open library state:', e);
+  }
+};
+
+export const getReadingBookAssignments = (): ReadingBookAssignment[] => {
+  try {
+    const raw = localStorage.getItem(READING_ASSIGNMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveReadingBookAssignment = (assignment: ReadingBookAssignment): void => {
+  try {
+    const list = getReadingBookAssignments();
+    const idx = list.findIndex(a => a.id === assignment.id);
+    if (idx >= 0) {
+      list[idx] = assignment;
+    } else {
+      list.unshift(assignment);
+    }
+    localStorage.setItem(READING_ASSIGNMENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving reading assignment:', e);
+  }
+};
+
+export const deleteReadingBookAssignment = (id: string): void => {
+  try {
+    const list = getReadingBookAssignments().filter(a => a.id !== id);
+    localStorage.setItem(READING_ASSIGNMENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error deleting reading assignment:', e);
   }
 };
 

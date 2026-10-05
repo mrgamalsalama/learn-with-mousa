@@ -16,6 +16,7 @@ import JSZip from 'jszip';
 import { 
   UserProfile, UserRole, School, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
+  ReadingBookAssignment,
   ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
   TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession
 } from './types';
@@ -23,6 +24,8 @@ import {
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
   getStoryBank, getBooksRepository, updateBookAssignment,
+  isFullLibraryOpenForGrade, setFullLibraryOpenForGrade, getReadingBookAssignments,
+  saveReadingBookAssignment, deleteReadingBookAssignment,
   syncUsersFromCloud, syncActivitiesFromCloud, syncSubmissionsFromCloud,
   getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges,
   getOfflineSubmissionsQueue, drainOfflineQueue,
@@ -63,6 +66,7 @@ import { TeacherTasksReadOnlyView } from './components/TeacherTasksReadOnlyView'
 import { PadletBoardView } from './components/PadletBoard';
 import { MousaChallenge } from './components/MousaChallenge';
 import { LiveClassroom } from './components/LiveClassroom';
+import { TeacherBookAssignModal } from './components/TeacherBookAssignModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
 import { ParentProgressTab } from './components/ParentProgressTab';
@@ -431,6 +435,13 @@ function AppContent() {
   const [selectedBookForAssign, setSelectedBookForAssign] = useState<BookItem | null>(null);
   const [tempAssignedGrades, setTempAssignedGrades] = useState<GradeLevel[]>([]);
   const [tempAssignedTracks, setTempAssignedTracks] = useState<ArabicTrack[]>(['arabic-a']);
+
+  // حوكمة رف القراءة وتكليف الكتب للطلاب
+  const [bookToAssignWithGovernance, setBookToAssignWithGovernance] = useState<BookItem | null>(null);
+  const [assignInitialTab, setAssignInitialTab] = useState<'free_reading' | 'interactive_quiz'>('free_reading');
+  const [readingAssignments, setReadingAssignments] = useState<ReadingBookAssignment[]>(() => getReadingBookAssignments());
+  const [studentReadingTab, setStudentReadingTab] = useState<'assigned' | 'open_library'>('assigned');
+  const [openLibraryToggleNonce, setOpenLibraryToggleNonce] = useState(0);
 
   // عارض الكتاب التفاعلي المباشر (Direct Reader State)
   const [activeReadingBook, setActiveReadingBook] = useState<BookItem | null>(null);
@@ -1168,24 +1179,39 @@ function AppContent() {
 
           <div className="space-y-2 pt-3 border-t border-slate-100">
             {(role === 'teacher' || role === 'hod') && (
-              <button
-                type="button"
-                onClick={() => openAssignModal(book)}
-                className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  isAssigned 
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100' 
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                }`}
-              >
-                <CheckSquare className="w-3.5 h-3.5" />
-                {isAssigned ? 'تعديل إسناد الصفوف' : 'إسناد الكتاب لصفوفي'}
-              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookToAssignWithGovernance(book);
+                    setAssignInitialTab('free_reading');
+                  }}
+                  className="py-2 px-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                  title="إرسال القصة للقراءة والاستمتاع"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>إرسال للقراءة 📖</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookToAssignWithGovernance(book);
+                    setAssignInitialTab('interactive_quiz');
+                  }}
+                  className="py-2 px-1.5 bg-teal-700 hover:bg-teal-800 active:scale-98 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                  title="تعيين كنشاط قرائي تفاعلي برصد درجات"
+                >
+                  <FileCheck2 className="w-3.5 h-3.5" />
+                  <span>نشاط قرائي 📝</span>
+                </button>
+              </div>
             )}
 
             <button
               type="button"
               onClick={() => openReader(book)}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <BookOpen className="w-3.5 h-3.5 text-slate-500" /> معاينة وقراءة القصة
             </button>
@@ -1452,6 +1478,24 @@ function AppContent() {
             submissions={submissions}
             teacherName={currentUser?.name || 'معلم اللغة العربية'}
             activityTitle="أنشطة القراءة والفهم التفاعلية"
+          />
+        )}
+
+        {bookToAssignWithGovernance && currentUser && (
+          <TeacherBookAssignModal
+            isOpen={!!bookToAssignWithGovernance}
+            onClose={() => setBookToAssignWithGovernance(null)}
+            book={bookToAssignWithGovernance}
+            teacher={currentUser}
+            allowedGrades={currentUser.allowedGrades || ['grade-1', 'grade-2', 'grade-3']}
+            students={users.filter(u => u.role === 'student' && (!u.school_id || u.school_id === currentUser.school_id))}
+            initialTab={assignInitialTab}
+            onSuccess={(msg) => {
+              alert(msg);
+              setBooks(getBooksRepository());
+              setActivities(getActivities());
+              setReadingAssignments(getReadingBookAssignments());
+            }}
           />
         )}
 
@@ -2302,17 +2346,63 @@ function AppContent() {
 
           {teacherTab === 'library' && (
             <div className="space-y-6">
+              {/* ترويسة المستودع القرائي المركزي */}
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <Library className="w-5 h-5 text-emerald-600" /> المستودع القرائي المركزي
+                    <Library className="w-5 h-5 text-emerald-600" /> المستودع القرائي ومكتبة بوك تايم (2165 كتاباً)
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    اختر القصص والكتب المصورة الملائمة لمناهجك وأسندها لصفوفك لتظهر في مكتبة الطالب فوراً.
+                    حوكمة القراءة وإسناد الكتب: اختر أي قصة لإرسالها للقراءة والاستمتاع أو تعيينها كنشاط قرائي تفاعلي برصد درجات آلي.
                   </p>
                 </div>
-                <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100 flex-shrink-0">
                   إجمالي الكتب: {filteredBooks.length} كتاب
+                </div>
+              </div>
+
+              {/* أداة حوكمة إتاحة الرف الكامل للقراءة الحرة للفصول (Toggle Governance) */}
+              <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-3xl p-5 text-white shadow-md border border-emerald-700/40">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-[10px] font-black text-emerald-300">
+                        حوكمة القراءة المدرسية 🔒
+                      </span>
+                      <h3 className="text-sm sm:text-base font-black">
+                        إتاحة المكتبة الكاملة للقراءة الحرة للفصل
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                      الوضع الافتراضي هو <b>حجب الرف المفتوح</b> عن الطلاب بحيث لا يرى الطالب إلا ما تسنده إليه حصراً. يمكنك تفعيل هذا الخيار لإتاحة كامل الـ 2165 كتاباً للتصفح الحر لطلاب صف معين.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 bg-white/10 backdrop-blur-md p-2.5 rounded-2xl border border-white/20">
+                    {teacherAllowedGrades.map((gId) => {
+                      const isOpenForGrade = isFullLibraryOpenForGrade(gId, currentUser.school_id);
+                      return (
+                        <div key={gId} className="flex items-center gap-2 bg-slate-950/40 px-3 py-2 rounded-xl border border-white/15">
+                          <span className="text-xs font-bold text-emerald-200">{getGradeLabel(gId)}:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextState = !isOpenForGrade;
+                              setFullLibraryOpenForGrade(gId, nextState, currentUser.school_id);
+                              setOpenLibraryToggleNonce(n => n + 1);
+                            }}
+                            className={`px-3 py-1 rounded-lg text-[11px] font-black transition flex items-center gap-1.5 cursor-pointer ${
+                              isOpenForGrade
+                                ? 'bg-emerald-500 text-white shadow-sm'
+                                : 'bg-rose-500/80 hover:bg-rose-500 text-white'
+                            }`}
+                          >
+                            <span>{isOpenForGrade ? 'مفتوحة 🟢' : 'محجوبة 🔒'}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -3046,6 +3136,16 @@ function AppContent() {
       setActiveGameToPlay(starterActivity);
     };
 
+    // حوكمة رف القراءة: فحص هل أتاح المعلم المكتبة الشاملة لهذا الصف
+    const isStudentFullLibraryOpen = isFullLibraryOpenForGrade(currentUser.grade || 'grade-1', currentUser.school_id);
+
+    // 1. القصص الحرة المرشحة من المعلم (خيار 1)
+    const myFreeReadingAssignments = readingAssignments.filter(
+      (a) => a.assignmentType === 'free_reading' && 
+        (a.targetStudentId === currentUser.id || (!a.targetStudentId && a.targetGrade === currentUser.grade))
+    );
+
+    // الكتب المسندة لصف الطالب في مستودع الكتب
     const studentAssignedBooks = books.filter(
       (b) => 
         b.assignedGrades?.includes(currentUser.grade!) && 
@@ -3054,6 +3154,14 @@ function AppContent() {
         !b.coverUrl?.includes('.svg') &&
         !b.title.includes('حساب')
     );
+
+    // 2. التكليفات القرائية التفاعلية برصد درجات (خيار 2)
+    const myReadingQuizzes = activities.filter(
+      (a) => (a.activityType === 'story' || a.id.startsWith('act_read_') || a.description?.includes('نشاط قراءة')) && 
+        (!a.grade || a.grade === currentUser.grade)
+    );
+
+    const totalMyReadingItems = myFreeReadingAssignments.length + studentAssignedBooks.length + myReadingQuizzes.length;
 
     const studentAvailableExams = examsList.filter(
       (e) => (e.is_active !== false && (e.is_active as any) !== 'false') && 
@@ -3133,14 +3241,23 @@ function AppContent() {
             >
               <FileCheck2 className="w-4 h-4 text-emerald-500" /> الاختبارات والتقييمات 📝 ({studentAvailableExams.length})
             </button>
-            <button
-              onClick={() => setStudentTab('library')}
-              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                studentTab === 'library' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-200 text-slate-600'
-              }`}
-            >
-              <Library className="w-4 h-4 text-emerald-400" /> رف القراءة ومكتبتي المصورة ({studentAssignedBooks.length})
-            </button>
+            {/* حجب الرف التلقائي عن بوابة الطالب: لا يظهر قسم/زر رف القراءة والمكتبة المصورة إلا إذا أتاح المعلم المكتبة الكاملة للصف أو وجدت تكليفات قرائية مسندة */}
+            {(isStudentFullLibraryOpen || totalMyReadingItems > 0) && (
+              <button
+                onClick={() => setStudentTab('library')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  studentTab === 'library' 
+                    ? 'bg-emerald-700 text-white shadow-md shadow-emerald-700/20' 
+                    : 'bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+                }`}
+              >
+                <Library className="w-4 h-4 text-emerald-500" />
+                <span>{isStudentFullLibraryOpen ? 'مكتبتي المصورة ورف القراءة' : 'كتبي وتكليفاتي القرائية'}</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900">
+                  {isStudentFullLibraryOpen ? books.length : totalMyReadingItems}
+                </span>
+              </button>
+            )}
             <button
               onClick={() => setStudentTab('padlet')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
@@ -3506,23 +3623,241 @@ function AppContent() {
           )}
 
           {studentTab === 'library' && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
+            <div className="space-y-6">
+              {/* ترويسة قسم القراءة وبوابة الطالب */}
+              <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="font-extrabold text-base text-slate-800">قصصك وكتبك المختارة من معلمك</h2>
-                  <p className="text-xs text-slate-400">استمتع بقراءة القصص المصورة التفاعلية لتنمية مهاراتك اللغوية.</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200">
+                      {isStudentFullLibraryOpen ? 'المكتبة المفتوحة مفعلة من المعلم 🟢' : 'التكليفات والقصص المقررة فقط 🔒'}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">
+                      {isStudentFullLibraryOpen ? `${books.length} قصة متاحة` : `${totalMyReadingItems} مادة قرائية`}
+                    </span>
+                  </div>
+                  <h2 className="font-extrabold text-base sm:text-lg text-slate-800 flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-emerald-600" />
+                    <span>{isStudentFullLibraryOpen ? 'مكتبتي المصورة ورف القراءة' : 'كتبي وتكليفاتي القرائية'}</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isStudentFullLibraryOpen
+                      ? 'أتاح معلمك إمكانية تصفح وقراءة كامل مستودع الكتب المصورة بحرية.'
+                      : 'تعرض هذه الصفحة حصراً الكتب والأنشطة القرائية التي أسندها لك معلّمك.'}
+                  </p>
                 </div>
+
+                {isStudentFullLibraryOpen && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setStudentReadingTab('assigned')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                        studentReadingTab === 'assigned'
+                          ? 'bg-white text-emerald-800 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      تكليفاتي ({totalMyReadingItems})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStudentReadingTab('open_library')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                        studentReadingTab === 'open_library'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      المكتبة الشاملة ({books.length})
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {studentAssignedBooks.length === 0 ? (
-                <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
-                  <Library className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <h4 className="font-bold text-slate-700 text-sm">رف القراءة فارغ حالياً</h4>
-                  <p className="text-xs text-slate-400 mt-1">سيقوم معلمك بإسناد قصص ممتعة لصفك قريباً.</p>
+              {/* إذا كانت المكتبة الشاملة مفعلة واختار الطالب تصفح كامل المستودع */}
+              {isStudentFullLibraryOpen && studentReadingTab === 'open_library' ? (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                      <Library className="w-4 h-4 text-emerald-600" /> جميع الكتب المصورة المتاحة للقراءة الحرة
+                    </h3>
+                    <span className="text-xs text-slate-400 font-bold">{books.length} قصة</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {books.slice(0, 48).map((book) => renderBookCard(book, 'student'))}
+                  </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {studentAssignedBooks.map((book) => renderBookCard(book, 'student'))}
+                /* العرض الافتراضي الصارم: كتبي وتكليفاتي القرائية المسندة حصراً من المعلم */
+                <div className="space-y-6">
+                  {/* 1. رف قصص القراءة والاستمتاع الحرة التي رشحها المعلم */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
+                          قصص رشحها لك معلمك للقراءة والاستمتاع 📖
+                        </h3>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                        {myFreeReadingAssignments.length + studentAssignedBooks.length} قصة
+                      </span>
+                    </div>
+
+                    {myFreeReadingAssignments.length === 0 && studentAssignedBooks.length === 0 ? (
+                      <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-2xs">
+                        <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <h4 className="font-bold text-slate-700 text-sm">لا توجد قصص قراءة حرة مسندة حالياً</h4>
+                        <p className="text-xs text-slate-400 mt-1">عندما يرشح لك معلّمك قصة للاستمتاع بها، ستظهر هنا فوراً في رفك الخاص.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {/* القصص المرشحة عبر نظام الإسناد الصريح */}
+                        {myFreeReadingAssignments.map((assign) => (
+                          <div
+                            key={assign.id}
+                            className="bg-white rounded-3xl border-2 border-emerald-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                          >
+                            <div className="relative aspect-[3/4] w-full bg-slate-100 flex items-center justify-center p-2 group">
+                              <img
+                                src={assign.bookCoverUrl}
+                                alt={assign.bookTitle}
+                                className="w-full h-full object-contain drop-shadow-xs group-hover:scale-105 transition duration-300"
+                              />
+                              <div className="absolute top-2.5 right-2.5">
+                                <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[9px] font-black shadow-xs flex items-center gap-1">
+                                  <span>📖</span> قراءة حرة
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 flex-1 flex flex-col justify-between text-right" dir="rtl">
+                              <div>
+                                <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 line-clamp-1 mb-1">
+                                  {assign.bookTitle}
+                                </h4>
+                                <p className="text-[11px] text-slate-400 mb-2">
+                                  {assign.bookAuthor || 'مؤسسة هنداوي (بوك تايم)'}
+                                </p>
+                                <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100 mb-3 text-[10px] text-emerald-900 leading-relaxed">
+                                  <span>رشحها الأستاذ: <b>{assign.teacherName}</b></span>
+                                  {assign.notes && <p className="text-slate-600 mt-0.5">💬 {assign.notes}</p>}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => openReader({
+                                  id: assign.bookId,
+                                  title: assign.bookTitle,
+                                  coverUrl: assign.bookCoverUrl,
+                                  readUrl: assign.bookReadUrl,
+                                  author: assign.bookAuthor
+                                })}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                              >
+                                <BookOpen className="w-3.5 h-3.5" /> اقرأ القصة الآن
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* القصص المسندة لصف الطالب */}
+                        {studentAssignedBooks.map((book) => renderBookCard(book, 'student'))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. قسم الأنشطة والتكليفات القرائية التفاعلية ذات الدرجات */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
+                        <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
+                          الأنشطة والتكليفات القرائية المقررة (درجات وموعد تسليم) 📝
+                        </h3>
+                      </div>
+                      <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
+                        {myReadingQuizzes.length} نشاط
+                      </span>
+                    </div>
+
+                    {myReadingQuizzes.length === 0 ? (
+                      <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-2xs">
+                        <FileCheck2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <h4 className="font-bold text-slate-700 text-sm">لا توجد تكليفات قرائية تفاعلية حالياً</h4>
+                        <p className="text-xs text-slate-400 mt-1">عندما يكلفك المعلم بنشاط قرائي مرتبط بقصة وأسئلة فهم، سيظهر هنا مباشرة برصد درجاته.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {myReadingQuizzes.map((act) => {
+                          const isSolved = submissions.some(
+                            s => s.activityId === act.id && s.studentId === currentUser.id
+                          );
+                          const mySub = submissions.find(
+                            s => s.activityId === act.id && s.studentId === currentUser.id
+                          );
+
+                          return (
+                            <div
+                              key={act.id}
+                              className={`bg-white rounded-3xl border-2 p-4 flex flex-col justify-between transition shadow-xs hover:shadow-md ${
+                                isSolved ? 'border-emerald-200 bg-emerald-50/20' : 'border-teal-300'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-teal-100 text-teal-900 border border-teal-200 flex items-center gap-1">
+                                    <FileCheck2 className="w-3 h-3 text-teal-700" /> نشاط قرائي رسمي
+                                  </span>
+                                  {isSolved ? (
+                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" /> تم الإنجاز ({mySub?.score ?? 100}%)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                                      بانتظار الإنجاز ⏳
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h4 className="font-extrabold text-sm text-slate-800 mb-1 line-clamp-1">{act.title}</h4>
+                                <p className="text-xs text-slate-500 mb-3 line-clamp-2">{act.description}</p>
+
+                                <div className="space-y-1 mb-4 text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                  <div className="flex items-center justify-between">
+                                    <span>المعلم: <b className="text-slate-800">{act.teacherName}</b></span>
+                                    <span>الأسئلة: <b className="text-teal-700">{act.questions.length}</b></span>
+                                  </div>
+                                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px]">
+                                    <span className="text-slate-400">تاريخ التكليف: {act.createdAt}</span>
+                                    <span className="text-teal-700 font-bold">رصد آلي للدرجات 🎯</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedActivityToSolve(act);
+                                  setUserAnswers({});
+                                  setQuizFinished(false);
+                                }}
+                                className={`w-full py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
+                                  isSolved 
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                    : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-teal-600/20'
+                                }`}
+                              >
+                                <FileCheck2 className="w-4 h-4" />
+                                <span>{isSolved ? 'مراجعة النشاط والحل' : 'ابدأ قراءة القصة وحل الأسئلة 📝'}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
