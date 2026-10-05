@@ -1680,9 +1680,6 @@ function AppContent() {
             <p className="text-emerald-800 text-sm font-extrabold tracking-wide">
               «صُممت للضاد وليست معرّبة»
             </p>
-            <p className="text-slate-400 text-[11px] font-semibold tracking-wider mt-0.5" dir="ltr">
-              "Built for Arabic, not translated into it"
-            </p>
           </div>
 
           {loginError && (
