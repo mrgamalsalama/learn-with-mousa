@@ -3139,20 +3139,10 @@ function AppContent() {
     // حوكمة رف القراءة: فحص هل أتاح المعلم المكتبة الشاملة لهذا الصف
     const isStudentFullLibraryOpen = isFullLibraryOpenForGrade(currentUser.grade || 'grade-1', currentUser.school_id);
 
-    // 1. القصص الحرة المرشحة من المعلم (خيار 1)
+    // 1. القصص الحرة المرشحة من المعلم حصراً (خيار 1)
     const myFreeReadingAssignments = readingAssignments.filter(
       (a) => a.assignmentType === 'free_reading' && 
         (a.targetStudentId === currentUser.id || (!a.targetStudentId && a.targetGrade === currentUser.grade))
-    );
-
-    // الكتب المسندة لصف الطالب في مستودع الكتب
-    const studentAssignedBooks = books.filter(
-      (b) => 
-        b.assignedGrades?.includes(currentUser.grade!) && 
-        b.assignedTracks?.includes(currentUser.track!) &&
-        b.coverUrl?.includes('/covers/ar/') && 
-        !b.coverUrl?.includes('.svg') &&
-        !b.title.includes('حساب')
     );
 
     // 2. التكليفات القرائية التفاعلية برصد درجات (خيار 2)
@@ -3161,7 +3151,8 @@ function AppContent() {
         (!a.grade || a.grade === currentUser.grade)
     );
 
-    const totalMyReadingItems = myFreeReadingAssignments.length + studentAssignedBooks.length + myReadingQuizzes.length;
+    // إجمالي التكليفات والقصص المقررة للطالب فقط (افتراضياً 0 حتى يسند له المعلم)
+    const totalMyReadingItems = myFreeReadingAssignments.length + myReadingQuizzes.length;
 
     const studentAvailableExams = examsList.filter(
       (e) => (e.is_active !== false && (e.is_active as any) !== 'false') && 
@@ -3700,11 +3691,11 @@ function AppContent() {
                         </h3>
                       </div>
                       <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                        {myFreeReadingAssignments.length + studentAssignedBooks.length} قصة
+                        {myFreeReadingAssignments.length} قصة
                       </span>
                     </div>
 
-                    {myFreeReadingAssignments.length === 0 && studentAssignedBooks.length === 0 ? (
+                    {myFreeReadingAssignments.length === 0 ? (
                       <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-2xs">
                         <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                         <h4 className="font-bold text-slate-700 text-sm">لا توجد قصص قراءة حرة مسندة حالياً</h4>
@@ -3712,7 +3703,7 @@ function AppContent() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {/* القصص المرشحة عبر نظام الإسناد الصريح */}
+                        {/* القصص المرشحة عبر نظام الإسناد الصريح من المعلم */}
                         {myFreeReadingAssignments.map((assign) => (
                           <div
                             key={assign.id}
@@ -3761,9 +3752,6 @@ function AppContent() {
                             </div>
                           </div>
                         ))}
-
-                        {/* القصص المسندة لصف الطالب */}
-                        {studentAssignedBooks.map((book) => renderBookCard(book, 'student'))}
                       </div>
                     )}
                   </div>
