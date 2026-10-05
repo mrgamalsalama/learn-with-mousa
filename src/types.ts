@@ -733,3 +733,39 @@ export interface LiveClassSession {
   permissions?: LiveClassPermissions;
 }
 
+// ===================== نظام المراسلة والمحادثة السريعة (Real-Time Educational Chat Hub) =====================
+export type ConversationType = 'teacher_student' | 'teacher_parent' | 'hod_teacher' | 'hod_parent';
+
+export interface ChatConversation {
+  id: string;
+  school_id: string;
+  type: ConversationType;
+  participant_one_id: string;
+  participant_two_id: string;
+  student_context_id?: string | null;
+  updated_at: string;
+  last_message?: string;
+  last_message_at?: string;
+  unread_count?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  school_id: string;
+  sender_id: string;
+  content: string;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface ChatContact {
+  user: UserProfile;
+  conversationType: ConversationType;
+  studentContext?: UserProfile;
+  unreadCount?: number;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  existingConversationId?: string;
+}
+

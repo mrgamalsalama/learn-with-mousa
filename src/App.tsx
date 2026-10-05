@@ -10,7 +10,7 @@ import {
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
   ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video,
-  FileSpreadsheet, Building2, ChevronDown, ChevronUp
+  FileSpreadsheet, Building2, ChevronDown, ChevronUp, MessageSquare
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -74,6 +74,8 @@ import { GradebookManager } from './components/GradebookManager';
 import { SuspendedSchoolNotice } from './components/SuspendedSchoolNotice';
 import { SuperAdminSchoolsDashboard } from './components/SuperAdminSchoolsDashboard';
 import { SchoolAdminPortal } from './components/SchoolAdminPortal';
+import { EducationalChatModal } from './components/EducationalChatModal';
+import { FloatingChatButton } from './components/FloatingChatButton';
 import { challengeAudio } from './utils/challengeAudio';
 import { getExamScheduleStatus, formatArabicDateTime, formatCountdown } from './utils/examSchedule';
 import { 
@@ -448,6 +450,9 @@ function AppContent() {
 
   // حالة تشغيل اللعبة الذكية للطالب أو المعلم
   const [activeGameToPlay, setActiveGameToPlay] = useState<Activity | null>(null);
+
+  // مركز الرسائل المدرسية والتواصل الفوري
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
   // بيانات تسجيل الدخول
   const [loginUsername, setLoginUsername] = useState('');
@@ -1611,6 +1616,25 @@ function AppContent() {
             onUserUpdate={handleUserUpdate}
           />
         )}
+
+        {/* زر الرسائل العائم للمحادثة السريعة */}
+        {currentUser && (
+          <FloatingChatButton
+            currentUser={currentUser}
+            onClick={() => setIsChatModalOpen(true)}
+            hasCompanion={currentUser.role === 'student' && !isMusaDismissed && canUserUseAI(currentUser, aiGovernanceRules).allowed && isAIFeatureAllowed('student').allowed}
+          />
+        )}
+
+        {/* مركز الرسائل المدرسية والتواصل الفوري */}
+        {isChatModalOpen && currentUser && (
+          <EducationalChatModal
+            isOpen={isChatModalOpen}
+            onClose={() => setIsChatModalOpen(false)}
+            currentUser={currentUser}
+            allUsers={users}
+          />
+        )}
       </>
     );
   };
@@ -1780,6 +1804,16 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="مركز الرسائل المدرسية والتواصل الفوري"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">مركز الرسائل 💬</span>
+            </button>
+
             <UserNavbarProfileButton
               user={currentUser}
               onClick={() => setIsProfileModalOpen(true)}
@@ -1849,6 +1883,16 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="مركز الرسائل المدرسية والتواصل الفوري"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">مركز الرسائل 💬</span>
+            </button>
+
             <UserNavbarProfileButton
               user={currentUser}
               onClick={() => setIsProfileModalOpen(true)}
@@ -2217,6 +2261,16 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="مركز الرسائل المدرسية والتواصل الفوري"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">مركز الرسائل 💬</span>
+            </button>
+
             <UserNavbarProfileButton
               user={currentUser}
               onClick={() => setIsProfileModalOpen(true)}
@@ -3171,6 +3225,16 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="مركز الرسائل المدرسية والتواصل الفوري"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">مركز الرسائل 💬</span>
+            </button>
+
             <UserNavbarProfileButton
               user={currentUser}
               onClick={() => setIsProfileModalOpen(true)}
@@ -4321,6 +4385,16 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="مركز الرسائل المدرسية والتواصل الفوري"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">مركز الرسائل 💬</span>
+            </button>
+
             <UserNavbarProfileButton
               user={currentUser}
               onClick={() => setIsProfileModalOpen(true)}
