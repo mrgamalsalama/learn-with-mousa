@@ -38,6 +38,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON public.messages(conve
 CREATE INDEX IF NOT EXISTS idx_messages_school_id ON public.messages(school_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages(created_at ASC);
 
+-- ضمان توليد UUID تلقائياً في حال وجود الجداول مسبقاً
+ALTER TABLE IF EXISTS public.conversations ALTER COLUMN id SET DEFAULT gen_random_uuid();
+ALTER TABLE IF EXISTS public.messages ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
 -- 3. تفعيل Realtime على الجدولين في Supabase
 DO $$
 BEGIN

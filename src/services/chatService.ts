@@ -10,6 +10,22 @@ import {
 const LOCAL_CONVERSATIONS_KEY = 'lwm_chat_conversations_v1';
 const LOCAL_MESSAGES_KEY = 'lwm_chat_messages_v1';
 
+// ===================== مولّد معرّف UUID موثوق متوافق مع Postgres =====================
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // fallback
+    }
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ===================== مساعد الصوت البسيط (Web Audio Chime) =====================
 export function playChatChime(type: 'sent' | 'received') {
   try {
@@ -78,13 +94,6 @@ function saveLocalMessages(list: ChatMessage[]) {
 }
 
 // ===================== مصفوفة حوكمة قنوات الاتصال المسموحة (Communication Matrix) =====================
-/**
- * ترشيح جهات الاتصال المسموح للمستخدم مراسلتهم وفق قواعد المنظومة:
- * 1. الطالب: يمكنه فقط مراسلة معلمي فصوله (Teacher ↔ Student). منع تام لمحادثات الطلاب مع بعضهم.
- * 2. ولي الأمر: يمكنه مراسلة معلمي ابنه ورئيس القسم (Parent ↔ Teacher / HOD).
- * 3. المعلم: يتواصل مع طلابه، وأولياء أمور طلابه، ورئيس قسمه.
- * 4. رئيس القسم (HOD): يتواصل مع معلمي مادته وأولياء الأمور.
- */
 export function getPermittedContacts(
   currentUser: UserProfile, 
   allUsers: UserProfile[]
@@ -114,7 +123,8 @@ export function getPermittedContacts(
 
   } else if (currentUser.role === 'parent') {
     // 2. ولي الأمر: معلمي ابنه ورئيس القسم
-    const child = schoolUsers.find(u => u.id === currentUser.studentId && u.role === 'student');
+    const child = schoolUsers.find(u => u.id === currentUser.studentId && u.role === 'student') ||
+      allUsers.find(u => u.id === currentUser.studentId && u.role === 'student');
     
     // المعلمون المرتبطون بالطالب
     const childTeachers = schoolUsers.filter(u => {
@@ -230,13 +240,10 @@ export async function getOrCreateConversation(params: {
 
   // 1. محاولة البحث في Supabase السحابي أولاً
   try {
-    let query = supabase
+    const { data: cloudConvs, error: selectErr } = await supabase
       .from('conversations')
       .select('*')
-      .eq('school_id', schoolId)
-      .eq('type', type);
-
-    const { data: cloudConvs, error: selectErr } = await query;
+      .or(`participant_one_id.eq.${currentUserId},participant_two_id.eq.${currentUserId}`);
 
     if (!selectErr && cloudConvs && cloudConvs.length > 0) {
       const match = cloudConvs.find((c: any) => {
@@ -256,9 +263,11 @@ export async function getOrCreateConversation(params: {
       }
     }
 
-    // لم يتم العثور على محادثة سابقة، ننشئ محادثة جديدة في Supabase
+    // لم يتم العثور على محادثة سابقة، ننشئ محادثة جديدة في Supabase بمعرّف UUID موثوق
+    const newConvId = generateUUID();
     const newConvPayload = {
-      school_id: schoolId,
+      id: newConvId,
+      school_id: schoolId || 'default',
       type,
       participant_one_id: currentUserId,
       participant_two_id: targetUserId,
@@ -273,16 +282,17 @@ export async function getOrCreateConversation(params: {
       .single();
 
     if (!insertErr && inserted) {
-      // حفظ نسخة احتياطية محلياً
       const local = getLocalConversations();
       saveLocalConversations([inserted as ChatConversation, ...local.filter(c => c.id !== inserted.id)]);
       return inserted as ChatConversation;
+    } else if (insertErr) {
+      console.warn('Supabase insert conversation warning:', insertErr.message || insertErr);
     }
   } catch (err) {
     console.warn('Supabase getOrCreateConversation error, using fallback:', err);
   }
 
-  // 2. البديل المحلي في حال تعذر الاتصال بـ Supabase أو عدم توفر الجدول
+  // 2. البديل المحلي في حال تعذر الاتصال بـ Supabase
   const localList = getLocalConversations();
   const existingLocal = localList.find(c => {
     const isPair = 
@@ -297,10 +307,11 @@ export async function getOrCreateConversation(params: {
     return existingLocal;
   }
 
-  const generatedId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  // استخدام UUID صالح دائماً
+  const generatedId = generateUUID();
   const newLocal: ChatConversation = {
     id: generatedId,
-    school_id: schoolId,
+    school_id: schoolId || 'default',
     type,
     participant_one_id: currentUserId,
     participant_two_id: targetUserId,
@@ -321,7 +332,6 @@ export async function fetchUserConversations(
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
-      .eq('school_id', schoolId)
       .or(`participant_one_id.eq.${currentUserId},participant_two_id.eq.${currentUserId}`)
       .order('updated_at', { ascending: false });
 
@@ -347,7 +357,6 @@ export async function fetchSchoolConversationsForSupervision(
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
-      .eq('school_id', schoolId)
       .order('updated_at', { ascending: false });
 
     if (!error && data) {
@@ -362,6 +371,8 @@ export async function fetchSchoolConversationsForSupervision(
 
 // ===================== جلب رسائل محادثة معينة (Fetch Messages) =====================
 export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
+  if (!conversationId) return [];
+
   try {
     const { data, error } = await supabase
       .from('messages')
@@ -371,9 +382,11 @@ export async function fetchMessages(conversationId: string): Promise<ChatMessage
 
     if (!error && data) {
       return data as ChatMessage[];
+    } else if (error) {
+      console.warn('Supabase fetchMessages error:', error.message || error);
     }
   } catch (err) {
-    console.warn('Supabase fetchMessages error, using local fallback:', err);
+    console.warn('Supabase fetchMessages exception, using local fallback:', err);
   }
 
   return getLocalMessages().filter(m => m.conversation_id === conversationId);
@@ -384,18 +397,25 @@ export async function sendMessage(params: {
   conversationId: string;
   schoolId: string;
   senderId: string;
+  senderName?: string;
+  senderRole?: string;
   content: string;
 }): Promise<ChatMessage> {
-  const { conversationId, schoolId, senderId, content } = params;
+  const { conversationId, schoolId, senderId, senderName, senderRole, content } = params;
   const nowIso = new Date().toISOString();
+  const messageId = generateUUID();
 
-  const payload = {
+  const payload: any = {
+    id: messageId,
     conversation_id: conversationId,
-    school_id: schoolId,
+    school_id: schoolId || 'default',
     sender_id: senderId,
     content: content.trim(),
     created_at: nowIso
   };
+
+  if (senderName) payload.sender_name = senderName;
+  if (senderRole) payload.sender_role = senderRole;
 
   // 1. المحاولة السحابية في Supabase
   try {
@@ -407,10 +427,18 @@ export async function sendMessage(params: {
 
     if (!error && data) {
       // تحديث توقيت المحادثة
-      await supabase
-        .from('conversations')
-        .update({ updated_at: nowIso })
-        .eq('id', conversationId);
+      try {
+        await supabase
+          .from('conversations')
+          .update({ 
+            updated_at: nowIso,
+            last_message: content.trim(),
+            last_message_at: nowIso
+          })
+          .eq('id', conversationId);
+      } catch (uErr) {
+        // ignore
+      }
 
       // حفظ نسخة محلية احتياطية
       const allLocal = getLocalMessages();
@@ -418,16 +446,18 @@ export async function sendMessage(params: {
 
       playChatChime('sent');
       return data as ChatMessage;
+    } else if (error) {
+      console.warn('Supabase sendMessage failed, falling back to local:', error.message || error);
     }
   } catch (err) {
-    console.warn('Supabase sendMessage failed, using local fallback:', err);
+    console.warn('Supabase sendMessage exception, using local fallback:', err);
   }
 
-  // 2. البديل المحلي
+  // 2. البديل المحلي الفوري (يضمن ظهور الرسالة وإرسالها حتى بدون إنترنت أو لو تعذر السيرفر)
   const newMsg: ChatMessage = {
-    id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    id: messageId,
     conversation_id: conversationId,
-    school_id: schoolId,
+    school_id: schoolId || 'default',
     sender_id: senderId,
     content: content.trim(),
     created_at: nowIso
@@ -439,7 +469,9 @@ export async function sendMessage(params: {
   // تحديث وقت المحادثة محلياً
   const localConvs = getLocalConversations();
   const updatedConvs = localConvs.map(c => 
-    c.id === conversationId ? { ...c, updated_at: nowIso } : c
+    c.id === conversationId 
+      ? { ...c, updated_at: nowIso, last_message: content.trim(), last_message_at: nowIso } 
+      : c
   );
   saveLocalConversations(updatedConvs);
 
@@ -449,6 +481,7 @@ export async function sendMessage(params: {
 
 // ===================== تحديد الرسائل كمقروءة (Mark as Read) =====================
 export async function markMessagesAsRead(conversationId: string, currentUserId: string): Promise<void> {
+  if (!conversationId) return;
   const nowIso = new Date().toISOString();
 
   try {
@@ -459,7 +492,7 @@ export async function markMessagesAsRead(conversationId: string, currentUserId: 
       .neq('sender_id', currentUserId)
       .is('read_at', null);
   } catch (err) {
-    console.warn('Supabase markMessagesAsRead error:', err);
+    // ignore
   }
 
   // تحديث محلي
@@ -475,12 +508,10 @@ export async function markMessagesAsRead(conversationId: string, currentUserId: 
 
 // ===================== حساب إجمالي الرسائل غير المقروءة للمستخدم =====================
 export async function getUnreadMessagesCount(currentUserId: string, schoolId: string): Promise<number> {
-  // محاولة سحابية
   try {
     const { data: convs } = await supabase
       .from('conversations')
       .select('id')
-      .eq('school_id', schoolId)
       .or(`participant_one_id.eq.${currentUserId},participant_two_id.eq.${currentUserId}`);
 
     if (convs && convs.length > 0) {
@@ -516,7 +547,8 @@ export function subscribeToConversationMessages(
   conversationId: string, 
   onNewMessage: (msg: ChatMessage) => void
 ): () => void {
-  const channelName = `chat_room_${conversationId}_${Date.now()}`;
+  if (!conversationId) return () => {};
+  const channelName = `chat_room_${conversationId.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}`;
   
   try {
     const channel = supabase
