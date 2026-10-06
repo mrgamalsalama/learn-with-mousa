@@ -23,6 +23,9 @@ interface GradebookManagerProps {
   onOpenFullDiagnostic: (student: UserProfile) => void;
   onOpenClassDiagnostic: () => void;
   onOpenInstantReport: (student: UserProfile) => void;
+  onOpenORF?: (student: UserProfile) => void;
+  onOpenKnowledgeTree?: (student: UserProfile) => void;
+  onOpenLanguagePassport?: (student: UserProfile) => void;
   isAIPermitted: boolean;
   aiBlockedReason?: string;
   onRefreshData?: () => void;
@@ -37,6 +40,9 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
   onOpenFullDiagnostic,
   onOpenClassDiagnostic,
   onOpenInstantReport,
+  onOpenORF,
+  onOpenKnowledgeTree,
+  onOpenLanguagePassport,
   isAIPermitted,
   aiBlockedReason,
   onRefreshData,
@@ -290,6 +296,55 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
               <span>تقرير التحصيل والفجوات الفوري 📊</span>
             </button>
 
+            {/* الأركان الأكاديمية الثلاثة: الطلاقة القرائية، شجرة الكفايات، وجواز السفر الدولي */}
+            {onOpenORF && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target = filteredEntries.length > 0 ? filteredEntries[0].student : studentUsers[0];
+                  if (target) onOpenORF(target);
+                }}
+                disabled={studentUsers.length === 0}
+                className="px-3 py-2.5 bg-gradient-to-r from-teal-700 to-emerald-800 hover:from-teal-800 hover:to-emerald-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-40 cursor-pointer"
+                title="مختبر الطلاقة القرائية المعياري (WCPM)"
+              >
+                <span>🎙️</span>
+                <span>الطلاقة القرائية (ORF)</span>
+              </button>
+            )}
+
+            {onOpenKnowledgeTree && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target = filteredEntries.length > 0 ? filteredEntries[0].student : studentUsers[0];
+                  if (target) onOpenKnowledgeTree(target);
+                }}
+                disabled={studentUsers.length === 0}
+                className="px-3 py-2.5 bg-gradient-to-r from-indigo-700 to-blue-800 hover:from-indigo-800 hover:to-blue-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-40 cursor-pointer"
+                title="شجرة الكفايات التكيفية والتكرار المتباعد"
+              >
+                <span>🌳</span>
+                <span>شجرة الكفايات</span>
+              </button>
+            )}
+
+            {onOpenLanguagePassport && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target = filteredEntries.length > 0 ? filteredEntries[0].student : studentUsers[0];
+                  if (target) onOpenLanguagePassport(target);
+                }}
+                disabled={studentUsers.length === 0}
+                className="px-3 py-2.5 bg-gradient-to-r from-blue-700 to-slate-800 hover:from-blue-800 hover:to-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-40 cursor-pointer"
+                title="جواز السفر اللغوي الدولي (CEFR)"
+              >
+                <span>🛂</span>
+                <span>جواز السفر (CEFR)</span>
+              </button>
+            )}
+
             {/* أزرار الذكاء الاصطناعي */}
             <button
               type="button"
@@ -524,15 +579,50 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
                         {e.lastActivityDate}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => onOpenInstantReport(e.student)}
-                          className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 shadow-xs cursor-pointer mx-auto"
-                          title="استخراج تقرير أداء فوري ومسار التقدم الفعلي وتشخيص الفجوات دون AI"
-                        >
-                          <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
-                          <span>تقرير فوري 📊</span>
-                        </button>
+                        <div className="flex flex-col items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpenInstantReport(e.student)}
+                            className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 shadow-xs cursor-pointer w-full"
+                            title="استخراج تقرير أداء فوري ومسار التقدم الفعلي وتشخيص الفجوات دون AI"
+                          >
+                            <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
+                            <span>تقرير فوري 📊</span>
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            {onOpenORF && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenORF(e.student)}
+                                className="p-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[10px] font-bold cursor-pointer transition"
+                                title="اختبار الطلاقة القرائية (ORF)"
+                              >
+                                🎙️
+                              </button>
+                            )}
+                            {onOpenKnowledgeTree && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenKnowledgeTree(e.student)}
+                                className="p-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold cursor-pointer transition"
+                                title="شجرة الكفايات والتكرار المتباعد"
+                              >
+                                🌳
+                              </button>
+                            )}
+                            {onOpenLanguagePassport && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenLanguagePassport(e.student)}
+                                className="p-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold cursor-pointer transition"
+                                title="جواز السفر اللغوي (CEFR)"
+                              >
+                                🛂
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">

@@ -16,6 +16,7 @@ import {
   PerformancePoint
 } from '../utils/studentPerformanceAnalytics';
 import { getGradeLabel } from '../utils/gradebookExport';
+import { getORFSessions, getLanguagePassport } from '../storage';
 
 interface InstantStudentReportModalProps {
   isOpen: boolean;
@@ -48,6 +49,15 @@ export const InstantStudentReportModal: React.FC<InstantStudentReportModalProps>
   const report: StudentDetailedFactualReport = useMemo(() => {
     return generateStudentFactualReport(student, allSubmissions, allExamSessions, schoolName);
   }, [student, allSubmissions, allExamSessions, schoolName]);
+
+  const latestORF = useMemo(() => {
+    const sessions = getORFSessions(student.id);
+    return sessions.length > 0 ? sessions[0] : null;
+  }, [student.id]);
+
+  const passport = useMemo(() => {
+    return getLanguagePassport(student.id);
+  }, [student.id]);
 
   if (!isOpen) return null;
 
@@ -318,6 +328,38 @@ export const InstantStudentReportModal: React.FC<InstantStudentReportModalProps>
                   </div>
                 </div>
               </div>
+
+              {/* بطاقة القياس المعياري الدولي (ORF & CEFR Framework) إن وجدت بيانات */}
+              {(latestORF || passport) && (
+                <div className="bg-gradient-to-r from-slate-900 to-indigo-950 p-4.5 rounded-3xl text-white border border-indigo-400/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-lg">
+                      🏛️
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-indigo-300 block">المعايير والاعتمادات الدولية المسجلة للطالب:</span>
+                      <h4 className="font-black text-xs text-white">
+                        {latestORF ? `الطلاقة القرائية (ORF): ${latestORF.wcpm} WCPM (دقة ${latestORF.accuracyRate}%)` : ''}
+                        {latestORF && passport ? ' • ' : ''}
+                        {passport ? `مستوى CEFR المعتمد: ${passport.currentCefrLevel} (${passport.certifiedHours} ساعة)` : ''}
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {latestORF && (
+                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                        شهادة ORF معتمدة 📜
+                      </span>
+                    )}
+                    {passport && (
+                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                        جواز لغوي دولي 🛂
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* بطاقات المؤشرات الرقمية الفورية (KPIs) */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">

@@ -1,4 +1,4 @@
-import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession } from './types';
+import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession, ORFAssessmentSession, NodeMasteryState, LanguagePassportEntry, UILanguage } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -3712,4 +3712,115 @@ export const syncLiveClassSessionsFromCloud = async (): Promise<LiveClassSession
   }
   return getLiveClassSessions();
 };
+
+// ===================== 1. الطلاقة القرائية (ORF Sessions) =====================
+const ORF_SESSIONS_KEY = 'mousa_orf_sessions';
+
+export const getORFSessions = (studentId?: string): ORFAssessmentSession[] => {
+  try {
+    const raw = localStorage.getItem(ORF_SESSIONS_KEY);
+    const all: ORFAssessmentSession[] = raw ? JSON.parse(raw) : [];
+    if (studentId) {
+      return all.filter(s => s.studentId === studentId);
+    }
+    return all;
+  } catch {
+    return [];
+  }
+};
+
+export const saveORFSession = (session: ORFAssessmentSession): ORFAssessmentSession[] => {
+  try {
+    const existing = getORFSessions();
+    const updated = [session, ...existing.filter(s => s.id !== session.id)];
+    localStorage.setItem(ORF_SESSIONS_KEY, JSON.stringify(updated));
+    return updated;
+  } catch {
+    return [session];
+  }
+};
+
+// ===================== 2. شجرة التعلّم التكيفي والتكرار المتباعد (Knowledge Mastery States) =====================
+const KNOWLEDGE_MASTERY_PREFIX = 'mousa_knowledge_mastery_';
+
+export const getNodeMasteryStates = (studentId: string): Record<string, NodeMasteryState> => {
+  try {
+    const raw = localStorage.getItem(`${KNOWLEDGE_MASTERY_PREFIX}${studentId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveNodeMasteryState = (studentId: string, state: NodeMasteryState): Record<string, NodeMasteryState> => {
+  try {
+    const all = getNodeMasteryStates(studentId);
+    all[state.nodeId] = state;
+    localStorage.setItem(`${KNOWLEDGE_MASTERY_PREFIX}${studentId}`, JSON.stringify(all));
+    return all;
+  } catch {
+    return { [state.nodeId]: state };
+  }
+};
+
+export const recordNodePractice = (
+  studentId: string,
+  nodeId: string,
+  score: number // 0 to 100
+): NodeMasteryState => {
+  const currentStates = getNodeMasteryStates(studentId);
+  const prev = currentStates[nodeId];
+  const newCrowns = Math.min(5, (prev?.crowns || 0) + (score >= 80 ? 1 : 0));
+  const masteryScore = Math.max(prev?.masteryScore || 0, score);
+
+  const updated: NodeMasteryState = {
+    nodeId,
+    studentId,
+    status: score >= 80 ? 'mastered_gold' : 'practicing',
+    masteryScore,
+    crowns: newCrowns,
+    lastPracticedDate: new Date().toISOString(),
+    retentionStrength: 14 + newCrowns * 7,
+    decayPercentage: 0,
+  };
+
+  saveNodeMasteryState(studentId, updated);
+  return updated;
+};
+
+// ===================== 3. الاعتماد الدولي وجواز السفر اللغوي (CEFR Language Passport) =====================
+const LANGUAGE_PASSPORT_PREFIX = 'mousa_language_passport_';
+const PREFERRED_UI_LANG_KEY = 'mousa_preferred_ui_lang';
+
+export const getLanguagePassport = (studentId: string): LanguagePassportEntry | null => {
+  try {
+    const raw = localStorage.getItem(`${LANGUAGE_PASSPORT_PREFIX}${studentId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveLanguagePassport = (entry: LanguagePassportEntry): void => {
+  try {
+    localStorage.setItem(`${LANGUAGE_PASSPORT_PREFIX}${entry.studentId}`, JSON.stringify(entry));
+  } catch {}
+};
+
+export const getPreferredUILanguage = (): UILanguage => {
+  try {
+    const saved = localStorage.getItem(PREFERRED_UI_LANG_KEY);
+    if (saved && ['ar', 'en', 'fr', 'ur'].includes(saved)) {
+      return saved as UILanguage;
+    }
+  } catch {}
+  return 'ar';
+};
+
+export const setPreferredUILanguage = (lang: UILanguage): void => {
+  try {
+    localStorage.setItem(PREFERRED_UI_LANG_KEY, lang);
+  } catch {}
+};
+
 

@@ -10,7 +10,7 @@ import {
   Loader2, Wand2, Gamepad2, Trophy, Play, Zap, Wifi, WifiOff, Share2,
   ShieldAlert, Sliders, AlertTriangle, FileCheck2,
   ListTodo, KeyRound, Edit3, CalendarClock, Calendar, Pin, RefreshCw, Video,
-  FileSpreadsheet, Building2, ChevronDown, ChevronUp, MessageSquare
+  FileSpreadsheet, Building2, ChevronDown, ChevronUp, MessageSquare, Globe
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -18,7 +18,8 @@ import {
   STAGES_CONFIG, Activity, Question, StudentSubmission, StoryBankItem, BookItem,
   ReadingBookAssignment,
   ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
-  TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession
+  TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession,
+  UILanguage
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -33,7 +34,8 @@ import {
   getExams, getExamSessions, syncExamsFromCloud, syncExamSessionsFromCloud,
   getTeacherTasks, syncTeacherTasksFromCloud,
   getLiveClassSessions, syncLiveClassSessionsFromCloud,
-  getSchools, checkSchoolAccess, getSchoolById, syncSchoolsFromCloud
+  getSchools, checkSchoolAccess, getSchoolById, syncSchoolsFromCloud,
+  getPreferredUILanguage, setPreferredUILanguage
 } from './storage';
 import { 
   canManageTeacherGrades, 
@@ -72,6 +74,9 @@ import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
 import { ParentProgressTab } from './components/ParentProgressTab';
 import { GradebookManager } from './components/GradebookManager';
 import { InstantStudentReportModal } from './components/InstantStudentReportModal';
+import { OralReadingFluencyModal } from './components/OralReadingFluencyModal';
+import { AdaptiveKnowledgeTreeModal } from './components/AdaptiveKnowledgeTreeModal';
+import { LanguagePassportModal } from './components/LanguagePassportModal';
 import { SuspendedSchoolNotice } from './components/SuspendedSchoolNotice';
 import { SuperAdminSchoolsDashboard } from './components/SuperAdminSchoolsDashboard';
 import { SchoolAdminPortal } from './components/SchoolAdminPortal';
@@ -189,6 +194,19 @@ function AppContent() {
   // حالة نافذة تقرير أداء الطالب الفعلي وتشخيص الفجوات المباشر (غير معتمد على AI)
   const [isInstantReportOpen, setIsInstantReportOpen] = useState<boolean>(false);
   const [instantReportStudent, setInstantReportStudent] = useState<UserProfile | null>(null);
+
+  // 1. حالة مختبر الطلاقة القرائية الشفهية (ORF)
+  const [isORFModalOpen, setIsORFModalOpen] = useState<boolean>(false);
+  const [orfTargetStudent, setOrfTargetStudent] = useState<UserProfile | null>(null);
+
+  // 2. حالة شجرة الكفايات التكيفية والتكرار المتباعد (Knowledge Tree & Spaced Repetition)
+  const [isKnowledgeTreeOpen, setIsKnowledgeTreeOpen] = useState<boolean>(false);
+  const [knowledgeTreeTargetStudent, setKnowledgeTreeTargetStudent] = useState<UserProfile | null>(null);
+
+  // 3. حالة جواز السفر اللغوي الدولي وإطار CEFR
+  const [isLanguagePassportOpen, setIsLanguagePassportOpen] = useState<boolean>(false);
+  const [languagePassportTargetStudent, setLanguagePassportTargetStudent] = useState<UserProfile | null>(null);
+  const [currentUILang, setCurrentUILang] = useState<UILanguage>(() => getPreferredUILanguage());
 
   const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
   const [selectedBadgeForShare, setSelectedBadgeForShare] = useState<ChildBadge | null>(null);
@@ -1659,6 +1677,47 @@ function AppContent() {
             actorRole={currentUser?.role === 'hod' ? 'hod' : 'teacher'}
           />
         )}
+
+        {/* 1. نافذة مختبر الطلاقة القرائية الشفهية (ORF) */}
+        {isORFModalOpen && currentUser && (
+          <OralReadingFluencyModal
+            isOpen={isORFModalOpen}
+            onClose={() => {
+              setIsORFModalOpen(false);
+              setOrfTargetStudent(null);
+            }}
+            currentUser={currentUser}
+            targetStudent={orfTargetStudent || undefined}
+          />
+        )}
+
+        {/* 2. نافذة شجرة الكفايات التكيفية والتكرار المتباعد (Knowledge Tree & Spaced Repetition) */}
+        {isKnowledgeTreeOpen && currentUser && (
+          <AdaptiveKnowledgeTreeModal
+            isOpen={isKnowledgeTreeOpen}
+            onClose={() => {
+              setIsKnowledgeTreeOpen(false);
+              setKnowledgeTreeTargetStudent(null);
+            }}
+            currentUser={currentUser}
+            targetStudent={knowledgeTreeTargetStudent || undefined}
+          />
+        )}
+
+        {/* 3. نافذة جواز السفر اللغوي الدولي وإطار CEFR */}
+        {isLanguagePassportOpen && currentUser && (
+          <LanguagePassportModal
+            isOpen={isLanguagePassportOpen}
+            onClose={() => {
+              setIsLanguagePassportOpen(false);
+              setLanguagePassportTargetStudent(null);
+            }}
+            currentUser={currentUser}
+            targetStudent={languagePassportTargetStudent || undefined}
+            currentUILang={currentUILang}
+            onLanguageChange={(l) => setCurrentUILang(l)}
+          />
+        )}
       </>
     );
   };
@@ -2203,6 +2262,18 @@ function AppContent() {
                   setInstantReportStudent(student);
                   setIsInstantReportOpen(true);
                 }}
+                onOpenORF={(st) => {
+                  setOrfTargetStudent(st);
+                  setIsORFModalOpen(true);
+                }}
+                onOpenKnowledgeTree={(st) => {
+                  setKnowledgeTreeTargetStudent(st);
+                  setIsKnowledgeTreeOpen(true);
+                }}
+                onOpenLanguagePassport={(st) => {
+                  setLanguagePassportTargetStudent(st);
+                  setIsLanguagePassportOpen(true);
+                }}
                 isAIPermitted={isHodAIPermitted}
                 aiBlockedReason={hodAIReason}
                 onRefreshData={() => {
@@ -2310,6 +2381,7 @@ function AppContent() {
           )}
         </main>
         {renderSharedReader()}
+        {renderAIModals()}
       </div>
     );
   }
@@ -3070,6 +3142,18 @@ function AppContent() {
                   setInstantReportStudent(student);
                   setIsInstantReportOpen(true);
                 }}
+                onOpenORF={(st) => {
+                  setOrfTargetStudent(st);
+                  setIsORFModalOpen(true);
+                }}
+                onOpenKnowledgeTree={(st) => {
+                  setKnowledgeTreeTargetStudent(st);
+                  setIsKnowledgeTreeOpen(true);
+                }}
+                onOpenLanguagePassport={(st) => {
+                  setLanguagePassportTargetStudent(st);
+                  setIsLanguagePassportOpen(true);
+                }}
                 isAIPermitted={isTeacherAIPermitted}
                 aiBlockedReason={teacherAIReason}
                 onRefreshData={() => {
@@ -3303,6 +3387,19 @@ function AppContent() {
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
+              onClick={() => {
+                setLanguagePassportTargetStudent(currentUser);
+                setIsLanguagePassportOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="جواز السفر اللغوي وتغيير لغة التوجيهات (Arabic, English, Français, Urdu)"
+            >
+              <Globe className="w-3.5 h-3.5 text-blue-600" />
+              <span className="hidden sm:inline">جواز السفر (CEFR) 🛂</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsChatModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition shadow-xs cursor-pointer"
               title="مركز الرسائل المدرسية والتواصل الفوري"
@@ -3426,6 +3523,48 @@ function AppContent() {
               )}
             </button>
 
+            {/* 1. القياس المعياري للطلاقة القرائية (ORF) */}
+            <button
+              type="button"
+              onClick={() => {
+                setOrfTargetStudent(currentUser);
+                setIsORFModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 bg-gradient-to-r from-teal-700 to-emerald-800 hover:from-teal-800 hover:to-emerald-900 text-white shadow-md shadow-teal-700/20 cursor-pointer"
+              title="مختبر الطلاقة القرائية واحتساب WCPM بالصوت ومخارج الحروف"
+            >
+              <span>🎙️</span>
+              <span>مختبر الطلاقة (ORF)</span>
+            </button>
+
+            {/* 2. شجرة الكفايات التكيفية والتكرار المتباعد */}
+            <button
+              type="button"
+              onClick={() => {
+                setKnowledgeTreeTargetStudent(currentUser);
+                setIsKnowledgeTreeOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 bg-gradient-to-r from-indigo-700 to-blue-800 hover:from-indigo-800 hover:to-blue-900 text-white shadow-md shadow-indigo-700/20 cursor-pointer"
+              title="شجرة الكفايات التراكمية، التيجان الذهبية وصقل المهارات"
+            >
+              <span>🌳</span>
+              <span>شجرة الكفايات</span>
+            </button>
+
+            {/* 3. الاعتماد الدولي وجواز السفر اللغوي */}
+            <button
+              type="button"
+              onClick={() => {
+                setLanguagePassportTargetStudent(currentUser);
+                setIsLanguagePassportOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 bg-gradient-to-r from-blue-700 to-slate-800 hover:from-blue-800 hover:to-slate-900 text-white shadow-md shadow-blue-700/20 cursor-pointer"
+              title="جواز السفر اللغوي الدولي المعتمد لمسار غير الناطقين بالعربية"
+            >
+              <span>🛂</span>
+              <span>جواز السفر (CEFR)</span>
+            </button>
+
             {/* زر استعادة رفيق موسى في شريط التبويبات عند الإخفاء */}
             {isMusaDismissed && canUserUseAI(currentUser, aiGovernanceRules).allowed && isAIFeatureAllowed('student').allowed && (
               <button
@@ -3510,6 +3649,110 @@ function AppContent() {
                         <BookOpen className="w-4 h-4 text-amber-200" /> ابْدَأْ قِصَّةً تَفَاعُلِيَّةً
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* قسم المحاور الأكاديمية العالمية للضاد (ORF, Knowledge Graph, CEFR) */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-indigo-500/30">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-indigo-800/60 pb-4">
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/20 rounded-full text-xs font-black text-indigo-300 mb-1 border border-indigo-400/30">
+                      <span>🏛️</span>
+                      <span>المحاور الأكاديمية العالمية للضاد • صُممت بمعايير عالمية</span>
+                    </div>
+                    <h3 className="text-lg font-black text-white">
+                      منظومة الإتقان المعياري والطلاقة القرائية والاعتماد الدولي
+                    </h3>
+                  </div>
+                  <span className="text-xs text-indigo-300 font-medium">
+                    ORF (WCPM) • Spaced Repetition • CEFR & ACTFL
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* المحور 1: الطلاقة القرائية الشفهية */}
+                  <div className="bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-2xl p-4.5 border border-white/15 transition flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-3xl">🎙️</span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">
+                          معيار WCPM
+                        </span>
+                      </div>
+                      <h4 className="font-black text-sm text-white mb-1">
+                        1. مختبر الطلاقة القرائية (ORF)
+                      </h4>
+                      <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                        اقرأ النصوص بصوتك، واحسب معدل الكلمات الصحيحة بالدقيقة (WCPM)، واكتشف مواضع التعثر، واستخرج شهادة الطلاقة الرسمية!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrfTargetStudent(currentUser);
+                        setIsORFModalOpen(true);
+                      }}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/30"
+                    >
+                      <span>ابدأ اختبار الطلاقة 🎙️</span>
+                    </button>
+                  </div>
+
+                  {/* المحور 2: شجرة الكفايات والتكرار المتباعد */}
+                  <div className="bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-2xl p-4.5 border border-white/15 transition flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-3xl">🌳</span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500/30 text-amber-300 border border-amber-400/30">
+                          Spaced Decay
+                        </span>
+                      </div>
+                      <h4 className="font-black text-sm text-white mb-1">
+                        2. شجرة الكفايات والتكرار المتباعد
+                      </h4>
+                      <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                        خارطة تراكمية من الصوت المفرد حتى البلاغة؛ المهارة تصبح ذهبية 🏆 وإذا غبت أسبوعين تطلب صقلاً 🔄 لثبات الذاكرة.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKnowledgeTreeTargetStudent(currentUser);
+                        setIsKnowledgeTreeOpen(true);
+                      }}
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-indigo-600/30"
+                    >
+                      <span>استكشف شجرة المهارات 🌳</span>
+                    </button>
+                  </div>
+
+                  {/* المحور 3: الاعتماد الدولي وجواز السفر اللغوي */}
+                  <div className="bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-2xl p-4.5 border border-white/15 transition flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-3xl">🛂</span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-500/30 text-blue-300 border border-blue-400/30">
+                          CEFR A1-B2
+                        </span>
+                      </div>
+                      <h4 className="font-black text-sm text-white mb-1">
+                        3. جواز السفر اللغوي الدولي (CEFR)
+                      </h4>
+                      <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                        توثيق الساعات التدريبية، مواءمة مسار عرب B مع السلم الأوروبي، وواجهة تعليمات متعددة اللغات مع أصالة الفصحى.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLanguagePassportTargetStudent(currentUser);
+                        setIsLanguagePassportOpen(true);
+                      }}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-blue-600/30"
+                    >
+                      <span>عرض جواز السفر اللغوي 🛂</span>
+                    </button>
                   </div>
                 </div>
               </div>

@@ -769,3 +769,137 @@ export interface ChatContact {
   existingConversationId?: string;
 }
 
+// ===================== 1. القياس المعياري العالمي للطلاقة القرائية (Oral Reading Fluency - ORF) =====================
+export type ORFErrorCategory = 
+  | 'short_vowels'    // الحركات القصيرة (فتحة، ضمة، كسرة)
+  | 'long_vowels'     // المدود (أ، و، ي)
+  | 'hamzat'          // همزات الوصل والقطع
+  | 'waqf_sukun'      // الوقف على السكون
+  | 'shams_qamar'     // اللام الشمسية والقمرية
+  | 'omission'        // حذف كلمة
+  | 'addition'        // زيادة كلمة
+  | 'hesitation';     // تعثر وتردد
+
+export interface ORFWordAnnotation {
+  word: string;
+  index: number;
+  status: 'correct' | 'error' | 'omitted' | 'hesitation';
+  errorCategory?: ORFErrorCategory;
+  studentSpoken?: string;
+}
+
+export type ORFBenchmarkLevel = 'below_basic' | 'basic' | 'proficient' | 'advanced';
+
+export interface ORFAssessmentSession {
+  id: string;
+  studentId: string;
+  studentName: string;
+  grade: GradeLevel;
+  track?: ArabicTrack;
+  passageId: string;
+  passageTitle: string;
+  passageText: string;
+  totalWords: number;
+  durationSeconds: number;
+  wordsRead: number;
+  wordsCorrect: number;
+  wcpm: number; // Words Correct Per Minute
+  accuracyRate: number; // %
+  prosodyScore: number; // 1 to 4 scale
+  assessorRole: 'student_self' | 'teacher_evaluated';
+  assessorName: string;
+  date: string;
+  errorBreakdown: Record<ORFErrorCategory, number>;
+  annotations: ORFWordAnnotation[];
+  gradeBenchmarkLevel: ORFBenchmarkLevel;
+  certificateNumber: string;
+}
+
+export interface ORFPassage {
+  id: string;
+  title: string;
+  targetGrade: GradeLevel[];
+  genre: 'narrative' | 'informative' | 'heritage' | 'scientific';
+  wordCount: number;
+  text: string;
+  difficultyLexile?: string;
+}
+
+// ===================== 2. شجرة التعلّم التكيفي والتكرار المتباعد (Knowledge Graph & Spaced Repetition) =====================
+export type KnowledgeDomainId = 
+  | 'phonological_awareness' // الوعي الصوتي والفونيمي
+  | 'phonics_decoding'        // فك الترميز والمدود والتشكيل
+  | 'morphology_grammar'      // الصرف وبنية الكلمة والنحو
+  | 'reading_comprehension'   // الفهم القرائي والاستيعاب
+  | 'rhetoric_expression';    // التعبير والبلاغة اللغوية
+
+export interface KnowledgeNodeQuestion {
+  id: string;
+  prompt: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+}
+
+export interface KnowledgeNode {
+  id: string;
+  domain: KnowledgeDomainId;
+  level: number; // 1 to 5
+  tierIndex: number;
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  icon: string;
+  prerequisites: string[];
+  targetGrades: GradeLevel[];
+  cefrLevel: 'A1' | 'A2' | 'B1' | 'B2';
+  questions: KnowledgeNodeQuestion[];
+}
+
+export type NodeMasteryStatus = 'locked' | 'unlocked' | 'practicing' | 'mastered_gold' | 'needs_polish';
+
+export interface NodeMasteryState {
+  nodeId: string;
+  studentId: string;
+  status: NodeMasteryStatus;
+  masteryScore: number; // 0 - 100
+  crowns: number; // 0 - 5
+  lastPracticedDate: string;
+  retentionStrength: number; // days
+  decayPercentage: number;
+}
+
+// ===================== 3. الاعتماد الدولي لتعليم العربية للناطقين بغيرها (CEFR & Language Passport) =====================
+export type UILanguage = 'ar' | 'en' | 'fr' | 'ur';
+
+export type CEFRLevel = 'A1.1' | 'A1.2' | 'A2.1' | 'A2.2' | 'B1.1' | 'B1.2' | 'B2';
+
+export type CEFRCompetencyDomain = 
+  | 'listening'
+  | 'reading'
+  | 'spoken_interaction'
+  | 'spoken_production'
+  | 'writing';
+
+export interface LanguagePassportEntry {
+  id: string;
+  studentId: string;
+  studentName: string;
+  passportNumber: string;
+  nativeLanguage: string;
+  targetLanguage: string;
+  currentCefrLevel: CEFRLevel;
+  certifiedHours: number;
+  issuedAt: string;
+  validUntil: string;
+  competencies: Record<CEFRCompetencyDomain, {
+    level: CEFRLevel;
+    titleAr: string;
+    description: string;
+    score: number;
+  }>;
+  verifiedBy: string;
+  institution: string;
+}
+
+

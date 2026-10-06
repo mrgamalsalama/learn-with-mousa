@@ -14,10 +14,12 @@ body {
     visibility: hidden;
   }
   #printable-worksheet, #printable-worksheet *,
-  #printable-academic-report, #printable-academic-report * {
+  #printable-academic-report, #printable-academic-report *,
+  #orf-printable-certificate, #orf-printable-certificate *,
+  #language-passport-printable, #language-passport-printable * {
     visibility: visible;
   }
-  #printable-worksheet, #printable-academic-report {
+  #printable-worksheet, #printable-academic-report, #orf-printable-certificate, #language-passport-printable {
     position: absolute;
     left: 0;
     top: 0;
