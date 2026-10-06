@@ -783,7 +783,7 @@ export type ORFErrorCategory =
 export interface ORFWordAnnotation {
   word: string;
   index: number;
-  status: 'correct' | 'error' | 'omitted' | 'hesitation';
+  status: 'pending' | 'correct' | 'error' | 'omitted' | 'hesitation';
   errorCategory?: ORFErrorCategory;
   studentSpoken?: string;
   explanation?: string;

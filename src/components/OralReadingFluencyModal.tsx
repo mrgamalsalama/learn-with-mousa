@@ -3,7 +3,7 @@ import {
   X, Mic, MicOff, Square, Play, RefreshCw, Printer, Award, 
   CheckCircle2, AlertTriangle, TrendingUp, Volume2, Sparkles, 
   Clock, BookOpen, Layers, Check, BarChart3, HelpCircle, Star,
-  Loader2, Info, Edit3, ArrowRight, Wand2, Sliders, ChevronDown
+  Loader2, Info, Edit3, ArrowRight, Wand2, Sliders, ChevronDown, RotateCcw
 } from 'lucide-react';
 import { 
   UserProfile, GradeLevel, ArabicTrack, ORFAssessmentSession, 
@@ -59,7 +59,7 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
   const [liveSpokenTranscript, setLiveSpokenTranscript] = useState<string>('');
   const [aiDiagnosticNote, setAiDiagnosticNote] = useState<string | null>(null);
 
-  // تفكيك كلمات النص وتعيين الحالات
+  // تفكيك كلمات النص وتعيين الحالات (الحالة المبدئية pending نظيفة بدون علامات صح مسبقة)
   const [wordAnnotations, setWordAnnotations] = useState<ORFWordAnnotation[]>([]);
   const [prosodyScore, setProsodyScore] = useState<number>(4); // مقياس النبر والتعبير 1-4
   const [isCertificateViewOpen, setIsCertificateViewOpen] = useState(false);
@@ -86,7 +86,7 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
       .filter(w => w.length > 0);
   };
 
-  // تهيئة الكلمات عند تغيير النص
+  // تهيئة الكلمات عند تغيير النص كحالة محايدة غير مختبرة بعد (pending)
   useEffect(() => {
     if (!selectedPassage) return;
     const words = getPassageWords(selectedPassage.text);
@@ -94,7 +94,7 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
     const initialAnnotations: ORFWordAnnotation[] = words.map((w, idx) => ({
       word: w,
       index: idx,
-      status: 'correct',
+      status: 'pending', // تبدأ محايدة ونظيفة تماماً بدون أي علامات صح سابقة
     }));
 
     setWordAnnotations(initialAnnotations);
@@ -143,6 +143,40 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
 
   if (!isOpen) return null;
 
+  // إعادة القراءة والمحاولة من جديد (تصفير كامل وإعادة الطفل لوضع البداية)
+  const handleResetAndRetry = () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch {}
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+    }
+    isRecordingRef.current = false;
+    setIsRecording(false);
+    setIsAnalyzing(false);
+    setHasCompleted(false);
+    setElapsedSeconds(0);
+    setAudioUrl(null);
+    setLiveSpokenTranscript('');
+    setAiDiagnosticNote(null);
+    setCompletedSession(null);
+    setIsCertificateViewOpen(false);
+    setActiveInspectorIndex(null);
+    spokenTranscriptRef.current = '';
+    recordedBlobRef.current = null;
+    audioChunksRef.current = [];
+
+    const words = getPassageWords(selectedPassage.text);
+    const resetAnnotations: ORFWordAnnotation[] = words.map((w, idx) => ({
+      word: w,
+      index: idx,
+      status: 'pending', // عودة الكلمات للوضع المحايد
+    }));
+    setWordAnnotations(resetAnnotations);
+  };
+
   // دالة مساعدة لتحويل Blob إلى Base64
   const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve) => {
@@ -168,6 +202,14 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
     audioChunksRef.current = [];
     isRecordingRef.current = true;
     setActiveInspectorIndex(null);
+
+    // إعادة ضبط الكلمات إلى وضع الانتظار المحايد قبل التقييم
+    const words = getPassageWords(selectedPassage.text);
+    setWordAnnotations(words.map((w, idx) => ({
+      word: w,
+      index: idx,
+      status: 'pending',
+    })));
 
     // 1. تشغيل الميكروفون الحقيقي عبر MediaRecorder بتدفق زمني مستمر (250ms chunks)
     try {
@@ -357,7 +399,7 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
   const recomputeFromAnnotations = (currentAnnotations: ORFWordAnnotation[], targetDuration?: number) => {
     const totalWords = currentAnnotations.length;
     const wordsCorrect = currentAnnotations.filter(w => w.status === 'correct').length;
-    const wordsRead = currentAnnotations.filter(w => w.status !== 'omitted').length;
+    const wordsRead = currentAnnotations.filter(w => w.status !== 'omitted' && w.status !== 'pending').length;
     const durationSec = Math.max(targetDuration || completedSession?.durationSeconds || elapsedSeconds, 1);
 
     const rawWcpm = Math.round((wordsCorrect / durationSec) * 60);
@@ -418,7 +460,7 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
   // تعيين حالة محددة لكلمة بنقرة واحدة من لوحة الفحص السريع
   const setWordStatusDirectly = (
     index: number, 
-    status: 'correct' | 'error' | 'omitted' | 'hesitation',
+    status: 'correct' | 'error' | 'omitted' | 'hesitation' | 'pending',
     errorCategory?: ORFErrorCategory,
     spoken?: string,
     explanation?: string
@@ -439,7 +481,6 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
 
   // دورة التبديل السريع عند النقر المباشر على الكلمة
   const handleToggleWordStatus = (index: number) => {
-    // فتح لوحة الفحص السريع لهذه الكلمة
     setActiveInspectorIndex(activeInspectorIndex === index ? null : index);
   };
 
@@ -608,10 +649,10 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
         </div>
 
         {/* جسم النافذة */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 bg-slate-50/70">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/70">
 
-          {/* محدد النص ومؤشرات المعايير + أزرار التجربة الفورية */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+          {/* محدد النص ومؤشرات المعايير + أزرار التجربة السريعة */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="text-xl">📖</span>
               <div>
@@ -676,6 +717,113 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
             </div>
           </div>
 
+          {/* ========================================================================= */}
+          {/* شريط التحكم الأساسي والتسجيل (موقع علوي بارز يسهل وصول الطفل والمعلم إليه) */}
+          {/* ========================================================================= */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white p-4 rounded-2xl border border-slate-700 shadow-md flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {!isRecording ? (
+                <button
+                  type="button"
+                  disabled={isAnalyzing}
+                  onClick={handleStartRecording}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-emerald-500/30 cursor-pointer"
+                >
+                  <Mic className="w-4 h-4 text-emerald-100 animate-pulse" />
+                  <span>ابدأ القراءة والتسجيل الحقيقي 🎙️</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStopRecording}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-rose-600/30 cursor-pointer animate-pulse"
+                >
+                  <Square className="w-4 h-4" />
+                  <span>إيقاف واحتساب الطلاقة الحقيقية ⏹️</span>
+                </button>
+              )}
+
+              {/* زر إعادة القراءة والمحاولة من جديد متاح دائماً وواضح للطفل */}
+              <button
+                type="button"
+                onClick={handleResetAndRetry}
+                disabled={isRecording || isAnalyzing}
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/20 cursor-pointer"
+                title="إعادة تعيين النص والوقت للبدء في محاولة قراءة جديدة من الصفر"
+              >
+                <RotateCcw className="w-4 h-4 text-amber-300" />
+                <span>إعادة القراءة والمحاولة من جديد 🔄</span>
+              </button>
+
+              {hasCompleted && audioUrl && (
+                <audio src={audioUrl} controls className="h-8 max-w-[170px]" />
+              )}
+
+              {/* زر إعادة الفحص بالذكاء الاصطناعي عند الطلب */}
+              {hasCompleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const words = getPassageWords(selectedPassage.text);
+                    setIsAnalyzing(true);
+                    evaluateOralReadingWithAI({
+                      passageText: selectedPassage.text,
+                      passageWords: words,
+                      spokenTranscript: liveSpokenTranscript || completedSession?.spokenTranscript || '',
+                      durationSeconds: completedSession?.durationSeconds || elapsedSeconds || 20,
+                      gradeLevel: studentGrade,
+                    }).then(res => {
+                      setWordAnnotations(res.annotations);
+                      setAiDiagnosticNote(res.qualitativeFeedback);
+                      recomputeFromAnnotations(res.annotations);
+                    }).finally(() => {
+                      setIsAnalyzing(false);
+                    });
+                  }}
+                  disabled={isAnalyzing}
+                  className="px-3 py-2 bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>إعادة التحكيم بالذكاء الاصطناعي 🤖</span>
+                </button>
+              )}
+            </div>
+
+            {/* العدادات وشارات الحالة */}
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 text-xs font-bold">
+                <Clock className="w-3.5 h-3.5 text-amber-300" />
+                <span>{hasCompleted && completedSession ? completedSession.durationSeconds : elapsedSeconds} ثانية</span>
+              </div>
+
+              <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 text-center min-w-[75px]">
+                <span className="text-[10px] text-slate-300 block font-bold">معدل WCPM</span>
+                <span className="text-sm font-black text-emerald-400">
+                  {hasCompleted ? currentWcpm : (isRecording ? liveWcpm : '--')} <span className="text-[9px] font-normal text-slate-300">ك/د</span>
+                </span>
+              </div>
+
+              {/* حالة الجلسة */}
+              <div className="hidden sm:block">
+                {!isRecording && !hasCompleted && (
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                    ⚪ في انتظار بدء القراءة
+                  </span>
+                )}
+                {isRecording && (
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse">
+                    🔴 الميكروفون يستمع بنشاط...
+                  </span>
+                )}
+                {hasCompleted && (
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    ✅ تم التحكيم والتقييم
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* منصة القراءة التفاعلية وشاشة النص */}
           <div className="bg-white rounded-3xl p-5 sm:p-6 border-2 border-emerald-100 shadow-sm space-y-4">
             
@@ -687,7 +835,8 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
                   لوحة تفكيك الكلمات المشكولة ومطابقة النطق التلقائي واليدوي:
                 </h3>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-black">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-300">⚪ جاهزة للقراءة</span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300">🟢 صحيح</span>
                 <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-400">🟡 حركة قصيرة</span>
                 <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 border border-blue-400">🔵 مد طويل</span>
@@ -697,14 +846,23 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
               </div>
             </div>
 
-            {/* النص القرائي مفككاً بكلمات تفاعلية وملونة بحسب دقة النطق الفعلي */}
-            <div className="p-5 rounded-2xl bg-amber-50/25 border border-amber-200/60 leading-loose text-base sm:text-lg font-serif tracking-wide select-none">
+            {/* النص القرائي مفككاً بكلمات تفاعلية - تبدأ بحالة محايدة بيضاء ونظيفة بدون علامات صح مسبقة */}
+            <div className="p-5 rounded-2xl bg-amber-50/20 border border-amber-200/60 leading-loose text-base sm:text-lg font-serif tracking-wide select-none">
               {wordAnnotations.map((item, idx) => {
-                let badgeClass = 'bg-emerald-50 text-emerald-950 border-emerald-300 hover:bg-emerald-100';
-                let tagLabel = '✓';
-                let tagColor = 'text-emerald-700 bg-emerald-100';
+                let badgeClass = 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300 hover:bg-slate-50 shadow-2xs';
+                let tagLabel = '';
+                let tagColor = '';
 
-                if (item.status === 'omitted') {
+                if (item.status === 'pending') {
+                  // حالة مبدئية نظيفة ومحايدة تماماً قبل القراءة
+                  badgeClass = 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300 hover:bg-slate-50 font-medium shadow-2xs';
+                  tagLabel = '';
+                  tagColor = '';
+                } else if (item.status === 'correct') {
+                  badgeClass = 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold shadow-xs ring-1 ring-emerald-200';
+                  tagLabel = 'صحيح ✓';
+                  tagColor = 'text-emerald-800 bg-emerald-200';
+                } else if (item.status === 'omitted') {
                   badgeClass = 'bg-slate-100 text-slate-500 border-dashed border-slate-400 line-through opacity-65';
                   tagLabel = 'متروكة ✂️';
                   tagColor = 'text-slate-600 bg-slate-200';
@@ -743,13 +901,19 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
                     key={idx}
                     type="button"
                     onClick={() => handleToggleWordStatus(idx)}
-                    className={`inline-flex flex-col items-center mx-1 my-1 px-3 py-1 rounded-xl border text-sm sm:text-base transition-all cursor-pointer relative ${badgeClass} ${isSelectedForInspect ? 'ring-4 ring-indigo-500 scale-105 z-10' : ''}`}
+                    className={`inline-flex flex-col items-center mx-1 my-1 px-3 py-1.5 rounded-xl border text-sm sm:text-base transition-all cursor-pointer relative ${badgeClass} ${isSelectedForInspect ? 'ring-4 ring-indigo-500 scale-105 z-10' : ''}`}
                     title={item.explanation || (item.studentSpoken ? `نطق الطالب: ${item.studentSpoken}` : 'انقر لتعديل نوع التعثر الصوتي للكلمة')}
                   >
-                    <span>{item.word}</span>
-                    <span className={`text-[9px] font-sans font-black px-1.5 py-0.2 rounded-full mt-0.5 ${tagColor}`}>
-                      {tagLabel}
-                    </span>
+                    <span className="font-bold tracking-wide">{item.word}</span>
+                    {tagLabel ? (
+                      <span className={`text-[9px] font-sans font-black px-1.5 py-0.2 rounded-full mt-0.5 ${tagColor}`}>
+                        {tagLabel}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-sans text-slate-400 opacity-60 mt-0.5">
+                        {idx + 1}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -886,83 +1050,11 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
                 </div>
               </div>
             )}
-
-            {/* شريط التحكم بالتسجيل والمؤقت الحي */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-3">
-                {!isRecording ? (
-                  <button
-                    type="button"
-                    disabled={isAnalyzing}
-                    onClick={handleStartRecording}
-                    className="px-5 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-emerald-600/30 cursor-pointer"
-                  >
-                    <Mic className="w-4 h-4 text-emerald-200 animate-pulse" />
-                    <span>ابدأ القراءة والتسجيل الحقيقي 🎙️</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStopRecording}
-                    className="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-rose-600/30 cursor-pointer animate-pulse"
-                  >
-                    <Square className="w-4 h-4" />
-                    <span>إيقاف واحتساب الطلاقة الحقيقية ⏹️</span>
-                  </button>
-                )}
-
-                {hasCompleted && audioUrl && (
-                  <audio src={audioUrl} controls className="h-9 max-w-[200px]" />
-                )}
-
-                {/* زر إعادة الفحص بالذكاء الاصطناعي عند الطلب */}
-                {hasCompleted && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const words = getPassageWords(selectedPassage.text);
-                      setIsAnalyzing(true);
-                      evaluateOralReadingWithAI({
-                        passageText: selectedPassage.text,
-                        passageWords: words,
-                        spokenTranscript: liveSpokenTranscript || completedSession?.spokenTranscript || '',
-                        durationSeconds: completedSession?.durationSeconds || elapsedSeconds || 20,
-                        gradeLevel: studentGrade,
-                      }).then(res => {
-                        setWordAnnotations(res.annotations);
-                        setAiDiagnosticNote(res.qualitativeFeedback);
-                        recomputeFromAnnotations(res.annotations);
-                      }).finally(() => {
-                        setIsAnalyzing(false);
-                      });
-                    }}
-                    disabled={isAnalyzing}
-                    className="px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Wand2 className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>إعادة التحكيم بالذكاء الاصطناعي 🤖</span>
-                  </button>
-                )}
-              </div>
-
-              {/* المؤقت وعداد السرعة */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{completedSession?.durationSeconds || elapsedSeconds} ثانية</span>
-                </div>
-
-                <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 text-center">
-                  <span className="text-[10px] text-slate-400 font-bold block">معدل WCPM الفعلي</span>
-                  <span className="text-base font-black text-emerald-600">
-                    {currentWcpm} <span className="text-[10px] font-normal text-slate-400">ك/د</span>
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
 
+          {/* ========================================================================= */}
           {/* لوحة النتائج والتحليل الصوتي المعياري عند اكتمال الجلسة */}
+          {/* ========================================================================= */}
           {hasCompleted && (
             <div className="space-y-4 animate-fade-in">
               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
@@ -977,14 +1069,26 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsCertificateViewOpen(true)}
-                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer self-start sm:self-auto"
-                  >
-                    <Award className="w-4 h-4" />
-                    <span>عرض وطباعة الشهادة الرسمية 📜</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                    {/* زر إعادة المحاولة البارز في لوحة النتائج */}
+                    <button
+                      type="button"
+                      onClick={handleResetAndRetry}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>إعادة القراءة والمحاولة من جديد 🔄</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCertificateViewOpen(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer"
+                    >
+                      <Award className="w-4 h-4" />
+                      <span>عرض وطباعة الشهادة الرسمية 📜</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* كروت المؤشرات الأربعة */}
