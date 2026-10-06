@@ -786,6 +786,7 @@ export interface ORFWordAnnotation {
   status: 'correct' | 'error' | 'omitted' | 'hesitation';
   errorCategory?: ORFErrorCategory;
   studentSpoken?: string;
+  explanation?: string;
 }
 
 export type ORFBenchmarkLevel = 'below_basic' | 'basic' | 'proficient' | 'advanced';
@@ -813,6 +814,8 @@ export interface ORFAssessmentSession {
   annotations: ORFWordAnnotation[];
   gradeBenchmarkLevel: ORFBenchmarkLevel;
   certificateNumber: string;
+  spokenTranscript?: string;
+  aiDiagnosticNote?: string;
 }
 
 export interface ORFPassage {
