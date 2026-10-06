@@ -13,16 +13,17 @@ body {
   body * {
     visibility: hidden;
   }
-  #printable-worksheet, #printable-worksheet * {
+  #printable-worksheet, #printable-worksheet *,
+  #printable-academic-report, #printable-academic-report * {
     visibility: visible;
   }
-  #printable-worksheet {
+  #printable-worksheet, #printable-academic-report {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
     margin: 0;
-    padding: 20px;
+    padding: 24px;
     background: white !important;
     color: black !important;
     box-shadow: none !important;

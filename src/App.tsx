@@ -71,6 +71,7 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
 import { ParentProgressTab } from './components/ParentProgressTab';
 import { GradebookManager } from './components/GradebookManager';
+import { InstantStudentReportModal } from './components/InstantStudentReportModal';
 import { SuspendedSchoolNotice } from './components/SuspendedSchoolNotice';
 import { SuperAdminSchoolsDashboard } from './components/SuperAdminSchoolsDashboard';
 import { SchoolAdminPortal } from './components/SchoolAdminPortal';
@@ -184,6 +185,11 @@ function AppContent() {
   const [studentBadges, setStudentBadges] = useState<ChildBadge[]>([]);
   const [isQuickDiagnosticOpen, setIsQuickDiagnosticOpen] = useState<boolean>(false);
   const [quickDiagnosticStudent, setQuickDiagnosticStudent] = useState<{ id: string; name: string } | null>(null);
+  
+  // حالة نافذة تقرير أداء الطالب الفعلي وتشخيص الفجوات المباشر (غير معتمد على AI)
+  const [isInstantReportOpen, setIsInstantReportOpen] = useState<boolean>(false);
+  const [instantReportStudent, setInstantReportStudent] = useState<UserProfile | null>(null);
+
   const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
   const [selectedBadgeForShare, setSelectedBadgeForShare] = useState<ChildBadge | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -1635,6 +1641,24 @@ function AppContent() {
             allUsers={users}
           />
         )}
+
+        {/* نافذة تقرير الأداء الفعلي الفوري وتشخيص الفجوات التعليمية (غير معتمد على الذكاء الاصطناعي) */}
+        {isInstantReportOpen && instantReportStudent && (
+          <InstantStudentReportModal
+            isOpen={isInstantReportOpen}
+            onClose={() => {
+              setIsInstantReportOpen(false);
+              setInstantReportStudent(null);
+            }}
+            student={instantReportStudent}
+            allSubmissions={submissions}
+            allExamSessions={examsList.length > 0 ? (getExamSessions ? getExamSessions() : []) : []}
+            schoolName={currentUser?.school_id ? (schoolsList.find(s => s.id === currentUser.school_id)?.name || 'مدرسة موسى النموذجية') : 'منصة تعلّم مع موسى النموذجية'}
+            allClassStudents={users.filter(u => u.role === 'student' && (!instantReportStudent.grade || u.grade === instantReportStudent.grade))}
+            onSelectAnotherStudent={(st) => setInstantReportStudent(st)}
+            actorRole={currentUser?.role === 'hod' ? 'hod' : 'teacher'}
+          />
+        )}
       </>
     );
   };
@@ -2035,6 +2059,50 @@ function AppContent() {
                 </div>
               </div>
 
+              {/* بطاقة كشف الفجوات الأكاديمية والتقارير الفورية المباشرة لرئيس القسم */}
+              <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-indigo-950 text-white rounded-3xl p-6 shadow-md border border-emerald-700/50 flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] font-black border border-emerald-400/30">
+                      ميزة إشرافية جديدة 🌟 • غير معتمد على AI
+                    </span>
+                    <h3 className="text-base font-black">
+                      استخراج تقارير التحصيل الفورية وتشخيص الفجوات التعليمية
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                    يمكن لرئيس القسم والمعلم استخراج تقرير أداء فوري مبني حصراً على الدرجات الفعلية للأنشطة والاختبارات، ورسم بياني لمسار التقدم، مع تحديد الفجوات المهارية بدقة، وخطط التدخل العلاجي والتمكين وطباعتها بصفة رسمية.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstStudent = users.find(u => u.role === 'student' && (!u.grade || hodGrades.length === 0 || hodGrades.includes(u.grade)));
+                      if (firstStudent) {
+                        setInstantReportStudent(firstStudent);
+                        setIsInstantReportOpen(true);
+                      } else {
+                        setHodTab('grades');
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span>استخراج تقرير فوري لطالب 📊</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHodTab('grades')}
+                    className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition border border-white/20 cursor-pointer"
+                  >
+                    <span>عرض سجل درجات القسم 📋</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs">
                 <h2 className="font-bold text-base mb-2 text-slate-800 flex items-center gap-2">
                   <Clock className="w-5 h-5 text-emerald-600" /> تقرير نشاط وزيارات المعلمين
@@ -2130,6 +2198,10 @@ function AppContent() {
                 }}
                 onOpenClassDiagnostic={() => {
                   setIsClassDiagnosticOpen(true);
+                }}
+                onOpenInstantReport={(student) => {
+                  setInstantReportStudent(student);
+                  setIsInstantReportOpen(true);
                 }}
                 isAIPermitted={isHodAIPermitted}
                 aiBlockedReason={hodAIReason}
@@ -2993,6 +3065,10 @@ function AppContent() {
                 }}
                 onOpenClassDiagnostic={() => {
                   setIsClassDiagnosticOpen(true);
+                }}
+                onOpenInstantReport={(student) => {
+                  setInstantReportStudent(student);
+                  setIsInstantReportOpen(true);
                 }}
                 isAIPermitted={isTeacherAIPermitted}
                 aiBlockedReason={teacherAIReason}

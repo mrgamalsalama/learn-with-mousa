@@ -22,6 +22,7 @@ interface GradebookManagerProps {
   onOpenQuickDiagnostic: (student: { id: string; name: string }) => void;
   onOpenFullDiagnostic: (student: UserProfile) => void;
   onOpenClassDiagnostic: () => void;
+  onOpenInstantReport: (student: UserProfile) => void;
   isAIPermitted: boolean;
   aiBlockedReason?: string;
   onRefreshData?: () => void;
@@ -35,6 +36,7 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
   onOpenQuickDiagnostic,
   onOpenFullDiagnostic,
   onOpenClassDiagnostic,
+  onOpenInstantReport,
   isAIPermitted,
   aiBlockedReason,
   onRefreshData,
@@ -270,6 +272,24 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
               )}
             </div>
 
+            {/* زر استخراج تقرير أداء فوري غير معتمد على AI */}
+            <button
+              type="button"
+              onClick={() => {
+                if (filteredEntries.length > 0) {
+                  onOpenInstantReport(filteredEntries[0].student);
+                } else if (studentUsers.length > 0) {
+                  onOpenInstantReport(studentUsers[0]);
+                }
+              }}
+              disabled={studentUsers.length === 0}
+              className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title="استخراج تقرير أداء فوري وتحليل فجوات مباشر مبني على الدرجات الفعلية دون ذكاء اصطناعي"
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-200" />
+              <span>تقرير التحصيل والفجوات الفوري 📊</span>
+            </button>
+
             {/* أزرار الذكاء الاصطناعي */}
             <button
               type="button"
@@ -447,6 +467,7 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
                     <th className="py-3 px-3 font-bold text-center">النحو والتطبيق</th>
                     <th className="py-3 px-3 font-bold text-center">التحصيل العام</th>
                     <th className="py-3 px-3 font-bold">آخر نشاط</th>
+                    <th className="py-3 px-3 font-bold text-center">التقرير الفعلي المباشر 📊</th>
                     <th className="py-3 px-3 font-bold text-center rounded-l-xl">تشخيص الذكاء الاصطناعي 🧠</th>
                   </tr>
                 </thead>
@@ -501,6 +522,17 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
                       </td>
                       <td className="py-3 px-3 text-slate-400 text-[11px]">
                         {e.lastActivityDate}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => onOpenInstantReport(e.student)}
+                          className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 shadow-xs cursor-pointer mx-auto"
+                          title="استخراج تقرير أداء فوري ومسار التقدم الفعلي وتشخيص الفجوات دون AI"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
+                          <span>تقرير فوري 📊</span>
+                        </button>
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
@@ -599,21 +631,29 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
+                              onClick={() => onOpenInstantReport(targetStudent)}
+                              className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[10px] font-black transition flex items-center gap-1 cursor-pointer shadow-xs"
+                              title="استخراج تقرير أداء فوري ومسار التقدم للطالب دون AI"
+                            >
+                              <BarChart3 className="w-3 h-3 text-emerald-200" /> تقرير فوري 📊
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => onOpenQuickDiagnostic({ id: sub.studentId, name: sub.studentName })}
                               disabled={!isAIPermitted}
-                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                               title="توليد التشخيص الذكي الفوري للطالب"
                             >
-                              <Zap className="w-3 h-3 text-amber-600" /> تشخيص فوري ⚡
+                              <Zap className="w-3 h-3 text-amber-600" /> تشخيص AI
                             </button>
                             <button
                               type="button"
                               onClick={() => onOpenFullDiagnostic(targetStudent)}
                               disabled={!isAIPermitted}
-                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 rounded-lg text-[10px] font-bold border border-indigo-200 transition flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 rounded-lg text-[10px] font-bold border border-indigo-200 transition flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                               title="التقرير التشخيصي المتكامل"
                             >
-                              <Sparkles className="w-3 h-3 text-indigo-600" /> تقرير شامل
+                              <Sparkles className="w-3 h-3 text-indigo-600" /> شامل
                             </button>
                           </div>
                         </td>
