@@ -1,4 +1,5 @@
 import { KnowledgeNode, KnowledgeDomainId, NodeMasteryState, NodeMasteryStatus } from '../types';
+import { getNodeQuestions } from './knowledgeQuestionsBank';
 
 export interface KnowledgeDomainMeta {
   id: KnowledgeDomainId;
@@ -64,7 +65,7 @@ export const KNOWLEDGE_DOMAINS: Record<KnowledgeDomainId, KnowledgeDomainMeta> =
   },
 };
 
-// شجرة الكفايات الشاملة المتسلسلة (18 عقدة معرفية مترابطة)
+// شجرة الكفايات الشاملة المتسلسلة (17 عقدة معرفية مترابطة، كل عقدة بها 50 سؤالاً مراجعاً)
 export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
   // المستوى 1: التأسيس الصوتي الأولي
   {
@@ -79,22 +80,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: [],
     targetGrades: ['kg', 'grade-1'],
     cefrLevel: 'A1',
-    questions: [
-      {
-        id: 'q_snd_1',
-        prompt: 'مَا الصَّوْتُ الأَوَّلُ الَّذِي نَسْمَعُهُ فِي كَلِمَةِ (بَطَّةٌ)؟',
-        options: ['صَوْتُ البَاءِ (بَ)', 'صَوْتُ التَّاءِ (تَ)', 'صَوْتُ النُّونِ (نَ)', 'صَوْتُ اللَّامِ (لَ)'],
-        correctAnswer: 'صَوْتُ البَاءِ (بَ)',
-        explanation: 'كَلِمَةُ (بَطَّة) تَبْدَأُ بِحَرْفِ البَاءِ مَفْتُوحاً (بَ).'
-      },
-      {
-        id: 'q_snd_2',
-        prompt: 'أَيٌّ مِنَ الكَلِمَاتِ التَّالِيَةِ تَبْدَأُ بِحَرْفِ (المِيمِ)؟',
-        options: ['مَسْجِدٌ', 'كِتَابٌ', 'شَجَرَةٌ', 'بَيْتٌ'],
-        correctAnswer: 'مَسْجِدٌ',
-        explanation: 'كَلِمَةُ (مَسْجِد) تَبْدَأُ بِصَوْتِ المِيمِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_single_sounds'),
   },
   {
     id: 'node_short_vowels',
@@ -108,22 +94,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_single_sounds'],
     targetGrades: ['kg', 'grade-1'],
     cefrLevel: 'A1',
-    questions: [
-      {
-        id: 'q_vow_1',
-        prompt: 'مَا الحَرَكَةُ الَّتِي تُرْسَمُ فَوْقَ الحَرْفِ وَتَفْتَحُ الفَمَ عِنْدَ نُطْقِهَا؟',
-        options: ['الفَتْحَةُ ( َ )', 'الكَسْرَةُ ( ِ )', 'الضَّمَّةُ ( ُ )', 'السُّكُونُ ( ْ )'],
-        correctAnswer: 'الفَتْحَةُ ( َ )',
-        explanation: 'الفَتْحَةُ خَطٌّ صَغِيرٌ فَوْقَ الحَرْفِ يُفْتَحُ مَعَهُ الفَمُ.'
-      },
-      {
-        id: 'q_vow_2',
-        prompt: 'فِي كَلِمَةِ (كُـتُـبٌ)، مَا حَرَكَةُ حَرْفَيِ الكَافِ وَالتَّاءِ؟',
-        options: ['الضَّمَّةُ', 'الفَتْحَةُ', 'الكَسْرَةُ', 'السُّكُونُ'],
-        correctAnswer: 'الضَّمَّةُ',
-        explanation: 'الحَرْفَانِ مَضْمُومَانِ: كُـ تُـ.'
-      }
-    ]
+    questions: getNodeQuestions('node_short_vowels'),
   },
   {
     id: 'node_sukun_segments',
@@ -137,15 +108,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_short_vowels'],
     targetGrades: ['grade-1', 'grade-2'],
     cefrLevel: 'A1',
-    questions: [
-      {
-        id: 'q_suk_1',
-        prompt: 'كَيْفَ يُنْطَقُ المَقْطَعُ السَّاكِنُ فِي كَلِمَةِ (مَدْرَسَة)؟',
-        options: ['(مَدْ) دَفْعَةً وَاحِدَةً', '(مَ) ثُمَّ (دَ) مُنْفَصِلَيْنِ', '(دْ) وَحْدَهَا', '(رَسَ) مَعاً'],
-        correctAnswer: '(مَدْ) دَفْعَةً وَاحِدَةً',
-        explanation: 'الحَرْفُ السَّاكِنُ لَا يُنْطَقُ وَحْدَهُ، بَلْ مَعَ الحَرْفِ المُتَحَرِّكِ قَبْلَهُ.'
-      }
-    ]
+    questions: getNodeQuestions('node_sukun_segments'),
   },
 
   // المستوى 2: فك الترميز والظواهر الإملائية
@@ -158,18 +121,10 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     titleEn: 'Long Vowels (Madd)',
     descriptionAr: 'التمييز بين الحركات القصيرة والمدود الطويلة ومطابقتها.',
     icon: '〰️',
-    prerequisites: ['node_short_vowels'],
+    prerequisites: ['node_sukun_segments'],
     targetGrades: ['grade-1', 'grade-2'],
     cefrLevel: 'A1',
-    questions: [
-      {
-        id: 'q_madd_1',
-        prompt: 'أَيٌّ مِنَ الكَلِمَاتِ التَّالِيَةِ تَحْتَوِي عَلَى مَدٍّ بِالوَاوِ؟',
-        options: ['نُورٌ', 'وَلَدٌ', 'وَرْدَةٌ', 'وَقَفَ'],
-        correctAnswer: 'نُورٌ',
-        explanation: 'حَرْفُ الوَاوِ فِي (نُور) مَدٌّ سَاكِنٌ قَبْلَهُ ضَمَّةٌ، أَمَّا الأُخْرَى فَهِيَ حُرُوفٌ مُتَحَرِّكَةٌ.'
-      }
-    ]
+    questions: getNodeQuestions('node_long_vowels'),
   },
   {
     id: 'node_tanween',
@@ -183,15 +138,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_long_vowels'],
     targetGrades: ['grade-1', 'grade-2', 'grade-3'],
     cefrLevel: 'A1',
-    questions: [
-      {
-        id: 'q_tan_1',
-        prompt: 'مَا الكِتَابَةُ الصَّحِيحَةُ لِكَلِمَةِ (شُكْرًا)؟',
-        options: ['شُكْرًا (تَنْوِينُ فَتْحٍ مَعَ أَلِفٍ)', 'شُكْرَنْ (بِالنُّونِ الصَّرِيحَةِ)', 'شُكْرَ (دُونَ تَنْوِينٍ)', 'شُكْرُنْ'],
-        correctAnswer: 'شُكْرًا (تَنْوِينُ فَتْحٍ مَعَ أَلِفٍ)',
-        explanation: 'التَّنْوِينُ نُونٌ تُلْفَظُ وَلَا تُكْتَبُ، وَيُلْحَقُ بِتَنْوِينِ الفَتْحِ أَلِفٌ عِوَضِيَّةٌ.'
-      }
-    ]
+    questions: getNodeQuestions('node_tanween'),
   },
   {
     id: 'node_shaddah',
@@ -202,18 +149,10 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     titleEn: 'Shaddah & Gemination',
     descriptionAr: 'حرفان متماثلان أولهما ساكن وثانيهما متحرك أدغما معاً.',
     icon: '⚡',
-    prerequisites: ['node_sukun_segments'],
+    prerequisites: ['node_tanween'],
     targetGrades: ['grade-2', 'grade-3'],
     cefrLevel: 'A2',
-    questions: [
-      {
-        id: 'q_shd_1',
-        prompt: 'فِي كَلِمَةِ (مُعَلِّمٌ)، مَا الحَرْفُ المُشَدَّدُ؟',
-        options: ['اللَّامُ (لّـ)', 'المِيمُ (مُ)', 'العَيْنُ (عَ)', 'التَّنْوِينُ'],
-        correctAnswer: 'اللَّامُ (لّـ)',
-        explanation: 'اللَّامُ مُضَعَّفَةٌ مَكْسُورَةٌ: مُعَلْـلِم.'
-      }
-    ]
+    questions: getNodeQuestions('node_shaddah'),
   },
   {
     id: 'node_shams_qamar',
@@ -227,15 +166,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_shaddah'],
     targetGrades: ['grade-1', 'grade-2', 'grade-3'],
     cefrLevel: 'A2',
-    questions: [
-      {
-        id: 'q_lam_1',
-        prompt: 'كَلِمَةُ (الشَّمْسُ) تَحْتَوِي عَلَى:',
-        options: ['لَامٍ شَمْسِيَّةٍ تُكْتَبُ وَلَا تُنْطَقُ', 'لَامٍ قَمَرِيَّةٍ تُنْطَقُ بِوُضُوحٍ', 'لَامٍ أَصْلِيَّةٍ', 'لَا تُوجَدُ لَامٌ'],
-        correctAnswer: 'لَامٍ شَمْسِيَّةٍ تُكْتَبُ وَلَا تُنْطَقُ',
-        explanation: 'حَرْفُ الشِّينِ شَمْسِيٌّ؛ تُدْغَمُ فِيهِ اللَّامُ فَيُصْبِحُ مُشَدَّداً.'
-      }
-    ]
+    questions: getNodeQuestions('node_shams_qamar'),
   },
   {
     id: 'node_taa_types',
@@ -249,15 +180,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_shams_qamar'],
     targetGrades: ['grade-2', 'grade-3', 'grade-4'],
     cefrLevel: 'A2',
-    questions: [
-      {
-        id: 'q_taa_1',
-        prompt: 'كَلِمَةُ (مَدْرَسَة) عِنْدَ الوَقْفِ عَلَيْهَا بِالسُّكُونِ تُنْطَقُ:',
-        options: ['هَاءً (مَدْرَسَهْ)', 'تَاءً صَرِيحَةً', 'وَاوًا', 'أَلِفاً'],
-        correctAnswer: 'هَاءً (مَدْرَسَهْ)',
-        explanation: 'التَّاءُ المَرْبُوطَةُ تُنْطَقُ هَاءً عِنْدَ الوَقْفِ وَتَاءً عِنْدَ الوَصْلِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_taa_types'),
   },
 
   // المستوى 3: الصرف وبنية الكلمة والنحو
@@ -273,15 +196,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_taa_types'],
     targetGrades: ['grade-3', 'grade-4'],
     cefrLevel: 'A2',
-    questions: [
-      {
-        id: 'q_pos_1',
-        prompt: 'كَلِمَةُ (يَقْرَأُ) تُصَنَّفُ عَلَى أَنَّهَا:',
-        options: ['فِعْلٌ مُضَارِعٌ', 'اسْمٌ ظَاهِرٌ', 'حَرْفُ جَرٍّ', 'ظَرْفُ زَمَانٍ'],
-        correctAnswer: 'فِعْلٌ مُضَارِعٌ',
-        explanation: 'تَدُلُّ عَلَى حَدَثٍ يَقَعُ فِي الزَّمَنِ الحَاضِرِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_word_parts'),
   },
   {
     id: 'node_sentence_structures',
@@ -295,15 +210,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_word_parts'],
     targetGrades: ['grade-3', 'grade-4', 'grade-5'],
     cefrLevel: 'B1',
-    questions: [
-      {
-        id: 'q_sen_1',
-        prompt: '«العِلْمُ نُورٌ» هَذِهِ الجُمْلَةُ:',
-        options: ['جُمْلَةٌ اسْمِيَّةٌ تَبْدَأُ بِاسْمٍ', 'جُمْلَةٌ فِعْلِيَّةٌ', 'شِبْهُ جُمْلَةٍ', 'جُمْلَةٌ اسْتِفْهَامِيَّةٌ'],
-        correctAnswer: 'جُمْلَةٌ اسْمِيَّةٌ تَبْدَأُ بِاسْمٍ',
-        explanation: 'بَدَأَتْ بِاسْمٍ مَرْفُوعٍ (العِلْمُ) فَهُوَ مُبْتَدَأٌ.'
-      }
-    ]
+    questions: getNodeQuestions('node_sentence_structures'),
   },
   {
     id: 'node_subject_verb_agreement',
@@ -317,15 +224,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_sentence_structures'],
     targetGrades: ['grade-4', 'grade-5', 'grade-6'],
     cefrLevel: 'B1',
-    questions: [
-      {
-        id: 'q_sub_1',
-        prompt: '«كَتَبَ الطَّالِبُ الدَّرْسَ»، مَا إِعْرَابُ كَلِمَةِ (الطَّالِبُ)؟',
-        options: ['فَاعِلٌ مَرْفُوعٌ بِالضَّمَّةِ', 'مَفْعُولٌ بِهِ مَنْصُوبٌ', 'مُبْتَدَأٌ مُؤَخَّرٌ', 'مَجْرُورٌ بِالكَسْرَةِ'],
-        correctAnswer: 'فَاعِلٌ مَرْفُوعٌ بِالضَّمَّةِ',
-        explanation: 'هُوَ الَّذِي قَامَ بِفِعْلِ الكِتَابَةِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_subject_verb_agreement'),
   },
 
   // المستوى 4: الفهم القرائي والاستيعاب
@@ -338,18 +237,10 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     titleEn: 'Literal Comprehension',
     descriptionAr: 'استخراج الشخصيات، الزمان، المكان، والأحداث الصريحة من النص المقروء.',
     icon: '🔍',
-    prerequisites: ['node_sentence_structures'],
+    prerequisites: ['node_subject_verb_agreement'],
     targetGrades: ['grade-2', 'grade-3', 'grade-4'],
     cefrLevel: 'A2',
-    questions: [
-      {
-        id: 'q_lit_1',
-        prompt: 'إِذَا ذَكَرَ النَّصُّ: «وَصَلَ القِطَارُ عِنْدَ الغُرُوبِ»، مَتَى وَصَلَ القِطَارُ؟',
-        options: ['عِنْدَ وَقْتِ الغُرُوبِ', 'فِي مُنْتَصَفِ اللَّيْلِ', 'فِي الصَّبَاحِ البَاكِرِ', 'عِنْدَ الظَّهِيرَةِ'],
-        correctAnswer: 'عِنْدَ وَقْتِ الغُرُوبِ',
-        explanation: 'إِجَابَةٌ مَذْكُورَةٌ صَرَاحَةً فِي النَّصِّ.'
-      }
-    ]
+    questions: getNodeQuestions('node_literal_comprehension'),
   },
   {
     id: 'node_inferential_reading',
@@ -363,15 +254,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_literal_comprehension'],
     targetGrades: ['grade-3', 'grade-4', 'grade-5', 'grade-6'],
     cefrLevel: 'B1',
-    questions: [
-      {
-        id: 'q_inf_1',
-        prompt: '«تَنَفَّسَ الصَّعَدَاءَ وَابْتَسَمَ بَعْدَ إِعْلَانِ النَّتَائِجِ»، هَذَا يَدُلُّ عَلَى أَنَّهُ:',
-        options: ['شَعَرَ بِالارْتِيَاحِ وَالسَّعَادَةِ', 'غَضِبَ غَضَباً شَدِيداً', 'شَعَرَ بِالخَوْفِ وَالحَيْرَةِ', 'أَرَادَ النَّوْمَ'],
-        correctAnswer: 'شَعَرَ بِالارْتِيَاحِ وَالسَّعَادَةِ',
-        explanation: 'تَنَفُّسُ الصَّعَدَاءِ مَعَ الابتسامة دَلِيلٌ عَلَى زَوَالِ القَلَقِ وَحُلُولِ الرَّاحَةِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_inferential_reading'),
   },
   {
     id: 'node_vocab_in_context',
@@ -385,15 +268,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_inferential_reading'],
     targetGrades: ['grade-4', 'grade-5', 'grade-6'],
     cefrLevel: 'B1',
-    questions: [
-      {
-        id: 'q_voc_1',
-        prompt: 'مَا مُرَادِفُ كَلِمَةِ (شَاهِقٌ) فِي قَوْلِنَا: «جَبَلٌ شَاهِقٌ»؟',
-        options: ['مُرْتَفِعٌ وَعَالٍ جِدًّا', 'مُنْخَفِضٌ', 'صَغِيرٌ', 'مُتَسِعٌ'],
-        correctAnswer: 'مُرْتَفِعٌ وَعَالٍ جِدًّا',
-        explanation: 'الشَّاهِقُ هُوَ العَالِي شَدِيدُ الارْتِفَاعِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_vocab_in_context'),
   },
 
   // المستوى 5: التعبير والبلاغة والجماليات
@@ -409,15 +284,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_vocab_in_context'],
     targetGrades: ['grade-4', 'grade-5', 'grade-6'],
     cefrLevel: 'B1',
-    questions: [
-      {
-        id: 'q_coh_1',
-        prompt: 'مَا أَدَاةُ الرَّبْطِ المُنَاسِبَةُ: «اجْتَهَدَ فِي دِرَاسَتِهِ، (.....) حَقَّقَ التَّفَوُّقَ»؟',
-        options: ['لِذَلِكَ', 'لَكِنَّهُ', 'بَيْنَمَا', 'رَغْمَ أَنَّ'],
-        correctAnswer: 'لِذَلِكَ',
-        explanation: 'تُفِيدُ النَّتِيجَةَ المُرَتَّبَةَ عَلَى السَّبَبِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_sentence_combining'),
   },
   {
     id: 'node_figurative_language',
@@ -431,15 +298,7 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_sentence_combining'],
     targetGrades: ['grade-5', 'grade-6', 'grade-7'],
     cefrLevel: 'B2',
-    questions: [
-      {
-        id: 'q_fig_1',
-        prompt: '«المُعَلِّمُ كَالشَّمْسِ فِي نَشْرِ النُّورِ»، مَا المُشَبَّهُ بِهِ فِي هَذِهِ الجُمْلَةِ؟',
-        options: ['الشَّمْسُ', 'المُعَلِّمُ', 'النُّورُ', 'الكَافُ'],
-        correctAnswer: 'الشَّمْسُ',
-        explanation: 'المُعَلِّمُ مُشَبَّهٌ، وَالشَّمْسُ هِيَ المُشَبَّهُ بِهِ.'
-      }
-    ]
+    questions: getNodeQuestions('node_figurative_language'),
   },
   {
     id: 'node_critical_appreciation',
@@ -453,21 +312,11 @@ export const KNOWLEDGE_TREE_NODES: KnowledgeNode[] = [
     prerequisites: ['node_figurative_language'],
     targetGrades: ['grade-6', 'grade-7', 'grade-8'],
     cefrLevel: 'B2',
-    questions: [
-      {
-        id: 'q_crt_1',
-        prompt: 'أَيٌّ مِنَ الأَسَالِيبِ التَّالِيَةِ يُعَدُّ أُسْلُوبَ اسْتِفْهَامٍ بَلِيغاً؟',
-        options: ['«هَلْ جَزَاءُ الإِحْسَانِ إِلَّا الإِحْسَانُ؟»', 'كَتَبْتُ وَاجِبِي مَسَاءً', 'يَا لَهُ مِنْ مَنْظَرٍ بَدِيعٍ!', 'احْرِصْ عَلَى وَقْتِكَ.'],
-        correctAnswer: '«هَلْ جَزَاءُ الإِحْسَانِ إِلَّا الإِحْسَانُ؟»',
-        explanation: 'اسْتِفْهَامٌ تَقْرِيرِيٌّ بَلِيغٌ يُؤَكِّدُ المَعْنَى.'
-      }
-    ]
+    questions: getNodeQuestions('node_critical_appreciation'),
   },
 ];
 
 // ================= خوارزمية التكرار المتباعد والتلاشي المعرفي (Spaced Repetition Decay) =================
-// يتم احتساب مستوى التلاشي استناداً إلى نصف العمر التخزيني للمعلومة (Half-Life Memory Decay):
-// كلما طالت فترة عدم الممارسة، ينخفض مقياس الاحتفاظ حتى يحتاج التاج الذهبي إلى "صقل 🔄"
 export const calculateSpacedRepetitionState = (
   lastPracticedDateStr: string | undefined,
   baseMasteryScore: number = 100,
