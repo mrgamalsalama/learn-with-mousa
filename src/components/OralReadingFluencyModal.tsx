@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, Mic, MicOff, Square, Play, RefreshCw, Printer, Award, 
   CheckCircle2, AlertTriangle, TrendingUp, Volume2, Sparkles, 
@@ -15,7 +15,7 @@ import {
   evaluateORFPerformance, 
   detectArabicPhoneticError 
 } from '../data/orfBenchmarkData';
-import { saveORFSession } from '../storage';
+import { saveORFSession, getStudentORFAssignments } from '../storage';
 import { getGradeLabel } from '../utils/gradebookExport';
 import { evaluateOralReadingWithAI, evaluateOralReadingLocally } from '../geminiService';
 
@@ -47,6 +47,20 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
   const [selectedPassage, setSelectedPassage] = useState<ORFPassage>(
     availablePassages[0] || ORF_STANDARD_PASSAGES[0]
   );
+
+  // التكليفات المسندة للطالب من المعلم
+  const assignedTasks = useMemo(() => {
+    return getStudentORFAssignments(student.id, student.grade);
+  }, [student.id, student.grade]);
+
+  useEffect(() => {
+    if (assignedTasks.length > 0) {
+      const matched = ORF_STANDARD_PASSAGES.find(p => p.id === assignedTasks[0].passageId);
+      if (matched && selectedPassage.id !== matched.id) {
+        setSelectedPassage(matched);
+      }
+    }
+  }, [assignedTasks]);
 
   // حالة التسجيل والتوقيت
   const [isRecording, setIsRecording] = useState(false);
@@ -650,6 +664,28 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
 
         {/* جسم النافذة */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/70">
+
+          {/* تنبيه تكليف المعلم الرسمي إن وُجد */}
+          {assignedTasks.length > 0 && (
+            <div className="p-3 bg-gradient-to-r from-teal-50 to-emerald-50 border-2 border-teal-300 rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📋</span>
+                <div>
+                  <span className="font-black text-teal-950 block">
+                    مهمة تسجيل قراءة مسندة من المعلم: {assignedTasks[0].passageTitle}
+                  </span>
+                  <span className="text-[11px] text-teal-700">
+                    المعلم: <b>{assignedTasks[0].teacherName}</b>
+                    {assignedTasks[0].dueDate && ` • موعد التسليم: ${assignedTasks[0].dueDate}`}
+                    {assignedTasks[0].instructions && ` • التوجيه: ${assignedTasks[0].instructions}`}
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-xl bg-teal-600 text-white text-[10px] font-black shrink-0 shadow-2xs">
+                مطلوب إنجازه 🎯
+              </span>
+            </div>
+          )}
 
           {/* محدد النص ومؤشرات المعايير + أزرار التجربة السريعة */}
           <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">

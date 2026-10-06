@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Award, FileSpreadsheet, Download, Upload, Search, Filter, 
   Sparkles, BarChart3, Zap, ShieldAlert, CheckCircle2, ChevronDown,
-  Layers, Users, BookOpen, Trophy, PenTool, Check, Calendar, RefreshCw
+  Layers, Users, BookOpen, Trophy, PenTool, Check, Calendar, RefreshCw, Sliders
 } from 'lucide-react';
 import { UserProfile, StudentSubmission, GradeLevel, ArabicTrack } from '../types';
 import { 
@@ -26,6 +26,7 @@ interface GradebookManagerProps {
   onOpenORF?: (student: UserProfile) => void;
   onOpenKnowledgeTree?: (student: UserProfile) => void;
   onOpenLanguagePassport?: (student: UserProfile) => void;
+  onOpenTeacherControlHub?: (student: UserProfile, tab?: 'library' | 'games' | 'cefr' | 'orf' | 'remedial') => void;
   isAIPermitted: boolean;
   aiBlockedReason?: string;
   onRefreshData?: () => void;
@@ -43,6 +44,7 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
   onOpenORF,
   onOpenKnowledgeTree,
   onOpenLanguagePassport,
+  onOpenTeacherControlHub,
   isAIPermitted,
   aiBlockedReason,
   onRefreshData,
@@ -589,6 +591,18 @@ export const GradebookManager: React.FC<GradebookManagerProps> = ({
                             <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
                             <span>تقرير فوري 📊</span>
                           </button>
+
+                          {onOpenTeacherControlHub && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenTeacherControlHub(e.student, 'library')}
+                              className="px-2.5 py-1 bg-gradient-to-r from-indigo-700 to-purple-700 hover:from-indigo-800 hover:to-purple-800 text-white rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer w-full"
+                              title="تخصيص وحوكمة هذا الطالب (رف الكتب، الألعاب، جواز السفر، الطلاقة، الخطة العلاجية)"
+                            >
+                              <Sliders className="w-3 h-3 text-amber-300" />
+                              <span>حوكمة وتخصيص 🎛️</span>
+                            </button>
+                          )}
 
                           <div className="flex items-center gap-1">
                             {onOpenORF && (

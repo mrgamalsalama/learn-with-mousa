@@ -1,4 +1,4 @@
-import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession, ORFAssessmentSession, NodeMasteryState, LanguagePassportEntry, UILanguage } from './types';
+import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession, ORFAssessmentSession, NodeMasteryState, LanguagePassportEntry, UILanguage, GameGovernanceRule, ORFAssignmentTask, CEFROverrideRecord, TargetAssignmentType, RemedialPlan } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 import { supabase, upsertUserInSupabase } from './supabaseClient';
@@ -628,6 +628,14 @@ export const getUsers = (): UserProfile[] => {
     localStorage.setItem(USERS_KEY, JSON.stringify(currentList));
   }
   return currentList;
+};
+
+export const saveUsers = (usersList: UserProfile[]): void => {
+  try {
+    localStorage.setItem(USERS_KEY, JSON.stringify(usersList));
+  } catch (e) {
+    console.error('Error saving users array:', e);
+  }
 };
 
 export const saveUser = async (user: UserProfile): Promise<{ user: UserProfile; error?: any }> => {
@@ -1376,6 +1384,210 @@ export const setFullLibraryOpenForGrade = (grade: string, isOpen: boolean, schoo
   }
 };
 
+// حوكمة وصول الطالب الفردي لرف القراءة (استثناء فردي للطالب)
+const OPEN_LIBRARY_STUDENTS_KEY = 'lwm_open_library_students';
+
+export const getLibraryStudentOverrides = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem(OPEN_LIBRARY_STUDENTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const isLibraryOpenForStudent = (studentId: string, grade: string, schoolId?: string): boolean => {
+  const overrides = getLibraryStudentOverrides();
+  if (typeof overrides[studentId] === 'boolean') {
+    return overrides[studentId];
+  }
+  return isFullLibraryOpenForGrade(grade, schoolId);
+};
+
+export const setLibraryAccessForStudent = (studentId: string, isOpen: boolean): void => {
+  try {
+    const map = getLibraryStudentOverrides();
+    map[studentId] = isOpen;
+    localStorage.setItem(OPEN_LIBRARY_STUDENTS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Error saving student library access override:', e);
+  }
+};
+
+export const removeLibraryStudentOverride = (studentId: string): void => {
+  try {
+    const map = getLibraryStudentOverrides();
+    delete map[studentId];
+    localStorage.setItem(OPEN_LIBRARY_STUDENTS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Error removing student library override:', e);
+  }
+};
+
+// ================= قواعد حوكمة ألعاب موسى التكيفية =================
+const GAME_GOVERNANCE_RULES_KEY = 'lwm_game_governance_rules';
+
+export const getGameGovernanceRules = (): GameGovernanceRule[] => {
+  try {
+    const raw = localStorage.getItem(GAME_GOVERNANCE_RULES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveGameGovernanceRule = (rule: GameGovernanceRule): void => {
+  try {
+    const list = getGameGovernanceRules();
+    const idx = list.findIndex(r => r.id === rule.id);
+    if (idx >= 0) {
+      list[idx] = rule;
+    } else {
+      list.unshift(rule);
+    }
+    localStorage.setItem(GAME_GOVERNANCE_RULES_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving game governance rule:', e);
+  }
+};
+
+export const deleteGameGovernanceRule = (id: string): void => {
+  try {
+    const list = getGameGovernanceRules().filter(r => r.id !== id);
+    localStorage.setItem(GAME_GOVERNANCE_RULES_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error deleting game governance rule:', e);
+  }
+};
+
+export const getStudentGameGovernance = (studentId: string, grade: string): { 
+  defaultLevel: number; 
+  lockLevelSwitcher: boolean; 
+  weeklyQuest?: GameGovernanceRule['weeklyQuest'];
+} => {
+  const allRules = getGameGovernanceRules();
+  // أولاً: البحث عن قاعدة فردية خاصة بهذا الطالب
+  const individualRule = allRules.find(r => 
+    r.targetType === 'individual' && (r.targetStudentIds?.includes(studentId))
+  );
+  if (individualRule) {
+    return {
+      defaultLevel: individualRule.defaultLevel || 1,
+      lockLevelSwitcher: !!individualRule.lockLevelSwitcher,
+      weeklyQuest: individualRule.weeklyQuest,
+    };
+  }
+
+  // ثانياً: البحث عن قاعدة مجموعة تتضمن هذا الطالب
+  const groupRule = allRules.find(r => 
+    r.targetType === 'group' && (r.targetStudentIds?.includes(studentId))
+  );
+  if (groupRule) {
+    return {
+      defaultLevel: groupRule.defaultLevel || 1,
+      lockLevelSwitcher: !!groupRule.lockLevelSwitcher,
+      weeklyQuest: groupRule.weeklyQuest,
+    };
+  }
+
+  // ثالثاً: البحث عن قاعدة الفصل العام
+  const classRule = allRules.find(r => 
+    r.targetType === 'class' && r.grade === grade
+  );
+  if (classRule) {
+    return {
+      defaultLevel: classRule.defaultLevel || 1,
+      lockLevelSwitcher: !!classRule.lockLevelSwitcher,
+      weeklyQuest: classRule.weeklyQuest,
+    };
+  }
+
+  // الافتراضي العام
+  return {
+    defaultLevel: 1,
+    lockLevelSwitcher: false,
+  };
+};
+
+// ================= سجلات ترقية واستثناءات CEFR =================
+const CEFR_OVERRIDES_KEY = 'lwm_cefr_overrides';
+
+export const getCEFROverrides = (): CEFROverrideRecord[] => {
+  try {
+    const raw = localStorage.getItem(CEFR_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveCEFROverride = (record: CEFROverrideRecord): void => {
+  try {
+    const list = getCEFROverrides();
+    const idx = list.findIndex(r => r.studentId === record.studentId);
+    if (idx >= 0) {
+      list[idx] = record;
+    } else {
+      list.unshift(record);
+    }
+    localStorage.setItem(CEFR_OVERRIDES_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving CEFR override:', e);
+  }
+};
+
+export const getStudentCEFROverride = (studentId: string): CEFROverrideRecord | undefined => {
+  const list = getCEFROverrides();
+  return list.find(r => r.studentId === studentId);
+};
+
+// ================= تكليفات مختبر الطلاقة القرائية (ORF Tasks) =================
+const ORF_ASSIGNMENTS_KEY = 'lwm_orf_assignments';
+
+export const getORFAssignments = (): ORFAssignmentTask[] => {
+  try {
+    const raw = localStorage.getItem(ORF_ASSIGNMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveORFAssignment = (task: ORFAssignmentTask): void => {
+  try {
+    const list = getORFAssignments();
+    const idx = list.findIndex(t => t.id === task.id);
+    if (idx >= 0) {
+      list[idx] = task;
+    } else {
+      list.unshift(task);
+    }
+    localStorage.setItem(ORF_ASSIGNMENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving ORF assignment:', e);
+  }
+};
+
+export const deleteORFAssignment = (id: string): void => {
+  try {
+    const list = getORFAssignments().filter(t => t.id !== id);
+    localStorage.setItem(ORF_ASSIGNMENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error deleting ORF assignment:', e);
+  }
+};
+
+export const getStudentORFAssignments = (studentId: string, grade?: string): ORFAssignmentTask[] => {
+  const all = getORFAssignments();
+  return all.filter(t => {
+    if (t.targetType === 'individual' || t.targetType === 'group') {
+      return t.targetStudentIds && t.targetStudentIds.includes(studentId);
+    }
+    // class
+    return !grade || t.grade === grade;
+  });
+};
+
 export const getReadingBookAssignments = (): ReadingBookAssignment[] => {
   try {
     const raw = localStorage.getItem(READING_ASSIGNMENTS_KEY);
@@ -1406,6 +1618,88 @@ export const deleteReadingBookAssignment = (id: string): void => {
     localStorage.setItem(READING_ASSIGNMENTS_KEY, JSON.stringify(list));
   } catch (e) {
     console.error('Error deleting reading assignment:', e);
+  }
+};
+
+// ================= خطط الدعم والتمكين الأكاديمي الفردية =================
+const REMEDIAL_PLANS_KEY = 'lwm_remedial_plans';
+
+export const getRemedialPlans = (studentId?: string): RemedialPlan[] => {
+  try {
+    const raw = localStorage.getItem(REMEDIAL_PLANS_KEY);
+    const list: RemedialPlan[] = raw ? JSON.parse(raw) : [];
+    if (studentId) {
+      return list.filter(p => p.student_id === studentId);
+    }
+    return list;
+  } catch {
+    return [];
+  }
+};
+
+export const saveRemedialPlan = (plan: RemedialPlan): void => {
+  try {
+    const list = getRemedialPlans();
+    const idx = list.findIndex(p => p.id === plan.id);
+    if (idx >= 0) {
+      list[idx] = plan;
+    } else {
+      list.unshift(plan);
+    }
+    localStorage.setItem(REMEDIAL_PLANS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving remedial plan:', e);
+  }
+};
+
+export const deleteRemedialPlan = (id: string): void => {
+  try {
+    const list = getRemedialPlans().filter(p => p.id !== id);
+    localStorage.setItem(REMEDIAL_PLANS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error deleting remedial plan:', e);
+  }
+};
+
+// ================= اختبار العبور للمستوى التالي (Gatekeeper Benchmark) =================
+const GATEKEEPER_UNLOCKS_KEY = 'lwm_gatekeeper_unlocks';
+
+export const isGatekeeperUnlockedForStudent = (studentId: string, grade?: string): boolean => {
+  try {
+    const raw = localStorage.getItem(GATEKEEPER_UNLOCKS_KEY);
+    if (!raw) return true; // متاح افتراضياً لتشجيع الطلاب
+    const map = JSON.parse(raw);
+    if (typeof map[studentId] === 'boolean') {
+      return map[studentId];
+    }
+    if (grade && typeof map[`grade_${grade}`] === 'boolean') {
+      return map[`grade_${grade}`];
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
+export const setGatekeeperUnlockedForStudent = (studentId: string, unlocked: boolean): void => {
+  try {
+    const raw = localStorage.getItem(GATEKEEPER_UNLOCKS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[studentId] = unlocked;
+    localStorage.setItem(GATEKEEPER_UNLOCKS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Error setting gatekeeper unlock:', e);
+  }
+};
+
+export const setGatekeeperUnlockedForClass = (grade: string, unlocked: boolean): void => {
+  try {
+    const raw = localStorage.getItem(GATEKEEPER_UNLOCKS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[`grade_${grade}`] = unlocked;
+    localStorage.setItem(GATEKEEPER_UNLOCKS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.error('Error setting class gatekeeper unlock:', e);
   }
 };
 

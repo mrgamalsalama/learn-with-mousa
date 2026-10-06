@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Gamepad2, Trophy, BookOpen, Sparkles, Play, Target, 
-  ChevronRight, Award, Flame, Star, CheckCircle2, Compass
+  ChevronRight, Award, Flame, Star, CheckCircle2, Compass, Lock, Unlock, AlertCircle
 } from 'lucide-react';
 import { Activity, UserProfile, ChildBadge, AIGameType } from '../types';
 import { 
@@ -10,6 +10,7 @@ import {
   getAdaptiveGamesForLevel,
   AdaptiveGameCardInfo 
 } from '../data/adaptiveGamesData';
+import { getStudentGameGovernance } from '../storage';
 
 interface AdaptiveGamesSectionProps {
   currentUser: UserProfile;
@@ -24,13 +25,24 @@ export const AdaptiveGamesSection: React.FC<AdaptiveGamesSectionProps> = ({
   studentGames,
   onPlayGame
 }) => {
+  // قواعد الحوكمة المسندة من المعلم
+  const gameGovernance = useMemo(() => {
+    return getStudentGameGovernance(currentUser.id, currentUser.grade || 'grade-1');
+  }, [currentUser.id, currentUser.grade]);
+
   // حساب المستوى المقترح لصف الطالب
   const recommendedLevel = useMemo(() => {
+    if (gameGovernance.defaultLevel) {
+      return gameGovernance.defaultLevel;
+    }
     return getRecommendedLevelForGrade(currentUser.grade);
-  }, [currentUser.grade]);
+  }, [currentUser.grade, gameGovernance.defaultLevel]);
 
-  // حالة المستوى النشط الحالي (مبدئياً هو المستوى المقترح لصف الطالب)
+  // حالة المستوى النشط الحالي (مبدئياً هو المستوى المقترح أو الافتراضي من المعلم)
   const [activeLevel, setActiveLevel] = useState<number>(() => {
+    if (gameGovernance.lockLevelSwitcher && gameGovernance.defaultLevel) {
+      return gameGovernance.defaultLevel;
+    }
     try {
       const saved = localStorage.getItem(`mousa_active_game_level_${currentUser.id}`);
       if (saved) {
@@ -41,13 +53,20 @@ export const AdaptiveGamesSection: React.FC<AdaptiveGamesSectionProps> = ({
     return recommendedLevel;
   });
 
-  // تحديث المستوى المقترح تلقائياً إذا تغير صف الطالب
+  // تحديث المستوى المقترح تلقائياً إذا تغير توجيه المعلم أو صف الطالب
   useEffect(() => {
-    setActiveLevel(recommendedLevel);
-  }, [recommendedLevel]);
+    if (gameGovernance.lockLevelSwitcher && gameGovernance.defaultLevel) {
+      setActiveLevel(gameGovernance.defaultLevel);
+    } else if (gameGovernance.defaultLevel) {
+      setActiveLevel(gameGovernance.defaultLevel);
+    } else {
+      setActiveLevel(recommendedLevel);
+    }
+  }, [recommendedLevel, gameGovernance.defaultLevel, gameGovernance.lockLevelSwitcher]);
 
-  // حفظ المستوى المختار
+  // حفظ المستوى المختار (إن لم يكن التنقل مقفلاً من المعلم)
   const handleSelectLevel = (lvlNum: number) => {
+    if (gameGovernance.lockLevelSwitcher) return;
     setActiveLevel(lvlNum);
     try {
       localStorage.setItem(`mousa_active_game_level_${currentUser.id}`, lvlNum.toString());
@@ -109,8 +128,80 @@ export const AdaptiveGamesSection: React.FC<AdaptiveGamesSectionProps> = ({
         </div>
       </div>
 
+      {/* التحدي الأسبوعي الإلزامي إن وُجد من المعلم */}
+      {gameGovernance.weeklyQuest && (
+        <div className="p-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white rounded-3xl shadow-lg border-2 border-white/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl font-black shrink-0 shadow-inner">
+              ⭐
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-white text-amber-950 shadow-2xs">
+                  تحدي أسبوعي إلزامي من المعلم 🎯
+                </span>
+                {gameGovernance.weeklyQuest.dueDate && (
+                  <span className="text-[11px] text-amber-100 font-bold">
+                    موعد التسليم: {gameGovernance.weeklyQuest.dueDate}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-black mt-1">
+                {gameGovernance.weeklyQuest.title}
+              </h3>
+              <p className="text-xs text-amber-100 mt-0.5">
+                المهارة المستهدفة: <b>{gameGovernance.weeklyQuest.targetSkill}</b> • نسبة الإتقان المطلوبة: <b>{gameGovernance.weeklyQuest.requiredMastery}%</b> ({gameGovernance.weeklyQuest.questionCount || 15} سؤالاً)
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const questGameType = gameGovernance.weeklyQuest?.gameType || 'vowel_train';
+              const adaptiveGames = getAdaptiveGamesForLevel(activeLevel);
+              const matched = adaptiveGames.find(g => g.gameType === questGameType) || adaptiveGames[0];
+              const questActivity: Activity = {
+                id: `quest_${questGameType}_${Date.now()}`,
+                title: gameGovernance.weeklyQuest?.title || 'التحدي الأسبوعي',
+                activityType: 'game',
+                gameData: matched.sampleData,
+                teacherId: 'teacher_weekly_quest',
+                teacherName: 'المعلم',
+                stage: currentUser.stage,
+                grade: currentUser.grade,
+                track: currentUser.track,
+                questions: [],
+                min_mastery_score: gameGovernance.weeklyQuest?.requiredMastery || 80,
+                due_date: gameGovernance.weeklyQuest?.dueDate,
+                createdAt: new Date().toLocaleDateString('ar-EG')
+              };
+              onPlayGame(questActivity);
+            }}
+            className="px-5 py-2.5 bg-white hover:bg-amber-50 text-amber-950 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-md cursor-pointer shrink-0"
+          >
+            <Play className="w-4 h-4 text-amber-600" />
+            <span>ابدأ التحدي الأسبوعي الآن 🚀</span>
+          </button>
+        </div>
+      )}
+
       {/* شريط اختيار المستويات الستة التفاعلي (Adaptive 6-Level Switcher Bar) */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs">
+        {gameGovernance.lockLevelSwitcher && (
+          <div className="mb-3.5 p-3 bg-amber-50 rounded-2xl border border-amber-300 flex items-center justify-between gap-2 text-xs text-amber-950 font-bold">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <b>حرية تنقل المستويات مقفلة:</b> لقد حدد معلمك المستوى ({gameGovernance.defaultLevel}) كمسار إلزامي لك لتركيز التعلّم.
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black shrink-0">
+              تنقل مقفل 🔒
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5">
           <div className="flex items-center gap-2">
             <Compass className="w-5 h-5 text-amber-600" />
@@ -119,7 +210,9 @@ export const AdaptiveGamesSection: React.FC<AdaptiveGamesSectionProps> = ({
             </h3>
           </div>
           <span className="text-[11px] text-slate-400 font-medium">
-            تتدرج الصعوبة والمفردات تلقائياً بحسب المستوى المختار
+            {gameGovernance.lockLevelSwitcher 
+              ? 'المستوى محدد بتوجيه المعلم 🔒' 
+              : 'تتدرج الصعوبة والمفردات تلقائياً بحسب المستوى المختار'}
           </span>
         </div>
 
@@ -128,25 +221,36 @@ export const AdaptiveGamesSection: React.FC<AdaptiveGamesSectionProps> = ({
           {ADAPTIVE_LEVELS_META.map((lvl) => {
             const isSelected = lvl.levelNumber === activeLevel;
             const isRecommended = lvl.levelNumber === recommendedLevel;
+            const isLocked = gameGovernance.lockLevelSwitcher && !isSelected;
 
             return (
               <button
                 key={lvl.levelNumber}
                 type="button"
-                onClick={() => handleSelectLevel(lvl.levelNumber)}
-                className={`p-3 rounded-2xl border text-right transition flex flex-col justify-between relative cursor-pointer group ${
+                onClick={() => !isLocked && handleSelectLevel(lvl.levelNumber)}
+                disabled={isLocked}
+                className={`p-3 rounded-2xl border text-right transition flex flex-col justify-between relative ${
+                  isLocked ? 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400' : 'cursor-pointer group'
+                } ${
                   isSelected
                     ? 'bg-gradient-to-br from-slate-900 to-slate-800 text-white border-slate-900 shadow-md shadow-slate-900/20 ring-2 ring-amber-400/50'
-                    : 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/90 hover:border-slate-300'
+                    : isLocked ? '' : 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/90 hover:border-slate-300'
                 }`}
               >
                 {/* شارة مستواك المقترح */}
-                {isRecommended && (
+                {isRecommended && !isLocked && (
                   <span className={`absolute -top-2 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-black shadow-xs flex items-center gap-0.5 ${
                     isSelected ? 'bg-amber-400 text-slate-900' : 'bg-amber-500 text-white'
                   }`}>
                     <Target className="w-2.5 h-2.5" />
                     <span>مقترح 🎯</span>
+                  </span>
+                )}
+
+                {isLocked && (
+                  <span className="absolute -top-2 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-300 text-slate-700 shadow-2xs flex items-center gap-0.5">
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>مقفل</span>
                   </span>
                 )}
 

@@ -25,7 +25,7 @@ import {
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
   getActivities, saveActivity, deleteActivity, getSubmissions, saveSubmission,
   getStoryBank, getBooksRepository, updateBookAssignment,
-  isFullLibraryOpenForGrade, setFullLibraryOpenForGrade, getReadingBookAssignments,
+  isFullLibraryOpenForGrade, setFullLibraryOpenForGrade, isLibraryOpenForStudent, getReadingBookAssignments,
   saveReadingBookAssignment, deleteReadingBookAssignment,
   syncUsersFromCloud, syncActivitiesFromCloud, syncSubmissionsFromCloud,
   getStudentBadges, syncStudentBadgesFromCloud, subscribeToCloudChanges,
@@ -72,6 +72,7 @@ import { TeacherBookAssignModal } from './components/TeacherBookAssignModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { UserNavbarProfileButton } from './components/UserNavbarProfileButton';
 import { ParentProgressTab } from './components/ParentProgressTab';
+import { TeacherControlHub } from './components/TeacherControlHub';
 import { GradebookManager } from './components/GradebookManager';
 import { InstantStudentReportModal } from './components/InstantStudentReportModal';
 import { OralReadingFluencyModal } from './components/OralReadingFluencyModal';
@@ -207,6 +208,11 @@ function AppContent() {
   const [isLanguagePassportOpen, setIsLanguagePassportOpen] = useState<boolean>(false);
   const [languagePassportTargetStudent, setLanguagePassportTargetStudent] = useState<UserProfile | null>(null);
   const [currentUILang, setCurrentUILang] = useState<UILanguage>(() => getPreferredUILanguage());
+
+  // 4. لوحة تحكم وحوكمة المعلم الشاملة (Teacher Control Hub)
+  const [isTeacherControlHubOpen, setIsTeacherControlHubOpen] = useState<boolean>(false);
+  const [teacherControlHubTargetStudent, setTeacherControlHubTargetStudent] = useState<UserProfile | null>(null);
+  const [teacherControlHubInitialTab, setTeacherControlHubInitialTab] = useState<'library' | 'games' | 'cefr' | 'orf' | 'remedial'>('library');
 
   const [showShareBadgeModal, setShowShareBadgeModal] = useState<boolean>(false);
   const [selectedBadgeForShare, setSelectedBadgeForShare] = useState<ChildBadge | null>(null);
@@ -1718,6 +1724,27 @@ function AppContent() {
             onLanguageChange={(l) => setCurrentUILang(l)}
           />
         )}
+
+        {/* 4. لوحة تحكم وحوكمة المعلم الشاملة (Teacher Control Hub) */}
+        {isTeacherControlHubOpen && currentUser && (
+          <TeacherControlHub
+            currentUser={currentUser}
+            students={users.filter(u => u.role === 'student')}
+            books={books}
+            allowedGrades={currentUser.allowedGrades || ['grade-1', 'grade-2', 'grade-3']}
+            initialStudent={teacherControlHubTargetStudent}
+            initialTab={teacherControlHubInitialTab}
+            onClose={() => {
+              setIsTeacherControlHubOpen(false);
+              setTeacherControlHubTargetStudent(null);
+            }}
+            onRefreshData={() => {
+              setUsers(getUsers());
+              setReadingAssignments(getReadingBookAssignments());
+              setActivities(getActivities());
+            }}
+          />
+        )}
       </>
     );
   };
@@ -2431,6 +2458,20 @@ function AppContent() {
 
         <main className={teacherTab === 'challenge' || teacherTab === 'live' ? "w-full px-2 sm:px-4 py-2" : "max-w-6xl mx-auto px-4 py-8"}>
           <div className="flex flex-wrap gap-2 mb-6">
+            {/* زر لوحة حوكمة وتخصيص المعلم الشاملة */}
+            <button
+              onClick={() => {
+                setTeacherControlHubTargetStudent(null);
+                setTeacherControlHubInitialTab('library');
+                setIsTeacherControlHubOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 text-white shadow-md shadow-indigo-700/25 cursor-pointer hover:opacity-95"
+              title="لوحة حوكمة وإسناد المحتوى الشاملة: الرف المفتوح، ألعاب موسى، جواز السفر CEFR، مختبر الطلاقة ORF، خطط التمكين"
+            >
+              <Sliders className="w-4 h-4 text-amber-300" />
+              <span>لوحة تحكم وحوكمة المعلم 🎛️</span>
+            </button>
+
             <button
               onClick={() => setTeacherTab('activities')}
               className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
@@ -3154,6 +3195,11 @@ function AppContent() {
                   setLanguagePassportTargetStudent(st);
                   setIsLanguagePassportOpen(true);
                 }}
+                onOpenTeacherControlHub={(student, tab) => {
+                  setTeacherControlHubTargetStudent(student);
+                  setTeacherControlHubInitialTab(tab || 'library');
+                  setIsTeacherControlHubOpen(true);
+                }}
                 isAIPermitted={isTeacherAIPermitted}
                 aiBlockedReason={teacherAIReason}
                 onRefreshData={() => {
@@ -3312,9 +3358,18 @@ function AppContent() {
 
   // ================= 5. واجهة الطالب =================
   if (currentUser.role === 'student') {
-    const studentActivities = activities.filter(
-      (a) => a.grade === currentUser.grade && a.track === currentUser.track
-    );
+    const studentActivities = activities.filter((a) => {
+      // التحقق أولاً من الاستهداف الفردي أو المجموعاتي
+      if (a.target_type === 'individual' || a.target_type === 'group') {
+        return a.target_student_ids?.includes(currentUser.id);
+      }
+      // إذا كان النشاط علاجياً سرياً ولم يُستهدف الطالب، يُحجب عنه
+      if (a.is_remedial) {
+        return a.target_student_ids?.includes(currentUser.id);
+      }
+      // الاستهداف العام للفصل
+      return a.grade === currentUser.grade && (!a.track || a.track === currentUser.track);
+    });
     const studentWorksheets = studentActivities.filter((a) => a.activityType !== 'game');
     const studentGames = studentActivities.filter((a) => a.activityType === 'game');
 
@@ -3347,20 +3402,34 @@ function AppContent() {
       setActiveGameToPlay(starterActivity);
     };
 
-    // حوكمة رف القراءة: فحص هل أتاح المعلم المكتبة الشاملة لهذا الصف
-    const isStudentFullLibraryOpen = isFullLibraryOpenForGrade(currentUser.grade || 'grade-1', currentUser.school_id);
+    // حوكمة رف القراءة: فحص هل أتاح المعلم المكتبة الشاملة لهذا الصف أو للطالب استثنائياً
+    const isStudentFullLibraryOpen = isLibraryOpenForStudent(
+      currentUser.id, 
+      currentUser.grade || 'grade-1', 
+      currentUser.school_id
+    );
 
     // 1. القصص الحرة المرشحة من المعلم حصراً (خيار 1)
-    const myFreeReadingAssignments = readingAssignments.filter(
-      (a) => a.assignmentType === 'free_reading' && 
-        (a.targetStudentId === currentUser.id || (!a.targetStudentId && a.targetGrade === currentUser.grade))
-    );
+    const myFreeReadingAssignments = readingAssignments.filter((a) => {
+      if (a.assignmentType !== 'free_reading') return false;
+      if (a.targetType === 'individual') {
+        return a.targetStudentId === currentUser.id || a.targetStudentIds?.includes(currentUser.id);
+      }
+      if (a.targetType === 'group') {
+        return a.targetStudentIds?.includes(currentUser.id);
+      }
+      return !a.targetGrade || a.targetGrade === currentUser.grade;
+    });
 
     // 2. التكليفات القرائية التفاعلية برصد درجات (خيار 2)
-    const myReadingQuizzes = activities.filter(
-      (a) => (a.activityType === 'story' || a.id.startsWith('act_read_') || a.description?.includes('نشاط قراءة')) && 
-        (!a.grade || a.grade === currentUser.grade)
-    );
+    const myReadingQuizzes = activities.filter((a) => {
+      const isReadingRelated = a.activityType === 'story' || a.id.startsWith('act_read_') || a.description?.includes('نشاط قراءة');
+      if (!isReadingRelated) return false;
+      if (a.target_type === 'individual' || a.target_type === 'group') {
+        return a.target_student_ids?.includes(currentUser.id);
+      }
+      return !a.grade || a.grade === currentUser.grade;
+    });
 
     // إجمالي التكليفات والقصص المقررة للطالب فقط (افتراضياً 0 حتى يسند له المعلم)
     const totalMyReadingItems = myFreeReadingAssignments.length + myReadingQuizzes.length;

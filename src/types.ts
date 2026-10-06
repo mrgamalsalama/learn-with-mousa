@@ -275,6 +275,9 @@ export interface BookItem {
   assignedByTeacherId?: string;
 }
 
+// نموذج استهداف وتخصيص المهام الموحد
+export type TargetAssignmentType = 'class' | 'group' | 'individual';
+
 // نموذج إسناد القصص والكتب من المعلم (حرة أو نشاط قرائي)
 export interface ReadingBookAssignment {
   id: string;
@@ -285,9 +288,10 @@ export interface ReadingBookAssignment {
   bookReadUrl: string;
   section?: string;
   assignmentType: 'free_reading' | 'interactive_quiz';
-  targetType: 'class' | 'student';
+  targetType: 'class' | 'group' | 'individual' | 'student';
   targetGrade?: GradeLevel;
   targetStudentId?: string;
+  targetStudentIds?: string[]; // قائمة معرّفات الطلاب المستهدفين (للمجموعات أو الأفراد)
   targetStudentName?: string;
   teacherId: string;
   teacherName: string;
@@ -349,6 +353,65 @@ export interface Activity {
   track: ArabicTrack;
   questions: Question[];
   createdAt: string;
+  // حقول الاستهداف والتخصيص الموحدة
+  target_type?: TargetAssignmentType;
+  target_student_ids?: string[];
+  min_mastery_score?: number; // نسبة الإتقان المطلوبة (مثلاً 80%)
+  due_date?: string;
+  is_remedial?: boolean; // هل هو نشاط علاجي سري مخصص
+}
+
+// قواعد حوكمة ألعاب موسى التكيفية (Teacher Game Governance)
+export interface GameGovernanceRule {
+  id: string;
+  teacherId: string;
+  schoolId?: string;
+  grade: GradeLevel;
+  targetType: TargetAssignmentType;
+  targetStudentIds?: string[]; // عند استهداف مجموعة أو طالب معين
+  defaultLevel: number; // المستوى الافتراضي من 1 إلى 6
+  lockLevelSwitcher: boolean; // قفل إمكانية تنقل الطالب بين المستويات
+  weeklyQuest?: {
+    gameType: AIGameType;
+    title: string;
+    targetSkill: string;
+    questionCount: number;
+    requiredMastery: number; // e.g. 80%
+    dueDate: string;
+  };
+  updatedAt: string;
+}
+
+// تكليفات مختبر الطلاقة القرائية الشفهية (ORF Assignment Tasks)
+export interface ORFAssignmentTask {
+  id: string;
+  passageId: string;
+  passageTitle: string;
+  passageText: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId?: string;
+  grade: GradeLevel;
+  targetType: TargetAssignmentType;
+  targetStudentIds?: string[];
+  dueDate?: string;
+  instructions?: string;
+  createdAt: string;
+}
+
+// سجلات الترقية اليدوية الاستثنائية لجواز السفر اللغوي CEFR
+export interface CEFROverrideRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  previousLevel?: string;
+  overrideLevel: string;
+  justification: string; // المبرر الأكاديمي المكتوب
+  gatekeeperUnlocked: boolean; // فتح اختبار العبور للمستوى التالي
+  certifiedTrack?: ArabicTrack; // تعديل المسار (عرب A / عرب B)
+  teacherId: string;
+  teacherName: string;
+  updatedAt: string;
 }
 
 // خطة التعافي والتمكين العلاجي المخصصة للطلاب (Remedial Plan)
@@ -816,6 +879,7 @@ export interface ORFAssessmentSession {
   certificateNumber: string;
   spokenTranscript?: string;
   aiDiagnosticNote?: string;
+  audioUrl?: string;
 }
 
 export interface ORFPassage {

@@ -15,7 +15,9 @@ import {
   getLanguagePassport, 
   saveLanguagePassport, 
   getPreferredUILanguage, 
-  setPreferredUILanguage 
+  setPreferredUILanguage,
+  getStudentCEFROverride,
+  isGatekeeperUnlockedForStudent
 } from '../storage';
 import { getGradeLabel } from '../utils/gradebookExport';
 
@@ -272,6 +274,73 @@ export const LanguagePassportModal: React.FC<LanguagePassportModalProps> = ({
               )}
             </div>
           </div>
+
+          {/* ترقية استثنائية موثقة من المعلم إن وُجدت */}
+          {(() => {
+            const ovr = getStudentCEFROverride(student.id);
+            const isGkUnlocked = isGatekeeperUnlockedForStudent(student.id, student.grade);
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* حالة اختبار العبور للمستوى التالي */}
+                <div className={`p-4 rounded-2xl border flex items-center justify-between text-xs ${
+                  isGkUnlocked
+                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl">{isGkUnlocked ? '🔓' : '🔒'}</span>
+                    <div>
+                      <span className="font-black block">اختبار العبور للمستوى التالي (Gatekeeper Benchmark):</span>
+                      <span className="text-[11px] text-slate-500">
+                        {isGkUnlocked 
+                          ? 'مفتوح ومعتمد للطالب لتقديم تقييم العبور' 
+                          : 'مقفل حالياً بانتظار استيفاء شروط الكفاءة من المعلم'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black shrink-0 ${
+                    isGkUnlocked ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {isGkUnlocked ? 'مفتوح 🔓' : 'مقفل 🔒'}
+                  </span>
+                </div>
+
+                {/* شارة الترقية الاستثنائية */}
+                {ovr ? (
+                  <div className="p-4 rounded-2xl border bg-indigo-50/70 border-indigo-200 text-xs text-indigo-950 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-black flex items-center gap-1.5">
+                          <span>🌟</span>
+                          <span>ترقية استثنائية معتمدة من المعلم</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-600 text-white">
+                          {ovr.previousLevel} ➔ {ovr.overrideLevel}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 line-clamp-2">
+                        💬 <b>المبرر:</b> {ovr.justification}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-indigo-700 mt-2 block font-medium">
+                      المعتمد: {ovr.teacherName} • {new Date(ovr.updatedAt).toLocaleDateString('ar-EG')}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl border bg-slate-50 border-slate-200 text-xs text-slate-600 flex items-center gap-2.5">
+                    <span className="text-xl">📜</span>
+                    <div>
+                      <span className="font-bold block text-slate-800">حالة المسار والاعتماد:</span>
+                      <span className="text-[11px] text-slate-500">
+                        المستوى معتمد وفق السلم الأكاديمي القياسي {passportData.currentCefrLevel} ({student.track === 'arabic-b' ? 'مسار عرب B' : 'مسار عرب A'})
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* محدد المستوى المرجعي الأوروبي (CEFR Level Selector) */}
           <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-3">
