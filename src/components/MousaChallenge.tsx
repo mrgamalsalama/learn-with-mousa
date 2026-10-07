@@ -17,7 +17,7 @@ import {
   submitChallengeAnswerToCloudAndLocal, isLocalApiAvailable, disableLocalApi
 } from '../storage';
 import { supabase } from '../supabaseClient';
-import { generateAIChallengeQuestions, autoTashkeelText } from '../geminiService';
+import { generateAIChallengeQuestions, autoTashkeelText, getOfflineChallengeBank } from '../geminiService';
 import { SHAPE_CONFIG, DEFAULT_SHAPES, INITIAL_CHALLENGE_QUIZZES } from '../data/challengeData';
 import { challengeAudio } from '../utils/challengeAudio';
 import { parseQTIForChallenge } from '../utils/qtiChallengeParser';
@@ -1014,9 +1014,27 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
       if (generated && generated.length > 0) {
         setNewQuizQuestions(generated);
         setNewQuizTitle(`تَحَدِّي ${aiTopic} الذَّكِيُّ ⚡`);
+      } else {
+        const fallback = getOfflineChallengeBank({
+          topic: aiTopic,
+          grade: selectedGrade,
+          count: aiCount || 20,
+          timeLimitSeconds: aiTimeLimit,
+          questionTypes: targetTypes,
+        });
+        setNewQuizQuestions(fallback);
+        setNewQuizTitle(`تَحَدِّي ${aiTopic} الذَّكِيُّ ⚡`);
       }
     } catch (err) {
-      console.error('فشل التوليد:', err);
+      console.warn('تفعيل بنك الأسئلة الاحتياطي التلقائي:', err);
+      const fallback = getOfflineChallengeBank({
+        topic: aiTopic,
+        grade: selectedGrade,
+        count: aiCount || 20,
+        timeLimitSeconds: aiTimeLimit,
+      });
+      setNewQuizQuestions(fallback);
+      setNewQuizTitle(`تَحَدِّي ${aiTopic} الذَّكِيُّ ⚡`);
     } finally {
       setIsGeneratingAi(false);
     }

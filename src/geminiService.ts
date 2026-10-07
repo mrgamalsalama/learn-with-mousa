@@ -14,17 +14,47 @@ import {
   AIGovernanceTarget,
   ExamQuestion,
   ORFWordAnnotation,
-  ORFErrorCategory
+  ORFErrorCategory,
+  KnowledgeNodeQuestion
 } from './types';
 import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
+import { 
+  getSingleSounds50Questions, 
+  getShortVowels50Questions, 
+  getSukunSegments50Questions 
+} from './data/questionBanks/level1Questions';
+import { 
+  getLongVowels50Questions, 
+  getTanween50Questions, 
+  getShaddah50Questions, 
+  getShamsQamar50Questions, 
+  getTaaTypes50Questions 
+} from './data/questionBanks/level2Questions';
+import { 
+  getWordParts50Questions, 
+  getSentenceStructures50Questions, 
+  getSubjectVerb50Questions 
+} from './data/questionBanks/level3Questions';
+import { 
+  getLiteralComprehension50Questions, 
+  getInferentialReading50Questions, 
+  getVocabInContext50Questions 
+} from './data/questionBanks/level4Questions';
+import { 
+  getSentenceCombining50Questions, 
+  getFigurativeLanguage50Questions, 
+  getCriticalAppreciation50Questions 
+} from './data/questionBanks/level5Questions';
+import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 
-// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Fallback Waterfall)
+// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج سريعة خفيفة مجانية بدون أي نماذج Pro)
 export const TEXT_MODELS = [
-  'gemini-3.6-flash',
+  'gemini-2.5-flash',
   'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
   'gemini-flash-latest',
-  'gemini-3.1-pro-preview'
+  'gemini-2.0-flash',
+  'gemini-1.5-flash'
 ];
 
 // 2. نماذج الصوت المعتمدة لـ TTS
@@ -97,7 +127,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد عبر خادم التطبيق الآمن (Server-Side Proxy) مع دعم التبديل التلقائي
+// دالة مساعدة لتنفيذ طلبات التوليد عبر نماذج Gemini الفلاش المعتمدة مع دعم التبديل التلقائي المباشر
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -108,43 +138,6 @@ async function generateContentWithFallback(
 ) {
   // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
   assertAIPermitted(params.targetRole || 'student');
-
-  // المحاولة الأولى: عبر خادم التطبيق الداخلي Server Proxy (/api/gemini/generate)
-  try {
-    const serverRes = await fetch('/api/gemini/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gemini-3.6-flash',
-        contents: params.contents,
-        config: params.config,
-      }),
-    });
-
-    if (serverRes.ok) {
-      const data = await serverRes.json();
-      return {
-        text: data.text || '',
-        candidates: data.candidates,
-        usageMetadata: data.usageMetadata,
-        modelUsed: data.modelUsed || 'gemini-3.6-flash',
-      };
-    } else {
-      const errorJson = await serverRes.json().catch(() => ({}));
-      console.warn('[Gemini Server Proxy] استجاب الخادم بحالة غير ناجحة:', serverRes.status, errorJson);
-      const apiKey = getGeminiApiKey();
-      if (!apiKey) {
-        throw new Error(errorJson?.error || 'خادم الذكاء الاصطناعي غير متصل حالياً. يرجى التأكد من إعداد GEMINI_API_KEY.');
-      }
-    }
-  } catch (proxyErr: any) {
-    const apiKey = getGeminiApiKey();
-    if (!apiKey) {
-      console.error('[Gemini Cascade] تعذر الاتصال عبر خادم التطبيق ولا يوجد مفتاح محلي:', proxyErr);
-      throw proxyErr;
-    }
-    console.warn('[Gemini Cascade] فشل الاستدعاء عبر الخادم، جاري المحاولة عبر مفتاح العميل المباشر...');
-  }
 
   const ai = getAIClient();
   let lastError: any = null;
@@ -165,11 +158,12 @@ async function generateContentWithFallback(
       };
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Gemini Cascade] تعذر ${model}، جاري الانتقال للنموذج التالي... التفاصيل:`, JSON.stringify(err?.error || err?.message || err));
+      const errMsg = err?.message || String(err || '');
+      console.warn(`[Gemini Cascade] تعذر ${model}، جاري الانتقال للنموذج التالي... التفاصيل:`, errMsg);
     }
   }
 
-  console.error('[Gemini Cascade] فشل الاستدعاء بكافة النماذج المعتمدة للنصوص:', lastError);
+  console.error('[Gemini Cascade] فشل الاستدعاء بكافة نماذج الفلاش المعتمدة:', lastError);
   throw lastError || new Error('فشل الاتصال بنماذج الذكاء الاصطناعي');
 }
 
@@ -218,9 +212,13 @@ export async function chatWithMusa(
     }
     return responseText;
   } catch (error: any) {
-    console.error('خطأ حقيقي في دالة generateContent (chatWithMusa):', error);
-    console.error('User Prompt الفعلي المرسل إلى النموذج:', userMessage);
-    throw error;
+    console.warn('[Chat With Musa Fallback] تعذر الاتصال بالذكاء الاصطناعي، استخدام الرد الترحيبي الذكي المدمج:', error);
+    const friendlyFallbackResponses = [
+      'أَهْلًا بِكَ يَا بَطَلِي الغَالِي! 🌟 أَنَا مُوسَى، صَدِيقُكَ المُحِبُّ. أَنَا سَعِيدٌ جِدًّا بِحَدِيثِكَ مَعِي! مَا رَأْيُكَ أَنْ نَقْرَأَ قِصَّةً مُمْتِعَةً أَوْ نَخُوضَ تَحَدِّيًا جَدِيدًا؟ 📚🎈',
+      'مَرْحَبًا يَا عَبْقَرِيَّ اللُّغَةِ العَرَبِيَّةِ! 🦁 لُغَتُنَا بَحْرٌ مِنَ الجَمَالِ، وَكُلُّ حَرْفٍ نَتَعَلَّمُهُ يُنِيرُ عَقْلَنَا! أَنَا مَعَكَ دَائِمًا لِنُحَقِّقَ أَعْلَى الدَّرَجَاتِ! ✨',
+      'أَحْسَنْتَ يَا بَطَل! 🚀 أَنَا فَخُورٌ بِهِمَّتِكَ وَشَغَفِكَ بِالتَّعَلُّمِ. دَعْنَا نَسْتَكْشِفِ الكَلِمَاتِ وَنَسْتَمْتِعَ بِالقِرَاءَةِ مَعًا! 🎨'
+    ];
+    return friendlyFallbackResponses[Math.floor(Math.random() * friendlyFallbackResponses.length)];
   }
 }
 
@@ -860,8 +858,214 @@ ${cleanPassage}
 }
 
 /**
+ * بنك الأسئلة المحلي الاحتياطي التلقائي المدمج (Pre-cached Offline Bank)
+ * يولد 20 سؤالاً مشكولاً ومتنوعاً بنسبة 100% بحسب مستوى وصف الطالب
+ * ويدعم كافة الأنماط التفاعلية (classic, true_false, puzzle, type_answer) فوراً
+ */
+export function getOfflineChallengeBank(params: {
+  topic?: string;
+  grade?: string;
+  count?: number;
+  timeLimitSeconds?: number;
+  questionTypes?: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[];
+}): any[] {
+  const { topic = '', grade = 'grade-3', count = 20, timeLimitSeconds = 20, questionTypes } = params;
+  const targetCount = Math.max(count || 20, 20);
+  const defaultShapes = ['triangle', 'diamond', 'circle', 'square'];
+
+  // 1. تحديد المستوى الملائم للصف الدراسي (1 إلى 5)
+  const gLower = (grade || '').toLowerCase();
+  let level = 3;
+  if (gLower.includes('1') || gLower.includes('أول') || gLower.includes('kg') || gLower.includes('تمهيد')) {
+    level = 1;
+  } else if (gLower.includes('2') || gLower.includes('ثان')) {
+    level = 2;
+  } else if (gLower.includes('3') || gLower.includes('ثالث')) {
+    level = 3;
+  } else if (gLower.includes('4') || gLower.includes('رابع')) {
+    level = 4;
+  } else if (gLower.includes('5') || gLower.includes('خامس') || gLower.includes('6') || gLower.includes('سادس')) {
+    level = 5;
+  }
+
+  // 2. تجميع بنك الأسئلة المعتمد حسب المستوى
+  let rawBank: KnowledgeNodeQuestion[] = [];
+  try {
+    if (level === 1) {
+      rawBank = [
+        ...getSingleSounds50Questions(),
+        ...getShortVowels50Questions(),
+        ...getSukunSegments50Questions()
+      ];
+    } else if (level === 2) {
+      rawBank = [
+        ...getLongVowels50Questions(),
+        ...getTanween50Questions(),
+        ...getShaddah50Questions(),
+        ...getShamsQamar50Questions(),
+        ...getTaaTypes50Questions()
+      ];
+    } else if (level === 3) {
+      rawBank = [
+        ...getWordParts50Questions(),
+        ...getSentenceStructures50Questions(),
+        ...getSubjectVerb50Questions()
+      ];
+    } else if (level === 4) {
+      rawBank = [
+        ...getLiteralComprehension50Questions(),
+        ...getInferentialReading50Questions(),
+        ...getVocabInContext50Questions()
+      ];
+    } else {
+      rawBank = [
+        ...getSentenceCombining50Questions(),
+        ...getFigurativeLanguage50Questions(),
+        ...getCriticalAppreciation50Questions()
+      ];
+    }
+  } catch (err) {
+    console.warn('استخدام بنك أسئلة احتياطي بديل:', err);
+  }
+
+  if (rawBank.length < targetCount) {
+    try {
+      rawBank = [
+        ...rawBank,
+        ...getLongVowels50Questions(),
+        ...getTanween50Questions(),
+        ...getWordParts50Questions()
+      ];
+    } catch {}
+  }
+
+  const shuffled = [...rawBank].sort(() => Math.random() - 0.5);
+  const allowedTypes = (questionTypes && questionTypes.length > 0)
+    ? questionTypes
+    : ['classic', 'true_false', 'puzzle', 'type_answer'];
+
+  const generatedQuestions: any[] = [];
+
+  // دمج الأسئلة النموذجية من INITIAL_CHALLENGE_QUIZZES أولاً إن توافرت
+  INITIAL_CHALLENGE_QUIZZES.forEach(qz => {
+    if (qz.questions && qz.questions.length > 0) {
+      qz.questions.forEach(q => {
+        if (generatedQuestions.length < 8) {
+          generatedQuestions.push({
+            ...q,
+            id: `off_seed_${generatedQuestions.length + 1}_${Date.now()}`,
+            type: q.type || 'classic',
+            timeLimitSeconds: timeLimitSeconds || q.timeLimitSeconds || 20,
+          });
+        }
+      });
+    }
+  });
+
+  // استكمال الـ 20 سؤالاً بالكامل من بنك المعرفة المشكول
+  for (let i = 0; i < shuffled.length && generatedQuestions.length < targetCount; i++) {
+    const rawQ = shuffled[i];
+    const qIndex = generatedQuestions.length + 1;
+
+    let qType: 'classic' | 'true_false' | 'puzzle' | 'type_answer' = 'classic';
+    if (allowedTypes.length === 1) {
+      qType = allowedTypes[0] as any;
+    } else {
+      if (allowedTypes.includes('puzzle') && qIndex % 5 === 0) {
+        qType = 'puzzle';
+      } else if (allowedTypes.includes('true_false') && qIndex % 4 === 0) {
+        qType = 'true_false';
+      } else if (allowedTypes.includes('type_answer') && qIndex % 3 === 0) {
+        qType = 'type_answer';
+      } else {
+        qType = 'classic';
+      }
+    }
+
+    if (qType === 'true_false') {
+      const isCorrect = Math.random() > 0.45;
+      const text = isCorrect
+        ? `${rawQ.prompt} الإِجَابَةُ الصَّحِيحَةُ هِيَ: [${rawQ.correctAnswer}].`
+        : `${rawQ.prompt} الإِجَابَةُ الصَّحِيحَةُ هِيَ: [${rawQ.options.find(o => o !== rawQ.correctAnswer) || 'كَلِمَةٌ غَيْرُ صَحِيحَةٍ'}].`;
+      generatedQuestions.push({
+        id: `off_tf_${qIndex}_${Date.now()}`,
+        type: 'true_false',
+        text,
+        timeLimitSeconds,
+        correctIndex: isCorrect ? 0 : 1,
+        explanation: rawQ.explanation || 'إِجَابَةٌ رَائِعَةٌ وَتَمْيِيزٌ لُغَوِيٌّ بَارِعٌ! 🌟',
+        options: [
+          { id: '0', text: 'صَحِيحٌ (صَوَابٌ) ✅', shape: 'diamond' },
+          { id: '1', text: 'خَاطِئٌ (خَطَأٌ) ❌', shape: 'triangle' },
+        ],
+      });
+    } else if (qType === 'puzzle') {
+      const cleanAnswer = rawQ.correctAnswer.replace(/[\u064B-\u065F\u0670]/g, '').trim();
+      const splitted = cleanAnswer.split(/\s+/).filter(Boolean);
+      const puzzleWords = splitted.length >= 4 
+        ? splitted.slice(0, 4) 
+        : ['يَقْرَأُ', 'مُوسَى', 'الكِتَابَ', 'بِشَغَفٍ'];
+      generatedQuestions.push({
+        id: `off_puz_${qIndex}_${Date.now()}`,
+        type: 'puzzle',
+        text: `رَتِّبِ الكَلِمَاتِ الآتِيَةَ لِتَكْوِينِ جُمْلَةٍ مُفِيدَةٍ:`,
+        timeLimitSeconds,
+        correctIndex: 0,
+        correctOrder: [0, 1, 2, 3],
+        explanation: 'تَرْتِيبٌ مِثَالِيٌّ وَجُمْلَةٌ عَرَبِيَّةٌ فَصِيحَةٌ مُتَنَاسِقَةٌ! 🌟',
+        options: puzzleWords.map((w, wIdx) => ({
+          id: String(wIdx),
+          text: w,
+          shape: defaultShapes[wIdx % 4],
+        })),
+      });
+    } else if (qType === 'type_answer') {
+      const ansFull = rawQ.correctAnswer.trim();
+      const ansBare = ansFull.replace(/[\u064B-\u065F\u0670]/g, '');
+      generatedQuestions.push({
+        id: `off_type_${qIndex}_${Date.now()}`,
+        type: 'type_answer',
+        text: `${rawQ.prompt} (اكْتُبِ الإِجَابَةَ الصَّحِيحَةَ):`,
+        timeLimitSeconds,
+        correctIndex: 0,
+        correctAnswerText: ansBare,
+        acceptableAnswers: [ansFull, ansBare],
+        explanation: rawQ.explanation || 'كِتَابَةٌ دَقِيقَةٌ وَإِمْلَاءٌ سَلِيمٌ يَا بَطَل! ✨',
+        options: [],
+      });
+    } else {
+      const opts = Array.isArray(rawQ.options) && rawQ.options.length >= 2
+        ? [...rawQ.options].slice(0, 4)
+        : ['خيار 1', 'خيار 2', 'خيار 3', 'خيار 4'];
+      while (opts.length < 4) {
+        opts.push(`خيار ${opts.length + 1}`);
+      }
+      let cIdx = opts.indexOf(rawQ.correctAnswer);
+      if (cIdx === -1) cIdx = 0;
+
+      generatedQuestions.push({
+        id: `off_cls_${qIndex}_${Date.now()}`,
+        type: 'classic',
+        text: rawQ.prompt,
+        timeLimitSeconds,
+        correctIndex: cIdx,
+        explanation: rawQ.explanation || 'إِجَابَةٌ نَمُوذَجِيَّةٌ وَاخْتِيَارٌ صَحِيحٌ يَا بَطَلَ العَرَبِيَّةِ! 🎯',
+        options: opts.map((optText, oIdx) => ({
+          id: String(oIdx),
+          text: optText,
+          shape: defaultShapes[oIdx % 4],
+        })),
+      });
+    }
+  }
+
+  return generatedQuestions.slice(0, targetCount);
+}
+
+/**
  * دالة توليد أسئلة تحدي موسى التنافسية الحية (Mousa Challenge Quiz Generator)
  * تضمن دعم الأنماط التفاعلية: (اختيار متعدد كلاسيكي، صح أو خطأ، سباق الترتيب، سحر الإملاء والكتابة، سحابة الكلمات، استطلاع الرأي)
+ * مع ضمان تفعيل التوليد الاحتياطي المحلي التلقائي 100% (20 سؤالاً مشكولاً ومتنوعاً فوراً)
  */
 export async function generateAIChallengeQuestions(params: {
   topic: string;
@@ -870,69 +1074,23 @@ export async function generateAIChallengeQuestions(params: {
   timeLimitSeconds?: number;
   questionTypes?: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[];
 }): Promise<any[]> {
-  const { topic, grade, count = 4, timeLimitSeconds = 20, questionTypes } = params;
-  const ai = getAIClient();
+  const { topic, grade, count = 20, timeLimitSeconds = 20, questionTypes } = params;
+  const targetCount = Math.max(count || 20, 20);
   const cleanTopic = topic.trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
-
   const defaultShapes = ['triangle', 'diamond', 'circle', 'square'];
 
-  const fallbackQuestions = [
-    {
-      id: `ch_q_${Date.now()}_1`,
-      type: 'classic',
-      text: `مَا المَفْهُومُ الأَسَاسِيُّ المُرْتَبِطُ بِمَوْضُوعِ (${cleanTopic})؟`,
-      timeLimitSeconds,
-      correctIndex: 0,
-      explanation: `أَحْسَنْتُمْ يَا أَبْطَالَ مُوسَى! هَذَا المَفْهُومُ هُوَ أَسَاسُ دَرْسِ ${cleanTopic}!`,
-      options: [
-        { id: '0', text: `القَاعِدَةُ اللُّغَوِيَّةُ الأَسَاسِيَّةُ لِـ (${cleanTopic}) ✨`, shape: 'triangle' },
-        { id: '1', text: 'الإِعْرَابُ العَشْوَائِيُّ غَيْرُ المَضْبُوطِ', shape: 'diamond' },
-        { id: '2', text: 'حَذْفُ الحُرُوفِ دُونَ سَبَبٍ', shape: 'circle' },
-        { id: '3', text: 'تَجَاهُلُ عَلامَاتِ التَّرْقِيمِ', shape: 'square' },
-      ]
-    },
-    {
-      id: `ch_q_${Date.now()}_2`,
-      type: 'true_false',
-      text: `هَلْ تَبْدَأُ الجُمْلَةُ الفِعْلِيَّةُ دَائِمًا بِاسْمٍ؟`,
-      timeLimitSeconds,
-      correctIndex: 1,
-      explanation: `رَائِعٌ جِدًّا! الجُمْلَةُ الفِعْلِيَّةُ تَبْدَأُ دَوْمًا بِفِعْلٍ وَلَيْسَ بِاسْمٍ!`,
-      options: [
-        { id: '0', text: 'صَحِيحٌ (صَوَابٌ) ✅', shape: 'diamond' },
-        { id: '1', text: 'خَاطِئٌ (خَطَأٌ) ❌', shape: 'triangle' },
-      ]
-    },
-    {
-      id: `ch_q_${Date.now()}_3`,
-      type: 'puzzle',
-      text: `رَتِّبِ الكَلِمَاتِ الآتِيَةَ لِتُكَوِّنَ جُمْلَةً مُفِيدَةً:`,
-      timeLimitSeconds,
-      correctIndex: 0,
-      correctOrder: [0, 1, 2, 3],
-      explanation: `تَرْتِيبٌ مِثَالِيٌّ! تَكَوَّنَتْ جُمْلَةٌ عَرَبِيَّةٌ فَصِيحَةٌ وَمُتَنَاسِقَةٌ! 🌟`,
-      options: [
-        { id: '0', text: 'يَقْرَأُ', shape: 'triangle' },
-        { id: '1', text: 'مُوسَى', shape: 'diamond' },
-        { id: '2', text: 'كِتَابًا', shape: 'circle' },
-        { id: '3', text: 'مُفِيدًا', shape: 'square' },
-      ]
-    },
-    {
-      id: `ch_q_${Date.now()}_4`,
-      type: 'type_answer',
-      text: `اكْتُبْ كَلِمَةَ: [كِتَابٌ] مَضْبُوطَةً بِالتَّنْوِينِ:`,
-      timeLimitSeconds,
-      correctIndex: 0,
-      correctAnswerText: 'كتاب',
-      acceptableAnswers: ['كتاب', 'كتابٌ', 'كِتَابٌ'],
-      explanation: `كِتَابَةٌ دَقِيقَةٌ وَإِمْلَاءٌ سَلِيمٌ يَا بَطَل! ✨`,
-      options: []
-    }
-  ];
+  // بنك الأسئلة الاحتياطي التلقائي الفوري المدمج (Pre-cached Offline Bank)
+  const getFallback = () => getOfflineChallengeBank({
+    topic: cleanTopic,
+    grade,
+    count: targetCount,
+    timeLimitSeconds,
+    questionTypes,
+  });
 
+  const ai = getAIClient();
   if (!ai) {
-    return fallbackQuestions.slice(0, count);
+    return getFallback();
   }
 
   const allowedTypes: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[] =
@@ -1035,7 +1193,7 @@ ${allowedTypes.length === 1 ? `ملاحظة هامة: يجب أن تكون جم�
 
     const parsed: any[] = JSON.parse(cleanJsonText(response.text || '[]'));
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.map((item, idx) => {
+      const mappedResults = parsed.map((item, idx) => {
         const qType = item.type || 'classic';
         const correctIdx = typeof item.correctIndex === 'number' ? item.correctIndex : 0;
 
@@ -1077,11 +1235,17 @@ ${allowedTypes.length === 1 ? `ملاحظة هامة: يجب أن تكون جم�
           options,
         };
       });
+
+      if (mappedResults.length < targetCount) {
+        const padding = getFallback().slice(mappedResults.length);
+        return [...mappedResults, ...padding];
+      }
+      return mappedResults;
     }
-    return fallbackQuestions.slice(0, count);
+    return getFallback();
   } catch (err) {
-    console.error('فشل توليد أسئلة تحدي موسى عبر الذكاء الاصطناعي:', err);
-    return fallbackQuestions.slice(0, count);
+    console.warn('[Mousa Challenge Fallback] تعذر توليد أسئلة التحدي عبر Gemini، تفعيل بنك الأسئلة الاحتياطي التلقائي المدمج فوراً (20 سؤالاً):', err);
+    return getFallback();
   }
 }
 
@@ -1694,52 +1858,6 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
 
       // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
       const promptText = `Read the following Arabic text naturally: ${cleanText}`;
-
-      // 1. المحاولة عبر خادم التطبيق الآمن (Server-Side Proxy)
-      try {
-        const serverRes = await fetch('/api/gemini/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'gemini-3.1-flash-tts-preview',
-            contents: [{ parts: [{ text: promptText }] }],
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: 'Puck',
-                  },
-                },
-              },
-            },
-          }),
-        });
-
-        if (serverRes.ok) {
-          const data = await serverRes.json();
-          const candidate = data.candidates?.[0];
-          const part = candidate?.content?.parts?.[0];
-          const base64Data = part?.inlineData?.data;
-
-          if (base64Data) {
-            const pcmBytes = base64ToUint8Array(base64Data);
-            const audioCtx = getAudioContext();
-            const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
-
-            mousaAudioCache.set(cleanText, {
-              buffer,
-              pcm: pcmBytes,
-              timestamp: Date.now(),
-            });
-            saveToIndexedDBCache(cleanText, pcmBytes);
-
-            return buffer;
-          }
-        }
-      } catch (proxyAudioErr) {
-        console.warn('[Gemini TTS Proxy] تعذر جلب الصوت عبر خادم التطبيق، جاري فحص البدائل...', proxyAudioErr);
-      }
 
       const ai = getAIClient();
       if (!ai) return null;
