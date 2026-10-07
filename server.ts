@@ -504,8 +504,17 @@ async function startServer() {
   // Gemini API Proxy with intelligent fallback across modern models
   const TEXT_FALLBACK_MODELS = [
     'gemini-3.8-flash',
-    'gemini-3.6-flash',
     'gemini-3.1-flash-lite',
+    'gemini-flash-latest',
+    'gemini-3.6-flash',
+    'gemini-3.1-pro-preview',
+  ];
+
+  const AUDIO_FALLBACK_MODELS = [
+    'gemini-3.8-flash-lite-tts',
+    'gemini-3.8-flash-tts',
+    'gemini-3.1-flash-tts-preview',
+    'gemini-3.8-flash',
   ];
 
   app.post('/api/gemini/generate', async (req, res) => {
@@ -528,10 +537,10 @@ async function startServer() {
     // تحديد قائمة النماذج المناسبة لنوع الطلب
     let candidateModels: string[];
     if (isAudioRequest) {
-      candidateModels = ['gemini-3.1-flash-tts-preview'];
+      candidateModels = Array.from(new Set([model, ...AUDIO_FALLBACK_MODELS]));
     } else {
-      // استبعاد أي نماذج ملغاة أو غير مستقرة مثل gemini-2.5 أو gemini-flash-latest
-      const cleanModel = model.includes('2.5') || model.includes('flash-latest')
+      // استبعاد أي نماذج ملغاة
+      const cleanModel = model.includes('2.5') || model.includes('1.5')
         ? 'gemini-3.8-flash'
         : model;
       candidateModels = Array.from(new Set([cleanModel, ...TEXT_FALLBACK_MODELS]));
