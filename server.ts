@@ -503,12 +503,10 @@ async function startServer() {
 
   // Gemini API Proxy with intelligent fallback across modern models
   const TEXT_FALLBACK_MODELS = [
-    'gemini-2.5-flash',
     'gemini-3.8-flash',
-    'gemini-3.1-flash-lite',
     'gemini-flash-latest',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
   ];
 
   const AUDIO_FALLBACK_MODELS = [
@@ -520,7 +518,7 @@ async function startServer() {
 
   app.post('/api/gemini/generate', async (req, res) => {
     try {
-      const { model = 'gemini-2.5-flash', contents, config } = req.body;
+      const { model = 'gemini-3.8-flash', contents, config } = req.body;
       let ai: GoogleGenAI;
       try {
         ai = getAIClient();

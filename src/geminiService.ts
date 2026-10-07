@@ -47,14 +47,12 @@ import {
 } from './data/questionBanks/level5Questions';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 
-// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج سريعة خفيفة مجانية بدون أي نماذج Pro)
+// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج معتمدة ونشطة في الخطة المجانية حصراً)
 export const TEXT_MODELS = [
-  'gemini-2.5-flash',
   'gemini-3.8-flash',
-  'gemini-3.1-flash-lite',
   'gemini-flash-latest',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash'
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite'
 ];
 
 // 2. نماذج الصوت المعتمدة لـ TTS
@@ -127,7 +125,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد عبر نماذج Gemini الفلاش المعتمدة مع دعم التبديل التلقائي المباشر
+// دالة مساعدة لتنفيذ طلبات التوليد عبر نماذج Gemini الفلاش المعتمدة مع دعم التبديل التلقائي الذكي ومعالجة ذروة الضغط (503/429)
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -142,24 +140,59 @@ async function generateContentWithFallback(
   const ai = getAIClient();
   let lastError: any = null;
 
-  for (const model of TEXT_MODELS) {
-    try {
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: params.contents,
-        config: params.config,
-      });
+  for (let i = 0; i < TEXT_MODELS.length; i++) {
+    const model = TEXT_MODELS[i];
 
-      return {
-        text: response.text || '',
-        candidates: response.candidates,
-        usageMetadata: response.usageMetadata,
-        modelUsed: model,
-      };
-    } catch (err: any) {
-      lastError = err;
-      const errMsg = err?.message || String(err || '');
-      console.warn(`[Gemini Cascade] تعذر ${model}، جاري الانتقال للنموذج التالي... التفاصيل:`, errMsg);
+    // محاولتان كحد أقصى لكل نموذج مع فترة انتظار تصاعدية (Exponential Backoff with Jitter)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: params.contents,
+          config: params.config,
+        });
+
+        return {
+          text: response.text || '',
+          candidates: response.candidates,
+          usageMetadata: response.usageMetadata,
+          modelUsed: model,
+        };
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err?.message || String(err || '');
+        const isTemporarySpike =
+          err?.status === 503 ||
+          err?.status === 429 ||
+          errMsg.includes('503') ||
+          errMsg.includes('high demand') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        // إذا كان خطأ 404 (نموذج غير موجود)، لا داعي لمحاولة الإعادة لنفس النموذج
+        const isNotFound = err?.status === 404 || errMsg.includes('404') || errMsg.includes('NOT_FOUND');
+        if (isNotFound) {
+          console.warn(`[Gemini Cascade] النموذج ${model} غير متوفر (404)، الانتقال للنموذج التالي مباشرة.`);
+          break;
+        }
+
+        console.warn(`[Gemini Cascade] محاولة ${attempt} بالنموذج ${model} واجهت:`, errMsg);
+
+        if (attempt === 1 && isTemporarySpike) {
+          // انتظار مهلة تصاعدية عشوائية قصيرة لتجاوز ذروة الضغط اللحظية (Spike)
+          const backoff = 750 + Math.floor(Math.random() * 500); // 750ms - 1250ms
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+        } else {
+          // الانتقال للنموذج التالي في المصفوفة
+          break;
+        }
+      }
+    }
+
+    // مهلة صغيرة بين النماذج عند استمرار الضغط
+    if (i < TEXT_MODELS.length - 1) {
+      const jitterMs = 300 + Math.floor(Math.random() * 300);
+      await new Promise((resolve) => setTimeout(resolve, jitterMs));
     }
   }
 
