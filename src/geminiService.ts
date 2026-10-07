@@ -19,12 +19,11 @@ import {
 import { isAIFeatureAllowed, canUserUseAI, getCurrentUser } from './storage';
 
 // 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Fallback Waterfall)
-// وفق التوثيق الرسمي لـ @google/genai: البدء بـ gemini-3.8-flash ثم التبديل لـ gemini-3.1-flash-lite ثم gemini-flash-latest
 export const TEXT_MODELS = [
+  'gemini-3.6-flash',
   'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
   'gemini-flash-latest',
-  'gemini-3.6-flash',
   'gemini-3.1-pro-preview'
 ];
 
@@ -116,7 +115,7 @@ async function generateContentWithFallback(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.6-flash',
         contents: params.contents,
         config: params.config,
       }),
@@ -128,7 +127,7 @@ async function generateContentWithFallback(
         text: data.text || '',
         candidates: data.candidates,
         usageMetadata: data.usageMetadata,
-        modelUsed: data.modelUsed || 'gemini-3.8-flash',
+        modelUsed: data.modelUsed || 'gemini-3.6-flash',
       };
     } else {
       const errorJson = await serverRes.json().catch(() => ({}));
@@ -150,51 +149,23 @@ async function generateContentWithFallback(
   const ai = getAIClient();
   let lastError: any = null;
 
-  for (let i = 0; i < TEXT_MODELS.length; i++) {
-    const model = TEXT_MODELS[i];
-    // محاولة تنفيذ الطلب حتى مرتين للنموذج عند وجود ضغط لحظي (503 / 429)
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: params.contents,
-          config: params.config,
-        });
+  for (const model of TEXT_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: params.contents,
+        config: params.config,
+      });
 
-        return {
-          text: response.text || '',
-          candidates: response.candidates,
-          usageMetadata: response.usageMetadata,
-          modelUsed: model,
-        };
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err?.message || String(err || '');
-        const isDemandSpike =
-          err?.status === 503 ||
-          err?.status === 429 ||
-          errMsg.includes('503') ||
-          errMsg.includes('high demand') ||
-          errMsg.includes('UNAVAILABLE') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
-
-        console.warn(`[Gemini Cascade] محاولة ${attempt} بالنموذج ${model} واجهت:`, errMsg);
-
-        if (attempt === 1 && isDemandSpike) {
-          // انتظار مهلة تصاعدية قصيرة قبل إعادة المحاولة لنفس النموذج
-          const backoff = 600 + Math.floor(Math.random() * 400);
-          await new Promise((resolve) => setTimeout(resolve, backoff));
-        } else {
-          // الانتقال للنموذج التالي في المصفوفة
-          break;
-        }
-      }
-    }
-
-    // مهلة بسيطة قبل الانتقال للنموذج التالي في السلسلة
-    if (i < TEXT_MODELS.length - 1) {
-      const jitterMs = 300 + Math.floor(Math.random() * 300);
-      await new Promise((resolve) => setTimeout(resolve, jitterMs));
+      return {
+        text: response.text || '',
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata,
+        modelUsed: model,
+      };
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Gemini Cascade] تعذر ${model}، جاري الانتقال للنموذج التالي... التفاصيل:`, JSON.stringify(err?.error || err?.message || err));
     }
   }
 

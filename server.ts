@@ -503,10 +503,10 @@ async function startServer() {
 
   // Gemini API Proxy with intelligent fallback across modern models
   const TEXT_FALLBACK_MODELS = [
+    'gemini-3.6-flash',
     'gemini-3.8-flash',
     'gemini-3.1-flash-lite',
     'gemini-flash-latest',
-    'gemini-3.6-flash',
     'gemini-3.1-pro-preview',
   ];
 
@@ -519,7 +519,7 @@ async function startServer() {
 
   app.post('/api/gemini/generate', async (req, res) => {
     try {
-      const { model = 'gemini-3.8-flash', contents, config } = req.body;
+      const { model = 'gemini-3.6-flash', contents, config } = req.body;
       let ai: GoogleGenAI;
       try {
         ai = getAIClient();
@@ -529,29 +529,22 @@ async function startServer() {
         });
       }
 
-    // التحقق مما إذا كان الطلب مخصصاً للصوت أو تحويل النص لكلام (TTS)
-    const isAudioRequest =
-      model.includes('tts') ||
-      (Array.isArray(config?.responseModalities) && config.responseModalities.includes('AUDIO'));
+      // التحقق مما إذا كان الطلب مخصصاً للصوت أو تحويل النص لكلام (TTS)
+      const isAudioRequest =
+        model.includes('tts') ||
+        (Array.isArray(config?.responseModalities) && config.responseModalities.includes('AUDIO'));
 
-    // تحديد قائمة النماذج المناسبة لنوع الطلب
-    let candidateModels: string[];
-    if (isAudioRequest) {
-      candidateModels = Array.from(new Set([model, ...AUDIO_FALLBACK_MODELS]));
-    } else {
-      // استبعاد أي نماذج ملغاة
-      const cleanModel = model.includes('2.5') || model.includes('1.5')
-        ? 'gemini-3.8-flash'
-        : model;
-      candidateModels = Array.from(new Set([cleanModel, ...TEXT_FALLBACK_MODELS]));
-    }
+      // تحديد قائمة النماذج المناسبة لنوع الطلب
+      let candidateModels: string[];
+      if (isAudioRequest) {
+        candidateModels = Array.from(new Set([model, ...AUDIO_FALLBACK_MODELS]));
+      } else {
+        candidateModels = Array.from(new Set([model, ...TEXT_FALLBACK_MODELS]));
+      }
 
-    let lastError: any = null;
+      let lastError: any = null;
 
-    for (let i = 0; i < candidateModels.length; i++) {
-      const currentModel = candidateModels[i];
-      // محاولة تنفيذ الطلب حتى مرتين للنموذج عند وجود ضغط لحظي
-      for (let attempt = 1; attempt <= (isAudioRequest ? 2 : 1); attempt++) {
+      for (const currentModel of candidateModels) {
         try {
           const response = await ai.models.generateContent({
             model: currentModel,
@@ -567,38 +560,14 @@ async function startServer() {
           });
         } catch (err: any) {
           lastError = err;
-          const errMsg = err?.message || String(err || '');
-          const isDemandSpike =
-            err?.status === 503 ||
-            err?.status === 429 ||
-            errMsg.includes('503') ||
-            errMsg.includes('high demand') ||
-            errMsg.includes('UNAVAILABLE') ||
-            errMsg.includes('RESOURCE_EXHAUSTED');
-
-          console.warn(`[Gemini Server] محاولة ${attempt} بالنموذج ${currentModel} فشلت:`, errMsg);
-
-          // عند حدوث ضغط مؤقت، ننتظر مهلة زمنية قصيرة قبل إعادة المحاولة أو الانتقال للنموذج البديل
-          if (isDemandSpike) {
-            const backoffMs = 500 + Math.floor(Math.random() * 400);
-            await new Promise((resolve) => setTimeout(resolve, backoffMs));
-          } else {
-            // خطأ بنيوي لا يتعلق بالضغط، ننتقل فوراً للنموذج التالي
-            break;
-          }
+          console.warn(`[Gemini Server] خطأ في النموذج ${currentModel}:`, err?.message || err);
         }
       }
-    }
 
-    console.error('Server Gemini Error (all models/attempts failed):', lastError?.message || lastError);
-    const is503 = lastError?.status === 503 || String(lastError?.message || '').includes('503') || String(lastError?.message || '').includes('high demand');
-    const userFriendlyError = is503
-      ? 'خوادم الذكاء الاصطناعي تشهد ضغطاً مؤقتاً في هذه اللحظة، يرجى إعادة المحاولة بعد ثوانٍ قليلة.'
-      : (lastError?.message || 'Gemini processing failed');
-
-    res.status(lastError?.status || (is503 ? 503 : 500)).json({
-      error: userFriendlyError,
-    });
+      console.error('Server Gemini Error (all models failed):', lastError?.message || lastError);
+      res.status(lastError?.status || 500).json({
+        error: lastError?.message || 'Gemini processing failed',
+      });
     } catch (topErr: any) {
       console.error('Unhandled Gemini endpoint error:', topErr);
       res.status(500).json({ error: topErr?.message || 'Server error' });
