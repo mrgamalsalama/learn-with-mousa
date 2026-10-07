@@ -402,7 +402,53 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
       setCompletedSession(session);
       onSessionCompleted?.(session);
     } catch (evalErr) {
-      console.error('Error during oral reading evaluation:', evalErr);
+      console.warn('[ORF Evaluator] تعذر التحكيم عبر السحابة، اعتماد التحكيم الصوتي الخوارزمي المحلي 100%:', evalErr);
+      const fallbackResult = evaluateOralReadingLocally({
+        passageWords,
+        spokenTranscript: spokenText,
+        durationSeconds: finalDuration,
+      });
+
+      setWordAnnotations(fallbackResult.annotations);
+      setProsodyScore(fallbackResult.prosodyScore);
+      setAiDiagnosticNote(fallbackResult.qualitativeFeedback);
+      if (fallbackResult.spokenTranscript) {
+        setLiveSpokenTranscript(fallbackResult.spokenTranscript);
+      }
+
+      const benchmarkLevelInfo = evaluateORFPerformance(fallbackResult.wcpm, studentGrade);
+      const certNum = `ORF-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      const session: ORFAssessmentSession = {
+        id: `orf_${Date.now()}`,
+        studentId: student.id,
+        studentName: student.name,
+        grade: studentGrade,
+        track: student.track,
+        passageId: selectedPassage.id,
+        passageTitle: selectedPassage.title,
+        passageText: selectedPassage.text,
+        totalWords: passageWords.length,
+        durationSeconds: finalDuration,
+        wordsRead: fallbackResult.wordsRead,
+        wordsCorrect: fallbackResult.wordsCorrect,
+        wcpm: fallbackResult.wcpm,
+        accuracyRate: fallbackResult.accuracyRate,
+        prosodyScore: fallbackResult.prosodyScore,
+        assessorRole: isTeacherAssessor ? 'teacher_evaluated' : 'student_self',
+        assessorName: currentUser.name,
+        date: new Date().toISOString(),
+        errorBreakdown: fallbackResult.errorBreakdown,
+        annotations: fallbackResult.annotations,
+        gradeBenchmarkLevel: benchmarkLevelInfo.level,
+        certificateNumber: certNum,
+        spokenTranscript: fallbackResult.spokenTranscript || spokenText,
+        aiDiagnosticNote: fallbackResult.qualitativeFeedback,
+      };
+
+      saveORFSession(session);
+      setCompletedSession(session);
+      onSessionCompleted?.(session);
     } finally {
       setIsAnalyzing(false);
       setHasCompleted(true);
@@ -801,17 +847,29 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
                   type="button"
                   onClick={() => {
                     const words = getPassageWords(selectedPassage.text);
+                    const currentTranscript = liveSpokenTranscript || completedSession?.spokenTranscript || '';
+                    const currentDur = completedSession?.durationSeconds || elapsedSeconds || 20;
                     setIsAnalyzing(true);
                     evaluateOralReadingWithAI({
                       passageText: selectedPassage.text,
                       passageWords: words,
-                      spokenTranscript: liveSpokenTranscript || completedSession?.spokenTranscript || '',
-                      durationSeconds: completedSession?.durationSeconds || elapsedSeconds || 20,
+                      spokenTranscript: currentTranscript,
+                      durationSeconds: currentDur,
                       gradeLevel: studentGrade,
                     }).then(res => {
                       setWordAnnotations(res.annotations);
                       setAiDiagnosticNote(res.qualitativeFeedback);
                       recomputeFromAnnotations(res.annotations);
+                    }).catch(err => {
+                      console.warn('[ORF Re-evaluate] تعذر التحكيم السحابي، استخدام التحكيم المحلي:', err);
+                      const localRes = evaluateOralReadingLocally({
+                        passageWords: words,
+                        spokenTranscript: currentTranscript,
+                        durationSeconds: currentDur,
+                      });
+                      setWordAnnotations(localRes.annotations);
+                      setAiDiagnosticNote(localRes.qualitativeFeedback);
+                      recomputeFromAnnotations(localRes.annotations);
                     }).finally(() => {
                       setIsAnalyzing(false);
                     });

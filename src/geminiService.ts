@@ -47,12 +47,11 @@ import {
 } from './data/questionBanks/level5Questions';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 
-// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج معتمدة ونشطة في الخطة المجانية حصراً)
+// 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج فلاش معتمدة ونشطة في الخطة المجانية حصراً)
 export const TEXT_MODELS = [
   'gemini-3.8-flash',
-  'gemini-flash-latest',
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite'
+  'gemini-3.1-flash-lite',
+  'gemini-flash-latest'
 ];
 
 // 2. نماذج الصوت المعتمدة لـ TTS
@@ -62,6 +61,28 @@ export const AUDIO_MODELS = [
   'gemini-3.1-flash-tts-preview',
   'gemini-3.8-flash'
 ];
+
+// 3. قاطع الدائرة الذكي لاستنفاد الحصة (Quota Circuit Breaker)
+// عند استنفاد الحصة المجانية لمفتاح الـ API (خطأ 429 أو RESOURCE_EXHAUSTED أو limit: 20)، يتم تفعيل
+// التحويل التلقائي الفوري 100% للبنك الاحتياطي المحلي لمنع تعليق واجهات المستخدم أو إغراق وحدة التحكم بالأخطاء
+let quotaExhaustedUntil: number = 0;
+
+export function isGeminiQuotaExhausted(): boolean {
+  return Date.now() < quotaExhaustedUntil;
+}
+
+export function markGeminiQuotaExhausted(retryDelaySeconds?: number) {
+  // مدة الاحتياط: إما المقترحة من جوجل أو 10 دقائق افتراضياً
+  const delayMs = (retryDelaySeconds && retryDelaySeconds > 0)
+    ? Math.min(retryDelaySeconds * 1000, 24 * 60 * 60 * 1000)
+    : 10 * 60 * 1000;
+  quotaExhaustedUntil = Date.now() + delayMs;
+  console.warn(`[Gemini Circuit Breaker] تم تفعيل وضع الاحتياط المحلي التلقائي الفوري 100% (Offline Fallback Bank) حتى انتهاء فترة التقييد.`);
+}
+
+export function resetGeminiQuotaState() {
+  quotaExhaustedUntil = 0;
+}
 
 // دالة الحصول على مفتاح Gemini من المتغيرات البيئية (دعم Vercel و Vite و Node)
 export function getGeminiApiKey(): string {
@@ -137,13 +158,18 @@ async function generateContentWithFallback(
   // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
   assertAIPermitted(params.targetRole || 'student');
 
+  // إذا كانت الحصة مستنفدة مسبقاً، الانتقال الفوري للبديل المحلي دون إضاعة وقت المستخدم
+  if (isGeminiQuotaExhausted()) {
+    throw new Error('GEMINI_QUOTA_EXHAUSTED');
+  }
+
   const ai = getAIClient();
   let lastError: any = null;
 
   for (let i = 0; i < TEXT_MODELS.length; i++) {
     const model = TEXT_MODELS[i];
 
-    // محاولتان كحد أقصى لكل نموذج مع فترة انتظار تصاعدية (Exponential Backoff with Jitter)
+    // محاولتان كحد أقصى لكل نموذج في حال 503
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const response = await ai.models.generateContent({
@@ -161,42 +187,48 @@ async function generateContentWithFallback(
       } catch (err: any) {
         lastError = err;
         const errMsg = err?.message || String(err || '');
-        const isTemporarySpike =
-          err?.status === 503 ||
-          err?.status === 429 ||
-          errMsg.includes('503') ||
-          errMsg.includes('high demand') ||
-          errMsg.includes('UNAVAILABLE') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
 
-        // إذا كان خطأ 404 (نموذج غير موجود)، لا داعي لمحاولة الإعادة لنفس النموذج
+        // فحص أخطاء استنفاد الحصة (Quota / Rate-Limit 429)
+        const isQuotaExhausted =
+          err?.status === 429 ||
+          errMsg.includes('429') ||
+          errMsg.includes('Quota exceeded') ||
+          errMsg.includes('RESOURCE_EXHAUSTED') ||
+          errMsg.includes('free_tier_requests') ||
+          errMsg.includes('rate-limit') ||
+          errMsg.includes('rate limit');
+
+        if (isQuotaExhausted) {
+          let retrySec = 600;
+          const matchSeconds = errMsg.match(/retry in\s+([0-9.]+)/i);
+          if (matchSeconds && matchSeconds[1]) {
+            retrySec = Math.max(60, Math.round(Number(matchSeconds[1])));
+          }
+          markGeminiQuotaExhausted(retrySec);
+          console.warn(`[Gemini Cascade Quota] تم بلوغ سقف الحصة المجانية للنموذج ${model}، التبديل الفوري التلقائي 100% للبنك الاحتياطي المدمج.`);
+          throw new Error('GEMINI_QUOTA_EXHAUSTED');
+        }
+
+        // إذا كان خطأ 404 (نموذج غير موجود أو لم يعد متاحاً)، الانتقال للنموذج التالي فوراً
         const isNotFound = err?.status === 404 || errMsg.includes('404') || errMsg.includes('NOT_FOUND');
         if (isNotFound) {
           console.warn(`[Gemini Cascade] النموذج ${model} غير متوفر (404)، الانتقال للنموذج التالي مباشرة.`);
           break;
         }
 
-        console.warn(`[Gemini Cascade] محاولة ${attempt} بالنموذج ${model} واجهت:`, errMsg);
-
-        if (attempt === 1 && isTemporarySpike) {
-          // انتظار مهلة تصاعدية عشوائية قصيرة لتجاوز ذروة الضغط اللحظية (Spike)
-          const backoff = 750 + Math.floor(Math.random() * 500); // 750ms - 1250ms
+        // إذا كان خطأ 503 (ضغط مؤقت على الخدمة)
+        const is503 = err?.status === 503 || errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
+        if (attempt === 1 && is503) {
+          const backoff = 500 + Math.floor(Math.random() * 300);
           await new Promise((resolve) => setTimeout(resolve, backoff));
         } else {
-          // الانتقال للنموذج التالي في المصفوفة
           break;
         }
       }
     }
-
-    // مهلة صغيرة بين النماذج عند استمرار الضغط
-    if (i < TEXT_MODELS.length - 1) {
-      const jitterMs = 300 + Math.floor(Math.random() * 300);
-      await new Promise((resolve) => setTimeout(resolve, jitterMs));
-    }
   }
 
-  console.error('[Gemini Cascade] فشل الاستدعاء بكافة نماذج الفلاش المعتمدة:', lastError);
+  console.warn('[Gemini Cascade] تعذر الاتصال بنماذج السحابة، جاري اعتماد المعالجة المحلية الاحتياطية.');
   throw lastError || new Error('فشل الاتصال بنماذج الذكاء الاصطناعي');
 }
 
@@ -983,11 +1015,12 @@ export function getOfflineChallengeBank(params: {
   INITIAL_CHALLENGE_QUIZZES.forEach(qz => {
     if (qz.questions && qz.questions.length > 0) {
       qz.questions.forEach(q => {
-        if (generatedQuestions.length < 8) {
+        const qType = q.type || 'classic';
+        if (allowedTypes.includes(qType) && generatedQuestions.length < 8) {
           generatedQuestions.push({
             ...q,
             id: `off_seed_${generatedQuestions.length + 1}_${Date.now()}`,
-            type: q.type || 'classic',
+            type: qType,
             timeLimitSeconds: timeLimitSeconds || q.timeLimitSeconds || 20,
           });
         }
@@ -1122,7 +1155,8 @@ export async function generateAIChallengeQuestions(params: {
   });
 
   const ai = getAIClient();
-  if (!ai) {
+  if (!ai || isGeminiQuotaExhausted() || !getGeminiApiKey()) {
+    console.info('[Mousa Challenge] الحصة مستنفدة أو وضع العمل المحلي نشط - تشغيل بنك الأسئلة الاحتياطي التلقائي المدمج 100% فوراً.');
     return getFallback();
   }
 
@@ -2783,6 +2817,11 @@ export async function generateAIExamQuestions(params: {
     return results;
   };
 
+  if (isGeminiQuotaExhausted() || !getGeminiApiKey()) {
+    console.info('[AI Exam Generator] الحصة مستنفدة أو وضع العمل المحلي نشط - توليد أسئلة الاختبار التفاعلي المشكول محلياً فوراً.');
+    return generateDynamicFallback(questionCount, skillTopic);
+  }
+
   try {
     const response = await generateContentWithFallback(ai, {
       contents: [{ parts: [{ text: prompt }] }],
@@ -3068,6 +3107,16 @@ export async function evaluateOralReadingWithAI(params: {
     return evaluateOralReadingLocally({
       passageWords,
       spokenTranscript: '',
+      durationSeconds,
+    });
+  }
+
+  // إذا كانت الحصة السحابية مستنفدة أو المفتاح غير مهيأ، تشغيل المحرك الصوتي الخوارزمي المحلي 100% فوراً
+  if (isGeminiQuotaExhausted() || !getGeminiApiKey()) {
+    console.info('[ORF AI Evaluator] الحصة مستنفدة أو وضع العمل المحلي نشط - تشغيل محرك التحكيم الصوتي الخوارزمي المحلي 100% فوراً.');
+    return evaluateOralReadingLocally({
+      passageWords,
+      spokenTranscript: spokenTranscript || '',
       durationSeconds,
     });
   }

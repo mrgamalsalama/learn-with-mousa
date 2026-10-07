@@ -988,20 +988,20 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
 
   // ================= توليد الأسئلة وإنشاء التحديات =================
 
-  // توليد عبر الذكاء الاصطناعي (Gemini 2.5 Flash)
+  // توليد عبر الذكاء الاصطناعي (Gemini Flash)
   const handleGenerateWithAI = async () => {
     if (!aiTopic.trim()) return;
     setIsGeneratingAi(true);
+    let targetTypes: ChallengeQuestionType[] | undefined = undefined;
+    if (aiQuestionTypeSelection === 'mixed') {
+      targetTypes = ['classic', 'true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
+    } else if (aiQuestionTypeSelection === 'interactive_only') {
+      targetTypes = ['true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
+    } else {
+      targetTypes = [aiQuestionTypeSelection as ChallengeQuestionType];
+    }
+
     try {
-      // تحديد الأنماط المطلوبة بناءً على اختيار المعلم
-      let targetTypes: ChallengeQuestionType[] | undefined = undefined;
-      if (aiQuestionTypeSelection === 'mixed') {
-        targetTypes = ['classic', 'true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
-      } else if (aiQuestionTypeSelection === 'interactive_only') {
-        targetTypes = ['true_false', 'puzzle', 'type_answer', 'word_cloud', 'poll'];
-      } else {
-        targetTypes = [aiQuestionTypeSelection as ChallengeQuestionType];
-      }
 
       const generated = await generateAIChallengeQuestions({
         topic: aiTopic,
@@ -1032,6 +1032,7 @@ export const MousaChallenge: React.FC<MousaChallengeProps> = ({
         grade: selectedGrade,
         count: aiCount || 20,
         timeLimitSeconds: aiTimeLimit,
+        questionTypes: targetTypes,
       });
       setNewQuizQuestions(fallback);
       setNewQuizTitle(`تَحَدِّي ${aiTopic} الذَّكِيُّ ⚡`);
