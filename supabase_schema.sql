@@ -651,12 +651,76 @@ DROP POLICY IF EXISTS "Enable all for anon on live_class_sessions" ON public.liv
 CREATE POLICY "Enable all for anon on live_class_sessions" ON public.live_class_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
+-- 8.5. أوراق العمل التفاعلية المدرسية (Interactive Worksheets Hub)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.interactive_worksheets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  teacher_id UUID,
+  class_id UUID,
+  target_class_id UUID,
+  title TEXT NOT NULL,
+  description TEXT,
+  grade_level TEXT,
+  subject TEXT DEFAULT 'اللغة العربية',
+  image_url TEXT,
+  background_url TEXT,
+  elements JSONB NOT NULL DEFAULT '[]'::jsonb,
+  elements_schema JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_points NUMERIC DEFAULT 20,
+  is_public BOOLEAN DEFAULT true,
+  is_public_link_enabled BOOLEAN DEFAULT true,
+  due_date TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.worksheet_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  worksheet_id UUID REFERENCES public.interactive_worksheets(id) ON DELETE CASCADE,
+  school_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  student_id UUID,
+  guest_name TEXT,
+  student_name TEXT,
+  class_id UUID,
+  answers JSONB NOT NULL DEFAULT '{}'::jsonb,
+  answers_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  score NUMERIC DEFAULT 0,
+  total_score NUMERIC DEFAULT 20,
+  max_score NUMERIC DEFAULT 20,
+  percentage NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'graded',
+  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_worksheets_school ON public.interactive_worksheets(school_id);
+CREATE INDEX IF NOT EXISTS idx_worksheets_teacher ON public.interactive_worksheets(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_worksheets_class ON public.interactive_worksheets(class_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_worksheet ON public.worksheet_submissions(worksheet_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_student ON public.worksheet_submissions(student_id);
+
+ALTER TABLE public.interactive_worksheets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.worksheet_submissions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for anon on interactive_worksheets" ON public.interactive_worksheets;
+CREATE POLICY "Enable all for anon on interactive_worksheets" ON public.interactive_worksheets FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated on interactive_worksheets" ON public.interactive_worksheets;
+CREATE POLICY "Enable all for authenticated on interactive_worksheets" ON public.interactive_worksheets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for anon on worksheet_submissions" ON public.worksheet_submissions;
+CREATE POLICY "Enable all for anon on worksheet_submissions" ON public.worksheet_submissions FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated on worksheet_submissions" ON public.worksheet_submissions;
+CREATE POLICY "Enable all for authenticated on worksheet_submissions" ON public.worksheet_submissions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ==============================================================================
 -- 9. تفعيل البث اللحظي (Realtime) لجميع الجداول لمزامنة المتصفحات فورياً
 -- ==============================================================================
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts, public.challenge_quizzes, public.challenge_rooms, public.live_class_sessions;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.activities, public.submissions, public.badges, public.exams, public.exam_sessions, public.padlet_boards, public.padlet_posts, public.challenge_quizzes, public.challenge_rooms, public.live_class_sessions, public.interactive_worksheets, public.worksheet_submissions;
   EXCEPTION
     WHEN duplicate_object THEN NULL;
     WHEN undefined_object THEN NULL;

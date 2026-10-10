@@ -969,4 +969,63 @@ export interface LanguagePassportEntry {
   institution: string;
 }
 
+// ===================== 4. أوراق العمل التفاعلية المدرسية (Interactive Worksheets Hub) =====================
+export type WorksheetElementType = 'text' | 'choice' | 'checkbox';
+
+export interface WorksheetElement {
+  id: string;
+  type: WorksheetElementType;
+  x: number; // النسبة المئوية من العرض الكلي (0 - 100)
+  y: number; // النسبة المئوية من الارتفاع الكلي (0 - 100)
+  width: number; // النسبة المئوية لعرض العنصر (0 - 100)
+  height: number; // النسبة المئوية لارتفاع العنصر (0 - 100)
+  correctAnswers?: string[]; // الإجابات المقبولة الصحيحة للحقول النصية
+  isCorrect?: boolean; // هل الخيار أو الصندوق هو الإجابة الصحيحة
+  groupName?: string; // اسم المجموعة لتجميع أسئلة الاختيار من متعدد
+  label?: string; // وصف أو تلميح إرشادي اختياري
+  points: number; // الدرجة المخصصة لهذا الحقل
+}
+
+export interface InteractiveWorksheet {
+  id: string;
+  school_id: string;
+  teacher_id: string;
+  teacher_name?: string;
+  class_id?: string | null;
+  target_class_id?: string | null;
+  title: string;
+  description?: string;
+  grade_level?: GradeLevel | string | null;
+  subject?: string;
+  image_url: string; // رابط أو بيانات صورة ورقة العمل الأصلية
+  background_url?: string; // للتوافق مع جدول Supabase السحابي
+  elements: WorksheetElement[];
+  elements_schema?: WorksheetElement[]; // للتوافق مع جدول Supabase السحابي
+  total_points: number;
+  is_public: boolean;
+  is_public_link_enabled?: boolean; // للتوافق مع جدول Supabase السحابي
+  due_date?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface WorksheetSubmission {
+  id: string;
+  worksheet_id: string;
+  school_id: string;
+  student_id?: string | null;
+  student_name: string;
+  guest_name?: string;
+  class_id?: string | null;
+  answers: Record<string, any>;
+  answers_data?: Record<string, any>;
+  score: number;
+  total_score: number;
+  max_score?: number;
+  percentage: number;
+  status?: string;
+  submitted_at: string;
+  results_breakdown?: Record<string, { isCorrect: boolean; pointsEarned: number; expected?: any; studentAnswer?: any }>;
+}
+
 

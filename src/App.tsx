@@ -51,6 +51,10 @@ import { PhonicsGateModal } from './components/PhonicsGateModal';
 import { DrawingCanvasModal } from './components/DrawingCanvasModal';
 import { DiagnosticReportModal } from './components/DiagnosticReportModal';
 import { PrintableWorksheetModal } from './components/PrintableWorksheetModal';
+import { WorksheetTeacherHub } from './components/worksheets/WorksheetTeacherHub';
+import { StudentWorksheetsTab } from './components/worksheets/StudentWorksheetsTab';
+import { WorksheetPlayer } from './components/worksheets/WorksheetPlayer';
+
 import { ClassDiagnosticModal } from './components/ClassDiagnosticModal';
 import { AIGamesTeacherSection } from './components/AIGamesTeacherSection';
 import { AIGamePlayerModal } from './components/AIGamePlayerModal';
@@ -98,6 +102,7 @@ const MOUSA_AVATAR_SRC = '/mousa-avatar.png';
 const normalizeTabName = (rawTab: string | null | undefined): string => {
   if (!rawTab) return '';
   const t = rawTab.trim().toLowerCase();
+  if (t === 'worksheets' || t === 'worksheet' || t === 'اوراق' || t === 'أوراق' || t === 'ورقة_عمل') return 'worksheets';
   if (t === 'challenges' || t === 'challenge' || t === 'تحدي' || t === 'تحديات') return 'challenge';
   if (t === 'padlet' || t === 'wall' || t === 'board' || t === 'جدار' || t === 'ابداع' || t === 'إبداع') return 'padlet';
   if (t === 'ai_studio' || t === 'studio' || t === 'ai' || t === 'استوديو' || t === 'موسى') return 'ai_studio';
@@ -123,13 +128,13 @@ const normalizeTabName = (rawTab: string | null | undefined): string => {
 const isValidTabForRole = (tab: string, role?: UserRole | string): boolean => {
   if (!tab || !role) return false;
   if (role === 'student') {
-    return ['ai_studio', 'games', 'activities', 'library', 'exams', 'padlet', 'challenge', 'live'].includes(tab);
+    return ['ai_studio', 'games', 'activities', 'worksheets', 'library', 'exams', 'padlet', 'challenge', 'live'].includes(tab);
   }
   if (role === 'teacher') {
-    return ['activities', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge', 'live'].includes(tab);
+    return ['activities', 'worksheets', 'create', 'games', 'grades', 'library', 'exams', 'tasks', 'padlet', 'challenge', 'live'].includes(tab);
   }
   if (role === 'hod') {
-    return ['overview', 'grades', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
+    return ['overview', 'worksheets', 'grades', 'teachers', 'library', 'teacher_tasks', 'tasks', 'padlet', 'challenge', 'live', 'ai_governance'].includes(tab);
   }
   if (role === 'super_admin') {
     return ['schools', 'analytics', 'global_ai'].includes(tab);
@@ -290,13 +295,13 @@ function AppContent() {
   }, [currentUser?.role]);
 
   // تبويبات لوحة رئيس القسم مع استعادة التبويب النشط
-  const [hodTab, setHodTab] = useState<'overview' | 'grades' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
+  const [hodTab, setHodTab] = useState<'overview' | 'worksheets' | 'grades' | 'teachers' | 'library' | 'teacher_tasks' | 'padlet' | 'challenge' | 'live' | 'ai_governance'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'hod', 'overview') as any;
   });
 
   // تبويبات لوحة المعلم مع استعادة التبويب النشط
-  const [teacherTab, setTeacherTab] = useState<'activities' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge' | 'live'>(() => {
+  const [teacherTab, setTeacherTab] = useState<'activities' | 'worksheets' | 'create' | 'games' | 'grades' | 'library' | 'exams' | 'tasks' | 'padlet' | 'challenge' | 'live'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'teacher', 'activities') as any;
   });
@@ -329,7 +334,7 @@ function AppContent() {
   }, [currentUser?.preferences?.soundEffects]);
 
   // تبويبات لوحة الطالب مع استعادة التبويب النشط
-  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'library' | 'exams' | 'padlet' | 'challenge' | 'live'>(() => {
+  const [studentTab, setStudentTab] = useState<'ai_studio' | 'games' | 'activities' | 'worksheets' | 'library' | 'exams' | 'padlet' | 'challenge' | 'live'>(() => {
     const initialUser = getCurrentUser();
     return getInitialTabForRole(initialUser?.role || 'student', 'ai_studio') as any;
   });
@@ -1792,6 +1797,36 @@ function AppContent() {
     </div>
   );
 
+  // ================= 0. دعم فتح ورقة العمل مباشرة بالرابط العام /worksheets/play/:id =================
+  const [publicWorksheetId, setPublicWorksheetId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const path = window.location.pathname;
+    const match = path.match(/\/worksheets\/play\/([^\/\?#]+)/);
+    if (match) return match[1];
+    const params = new URLSearchParams(window.location.search);
+    return params.get('worksheet_id') || params.get('play_worksheet');
+  });
+
+  if (publicWorksheetId) {
+    return (
+      <WorksheetPlayer
+        worksheetId={publicWorksheetId}
+        currentUser={currentUser}
+        isGuestMode={!currentUser}
+        onClose={() => {
+          setPublicWorksheetId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.pathname = '/';
+            url.searchParams.delete('worksheet_id');
+            url.searchParams.delete('play_worksheet');
+            window.history.pushState(null, '', url.toString());
+          } catch {}
+        }}
+      />
+    );
+  }
+
   // ================= 1. شاشة تسجيل الدخول =================
   if (!currentUser) {
     return (
@@ -2034,6 +2069,16 @@ function AppContent() {
               }`}
             >
               <FileSpreadsheet className="w-4 h-4 text-indigo-400" /> سجل درجات القسم والتصدير 📊
+            </button>
+            <button
+              onClick={() => setHodTab('worksheets')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                hodTab === 'worksheets'
+                  ? 'bg-emerald-800 text-white shadow-md'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-emerald-500" /> أوراق العمل التفاعلية 📄
             </button>
             <button
               onClick={() => setHodTab('teacher_tasks')}
@@ -2479,6 +2524,16 @@ function AppContent() {
               }`}
             >
               <BookOpen className="w-4 h-4" /> أنشطتي المنشورة ({teacherActivities.length})
+            </button>
+            <button
+              onClick={() => setTeacherTab('worksheets')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                teacherTab === 'worksheets'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-emerald-500" /> أوراق العمل التفاعلية 📄
             </button>
             <button
               onClick={() => setTeacherTab('games')}
@@ -3520,6 +3575,16 @@ function AppContent() {
               }`}
             >
               <FileText className="w-4 h-4" /> الأنشطة والواجبات ({studentWorksheets.length})
+            </button>
+            <button
+              onClick={() => setStudentTab('worksheets')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                studentTab === 'worksheets'
+                  ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/20'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-indigo-500" /> أوراق العمل التفاعلية 📝
             </button>
             <button
               onClick={() => {
