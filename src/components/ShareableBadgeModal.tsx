@@ -38,7 +38,7 @@ export const ShareableBadgeModal: React.FC<ShareableBadgeModalProps> = ({
   const drawBadgeCard = () => {
     if (!canvasRef.current || !badge) return;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     setIsGenerating(true);

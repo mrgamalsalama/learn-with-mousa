@@ -1781,8 +1781,7 @@ export const syncStudentBadgesFromCloud = async (studentId: string): Promise<Chi
     const { data, error } = await supabase
       .from('badges')
       .select('*')
-      .eq('student_id', studentId)
-      .order('earned_at', { ascending: false });
+      .eq('student_id', studentId);
 
     if (!error && Array.isArray(data)) {
       const cloudBadges: ChildBadge[] = data.map((b: any) => ({
@@ -1794,6 +1793,9 @@ export const syncStudentBadgesFromCloud = async (studentId: string): Promise<Chi
         earnedAt: b.earned_at || b.created_at || new Date().toLocaleDateString('ar-EG'),
         category: b.category || 'story'
       }));
+
+      // ترتيب زمني في الذاكرة لضمان عدم حدوث أي أخطاء 400 من السحابة
+      cloudBadges.sort((a, b) => (b.earnedAt || '').localeCompare(a.earnedAt || ''));
 
       // حفظ الأوسمة المسترجعة في الكاش (حتى لو كانت [] لطالب جديد، لتثبيت الفراغ)
       localStorage.setItem(cacheKey, JSON.stringify(cloudBadges));

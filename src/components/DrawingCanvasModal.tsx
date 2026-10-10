@@ -74,7 +74,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
   const saveUndoSnapshot = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
     undoStackRef.current.push(snapshot);
@@ -88,7 +88,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
   const handleUndo = () => {
     const canvas = canvasRef.current;
     if (!canvas || undoStackRef.current.length === 0) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const previousSnapshot = undoStackRef.current.pop();
@@ -106,7 +106,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
 
     if (isOpen && canvasRef.current) {
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -128,7 +128,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     // حفظ الحالة الحالية قبل بداية الخط الجديد
@@ -155,7 +155,7 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -182,14 +182,14 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx?.closePath();
   };
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
       saveUndoSnapshot();
       ctx.fillStyle = '#ffffff';

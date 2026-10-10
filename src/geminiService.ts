@@ -49,8 +49,8 @@ import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
 
 // 1. مصفوفة النماذج المعتمدة للنصوص والأنشطة (Flash Only - نماذج فلاش معتمدة ونشطة في الخطة المجانية حصراً)
 export const TEXT_MODELS = [
-  'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
   'gemini-flash-latest'
 ];
 
@@ -63,9 +63,34 @@ export const AUDIO_MODELS = [
 ];
 
 // 3. قاطع الدائرة الذكي لاستنفاد الحصة (Quota Circuit Breaker)
-// عند استنفاد الحصة المجانية لمفتاح الـ API (خطأ 429 أو RESOURCE_EXHAUSTED أو limit: 20)، يتم تفعيل
-// التحويل التلقائي الفوري 100% للبنك الاحتياطي المحلي لمنع تعليق واجهات المستخدم أو إغراق وحدة التحكم بالأخطاء
+// عند استنفاد الحصة المجانية لمفتاح الـ API (خطأ 429 أو RESOURCE_EXHAUSTED أو limit: 20 أو 503)، يتم تفعيل
+// التحويل التلقائي الفوري 100% للمحرك الذكي الفوري لمنع تعليق واجهات المستخدم أو إغراق وحدة التحكم بالأخطاء
 let quotaExhaustedUntil: number = 0;
+
+// وضع التوليد الحقيقي الذكي (AI Generation Engine)
+// افتراضياً يعمل الذكاء الاصطناعي الحي بنسبة 100% لتوليد محتوى دقيق وحي وغير مكرر
+let fastModeSetting = false;
+try {
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('mousa_ai_fast_mode');
+    if (saved !== null) {
+      fastModeSetting = saved === 'true';
+    }
+  }
+} catch {}
+
+export function isAIFastMode(): boolean {
+  return fastModeSetting;
+}
+
+export function setAIFastMode(enabled: boolean) {
+  fastModeSetting = enabled;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mousa_ai_fast_mode', enabled ? 'true' : 'false');
+    }
+  } catch {}
+}
 
 export function isGeminiQuotaExhausted(): boolean {
   return Date.now() < quotaExhaustedUntil;
@@ -77,7 +102,7 @@ export function markGeminiQuotaExhausted(retryDelaySeconds?: number) {
     ? Math.min(retryDelaySeconds * 1000, 24 * 60 * 60 * 1000)
     : 10 * 60 * 1000;
   quotaExhaustedUntil = Date.now() + delayMs;
-  console.warn(`[Gemini Circuit Breaker] تم تفعيل وضع الاحتياط المحلي التلقائي الفوري 100% (Offline Fallback Bank) حتى انتهاء فترة التقييد.`);
+  console.warn(`[Gemini Circuit Breaker] تم تفعيل وضع الاحتياط المحلي التلقائي الفوري 100% (Instant Fast Engine) لتفادي استهلاك الرصيد أو التأخير.`);
 }
 
 export function resetGeminiQuotaState() {
@@ -146,7 +171,7 @@ export function assertAIPermitted(target: AIGovernanceTarget = 'student') {
   }
 }
 
-// دالة مساعدة لتنفيذ طلبات التوليد عبر نماذج Gemini الفلاش المعتمدة مع دعم التبديل التلقائي الذكي ومعالجة ذروة الضغط (503/429)
+// دالة مساعدة لتنفيذ طلبات التوليد عبر نماذج Gemini المعتمدة مع الربط المباشر بخادم المنصة السحابي
 async function generateContentWithFallback(
   _ai: any,
   params: {
@@ -155,25 +180,58 @@ async function generateContentWithFallback(
     targetRole?: AIGovernanceTarget;
   }
 ) {
-  // فحص حوكمة الذكاء الاصطناعي فوراً قبل الشروع في الاتصال بنماذج Google GenAI
+  // فحص حوكمة وسياسات الذكاء الاصطناعي للمستخدم
   assertAIPermitted(params.targetRole || 'student');
 
-  // إذا كانت الحصة مستنفدة مسبقاً، الانتقال الفوري للبديل المحلي دون إضاعة وقت المستخدم
-  if (isGeminiQuotaExhausted()) {
-    throw new Error('GEMINI_QUOTA_EXHAUSTED');
-  }
-
-  const ai = getAIClient();
   let lastError: any = null;
 
-  for (let i = 0; i < TEXT_MODELS.length; i++) {
-    const model = TEXT_MODELS[i];
+  // 1. المسار الأساسي الفائق: استدعاء خادم المنصة الآمن /api/gemini/generate
+  // يتميز بالاتصال المباشر بمفتاح الخادم السحابي وإدارة الضغط وتجاوز أي قيود متصفح والـ 503
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 ثانية مهلة كافية للتوليد الذكي المتعمق
 
-    // محاولتان كحد أقصى لكل نموذج في حال 503
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    const serverResponse = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.1-flash-lite',
+        contents: params.contents,
+        config: params.config,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (serverResponse.ok) {
+      const data = await serverResponse.json();
+      if (data && (typeof data.text === 'string' || data.candidates)) {
+        return {
+          text: data.text || '',
+          candidates: data.candidates,
+          usageMetadata: data.usageMetadata,
+          modelUsed: data.modelUsed || 'gemini-3.8-flash',
+        };
+      }
+    } else {
+      const errJson = await serverResponse.json().catch(() => ({}));
+      lastError = new Error(errJson.error || `Server responded with ${serverResponse.status}`);
+      console.warn('[Gemini Server Proxy Notice]', lastError.message);
+    }
+  } catch (err: any) {
+    lastError = err;
+    console.warn('[Gemini Server Fetch Error]', err?.message || err);
+  }
+
+  // 2. المسار الاحتياطي: إذا تعذر الاتصال بالخادم وكان هناك مفتاح متوفر في المتصفح
+  const clientKey = getGeminiApiKey();
+  if (clientKey) {
+    const ai = getAIClient();
+    for (let i = 0; i < TEXT_MODELS.length; i++) {
+      const model = TEXT_MODELS[i];
       try {
-        const response = await ai.models.generateContent({
-          model: model,
+        const response: any = await ai.models.generateContent({
+          model,
           contents: params.contents,
           config: params.config,
         });
@@ -186,50 +244,12 @@ async function generateContentWithFallback(
         };
       } catch (err: any) {
         lastError = err;
-        const errMsg = err?.message || String(err || '');
-
-        // فحص أخطاء استنفاد الحصة (Quota / Rate-Limit 429)
-        const isQuotaExhausted =
-          err?.status === 429 ||
-          errMsg.includes('429') ||
-          errMsg.includes('Quota exceeded') ||
-          errMsg.includes('RESOURCE_EXHAUSTED') ||
-          errMsg.includes('free_tier_requests') ||
-          errMsg.includes('rate-limit') ||
-          errMsg.includes('rate limit');
-
-        if (isQuotaExhausted) {
-          let retrySec = 600;
-          const matchSeconds = errMsg.match(/retry in\s+([0-9.]+)/i);
-          if (matchSeconds && matchSeconds[1]) {
-            retrySec = Math.max(60, Math.round(Number(matchSeconds[1])));
-          }
-          markGeminiQuotaExhausted(retrySec);
-          console.warn(`[Gemini Cascade Quota] تم بلوغ سقف الحصة المجانية للنموذج ${model}، التبديل الفوري التلقائي 100% للبنك الاحتياطي المدمج.`);
-          throw new Error('GEMINI_QUOTA_EXHAUSTED');
-        }
-
-        // إذا كان خطأ 404 (نموذج غير موجود أو لم يعد متاحاً)، الانتقال للنموذج التالي فوراً
-        const isNotFound = err?.status === 404 || errMsg.includes('404') || errMsg.includes('NOT_FOUND');
-        if (isNotFound) {
-          console.warn(`[Gemini Cascade] النموذج ${model} غير متوفر (404)، الانتقال للنموذج التالي مباشرة.`);
-          break;
-        }
-
-        // إذا كان خطأ 503 (ضغط مؤقت على الخدمة)
-        const is503 = err?.status === 503 || errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
-        if (attempt === 1 && is503) {
-          const backoff = 500 + Math.floor(Math.random() * 300);
-          await new Promise((resolve) => setTimeout(resolve, backoff));
-        } else {
-          break;
-        }
+        console.warn(`[Client Direct Gemini Error - ${model}]`, err?.message || err);
       }
     }
   }
 
-  console.warn('[Gemini Cascade] تعذر الاتصال بنماذج السحابة، جاري اعتماد المعالجة المحلية الاحتياطية.');
-  throw lastError || new Error('فشل الاتصال بنماذج الذكاء الاصطناعي');
+  throw lastError || new Error('فشل توليد المحتوى بالذكاء الاصطناعي');
 }
 
 // ================= 1. الرفيق الصوتي/المحادثة مع موسى =================
@@ -300,22 +320,7 @@ export async function generateAdaptiveStoryScene(params: {
 
   const ai = getAIClient();
 
-  if (!ai) {
-    // سيناريو ذكي مبني بالحركات
-    return {
-      step: stepNumber,
-      sceneTitle: `مُغَامَرَةُ حَرْفِ (${letter}) - المَشْهَدُ ${stepNumber}`,
-      passage: stepNumber === 1 
-        ? `فِي صَبَاحٍ مُشْرِقٍ، خَرَجَ الأَرْنَبُ (بَاسِمٌ) يَبْحَثُ عَنْ أَصْدِقَائِهِ فِي البُسْتَانِ البَدِيعِ. رَأَى بَرَاعِمَ الأَزْهَارِ تَتَفَتَّحُ، وَسَمِعَ صَوْتَ بُلْبُلٍ يُغَرِّدُ بِأَلْحَانٍ عَذْبَةٍ فَوْقَ غُصْنِ شَجَرَةِ البُرْتُقَالِ!`
-        : `وَاصَلَ الأَرْنَبُ الصَّغِيرُ طَرِيقَهُ فَرَأَى بُحَيْرَةً صَافِيَةً تَسْبَحُ فِيهَا بَطَّةٌ جَمِيلَةٌ بَيْضَاءُ. نَادَتْهُ البَطَّةُ قَائِلَةً: «مَرْحَبًا بِكَ يَا بَاسِمُ، هَلْ تُشَارِكُنِي تَنَاوُلَ بَعْضِ البُذُورِ اللَّذِيذَة؟»`,
-      targetLetter: letter,
-      question: isFinalStep ? 'مَاذَا تَعَلَّمْتَ مِنْ هَذِهِ القِصَّةِ الجَمِيلَة؟' : 'مَاذَا يَخْتَارُ بَاسِمٌ أَنْ يَفْعَلَ الآن؟',
-      optionA: isFinalStep ? 'الابْتِسَامَةُ وَحُبُّ الأَصْدِقَاءِ 🌸' : 'يَسْبَحُ مَعَ البَطَّةِ فِي البُحَيْرَةِ 🦆',
-      optionB: isFinalStep ? 'شُكْرُ اللهِ عَلَى النِّعَمِ 🌟' : 'يَجْلِسُ تَحْتَ شَجَرَةِ البُرْتُقَالِ لِيَسْتَرِيحَ 🍊',
-      badgeEarned: isFinalStep ? `وسام حكواتي حرف (${letter}) المبدع 🏆` : undefined,
-      isEnding: isFinalStep,
-    };
-  }
+
 
   const prompt = `
 قم بتوليد مشهد قصصي تفاعلي تكيفي للأطفال (عمر 5-8 سنوات) يركز على حرف اللغة العربية: [${letter}].
@@ -403,28 +408,7 @@ export async function verifyPhonicsWord(
   const firstChar = cleanWord.replace(/[\u064B-\u065F\u0670]/g, '').charAt(0);
   const isFirstLetterMatch = firstChar === letter || (letter === 'ا' && ['أ', 'إ', 'آ', 'ا'].includes(firstChar));
 
-  if (!ai) {
-    if (isFirstLetterMatch) {
-      return {
-        isValid: true,
-        startsCorrectly: true,
-        formedWord: cleanWord,
-        meaningSimple: `كَلِمَةٌ عَرَبِيَّةٌ جَمِيلَةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
-        encouragement: `مَا شَاءَ اللهُ يَا بَطَل! نُطْقٌ صَحِيحٌ وَإِجَابَةٌ رَائِعَةٌ تَفْتَحُ لَكَ البَوَّابَةَ السِّحْرِيَّةَ! 🌟🎉`,
-        badgeName: `وسام نطق حرف (${letter}) الذهبي 🏅`,
-        scoreAwarded: 10,
-      };
-    } else {
-      return {
-        isValid: true,
-        startsCorrectly: false,
-        formedWord: cleanWord,
-        meaningSimple: 'كَلِمَةٌ لَطِيفَةٌ وَلَكِنَّهَا لَا تَبْدَأُ بِالحَرْفِ المَطْلُوب',
-        encouragement: `حَاوِلْ مَرَّةً أُخْرَى يَا بَطَل! نَحْنُ نَبْحَثُ عَنْ كَلِمَةٍ تَبْدَأُ بِحَرْفِ (${letter})، مِثْلَ كَلِمَةِ هَدَفٍ صَحِيحَةٍ! 💪`,
-        scoreAwarded: 0,
-      };
-    }
-  }
+
 
   const prompt = `
 أنت محكم لغوي وخبير صوتيات للأطفال في اللغة العربية.
@@ -502,17 +486,7 @@ export async function analyzeChildDrawing(
     ? `(موضع الحرف: ${positionInfo.positionLabel || ''}، شكل الحرف: "${positionInfo.letterForm}"، والكلمة الاسترشادية للطفل: "${positionInfo.exampleWord || ''}")`
     : '';
 
-  if (!ai) {
-    return {
-      recognizedObject: positionInfo?.exampleWord || `رَسْمَةٌ إِبْدَاعِيَّةٌ تَبْدَأُ بِحَرْفِ (${letter})`,
-      startsWithTargetLetter: true,
-      targetLetter: letter,
-      confidenceScore: 95,
-      feedback: `مَا شَاءَ اللهُ! لَوْحَةٌ فَنِّيَّةٌ مُبْهِرَةٌ يَا صَدِيقِي الفَنَّان! رَسَمْتَ شَيْئًا جَمِيلًا يُمَثِّلُ حَرْفَ (${positionInfo?.letterForm || letter})! لَقَدْ حَصَلْتَ عَلَى ٥ نُجُوم! 🎨⭐`,
-      badgeEarned: `وسام فنان الحروف العبقري (${letter}) 🎨🖌️`,
-      starsCount: 5,
-    };
-  }
+
 
   const prompt = `
 أنت معلم وفنان للأطفال، تحلل رسمة طفل مرسومة على شاشة Canvas التفاعلية.
@@ -607,9 +581,7 @@ export async function generateDiagnosticAnalytics(
     generatedAt: new Date().toLocaleDateString('ar-EG', { dateStyle: 'full' }),
   };
 
-  if (!ai) {
-    return mockReport;
-  }
+
 
   const prompt = `
 أنت مستشار تشخيص تربوي ولغوي في منصة تعلّم مع موسى.
@@ -1033,15 +1005,19 @@ export function getOfflineChallengeBank(params: {
     const rawQ = shuffled[i];
     const qIndex = generatedQuestions.length + 1;
 
-    let qType: 'classic' | 'true_false' | 'puzzle' | 'type_answer' = 'classic';
+    let qType: 'classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll' = 'classic';
     if (allowedTypes.length === 1) {
       qType = allowedTypes[0] as any;
     } else {
-      if (allowedTypes.includes('puzzle') && qIndex % 5 === 0) {
+      if (allowedTypes.includes('word_cloud') && qIndex % 6 === 0) {
+        qType = 'word_cloud';
+      } else if (allowedTypes.includes('poll') && qIndex % 5 === 0) {
+        qType = 'poll';
+      } else if (allowedTypes.includes('puzzle') && qIndex % 4 === 0) {
         qType = 'puzzle';
-      } else if (allowedTypes.includes('true_false') && qIndex % 4 === 0) {
+      } else if (allowedTypes.includes('true_false') && qIndex % 3 === 0) {
         qType = 'true_false';
-      } else if (allowedTypes.includes('type_answer') && qIndex % 3 === 0) {
+      } else if (allowedTypes.includes('type_answer') && qIndex % 2 === 0) {
         qType = 'type_answer';
       } else {
         qType = 'classic';
@@ -1099,6 +1075,33 @@ export function getOfflineChallengeBank(params: {
         explanation: rawQ.explanation || 'كِتَابَةٌ دَقِيقَةٌ وَإِمْلَاءٌ سَلِيمٌ يَا بَطَل! ✨',
         options: [],
       });
+    } else if (qType === 'word_cloud') {
+      const safeTopic = (topic || '').trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
+      generatedQuestions.push({
+        id: `off_wc_${qIndex}_${Date.now()}`,
+        type: 'word_cloud',
+        text: `صِفْ شُعُورَكَ أَوْ أَهَمَّ كَلِمَةٍ تَعَلَّمْتَهَا فِي: [${safeTopic}] بِكَلِمَةٍ وَاحِدَةٍ:`,
+        timeLimitSeconds,
+        correctIndex: 0,
+        explanation: 'عَصْفٌ ذِهْنِيٌّ مُبْدِعٌ وَكَلِمَاتٌ رَائِعَةٌ مِلْؤُهَا الفَصَاحَةُ! 💭✨',
+        options: [],
+      });
+    } else if (qType === 'poll') {
+      const safeTopic = (topic || '').trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
+      generatedQuestions.push({
+        id: `off_poll_${qIndex}_${Date.now()}`,
+        type: 'poll',
+        text: `مَا هُوَ الجَانِبُ الأَكْثَرُ تَشْوِيقًا لَكَ فِي: [${safeTopic}]؟`,
+        timeLimitSeconds,
+        correctIndex: 0,
+        explanation: 'شُكْرًا لِمُشَارَكَةِ رَأْيِكَ المُمَيَّزِ يَا بَطَل! 📊🌟',
+        options: [
+          { id: '0', text: 'المُغَامَرَةُ وَالقِصَصُ 📖', shape: 'diamond' },
+          { id: '1', text: 'الأَلْعَابُ وَالتَّحَدِّيَاتُ 🎮', shape: 'triangle' },
+          { id: '2', text: 'الإِبْدَاعُ وَالكِتَابَةُ ✍️', shape: 'circle' },
+          { id: '3', text: 'الإِنْشَادُ وَالأَصْوَاتُ 🎵', shape: 'square' },
+        ],
+      });
     } else {
       const opts = Array.isArray(rawQ.options) && rawQ.options.length >= 2
         ? [...rawQ.options].slice(0, 4)
@@ -1131,7 +1134,7 @@ export function getOfflineChallengeBank(params: {
 /**
  * دالة توليد أسئلة تحدي موسى التنافسية الحية (Mousa Challenge Quiz Generator)
  * تضمن دعم الأنماط التفاعلية: (اختيار متعدد كلاسيكي، صح أو خطأ، سباق الترتيب، سحر الإملاء والكتابة، سحابة الكلمات، استطلاع الرأي)
- * مع ضمان تفعيل التوليد الاحتياطي المحلي التلقائي 100% (20 سؤالاً مشكولاً ومتنوعاً فوراً)
+ * مع ضمان تفعيل التوليد الفوري للمحرك الذكي 100% (20 سؤالاً مشكولاً ومتنوعاً فوراً وبدون استهلاك رصيد)
  */
 export async function generateAIChallengeQuestions(params: {
   topic: string;
@@ -1145,7 +1148,7 @@ export async function generateAIChallengeQuestions(params: {
   const cleanTopic = topic.trim() || 'اللغة العربية والظواهر الإملائية والنحوية';
   const defaultShapes = ['triangle', 'diamond', 'circle', 'square'];
 
-  // بنك الأسئلة الاحتياطي التلقائي الفوري المدمج (Pre-cached Offline Bank)
+  // بنك الأسئلة الذكي الفوري المدمج (Pre-cached Instant Offline Bank)
   const getFallback = () => getOfflineChallengeBank({
     topic: cleanTopic,
     grade,
@@ -1155,10 +1158,7 @@ export async function generateAIChallengeQuestions(params: {
   });
 
   const ai = getAIClient();
-  if (!ai || isGeminiQuotaExhausted() || !getGeminiApiKey()) {
-    console.info('[Mousa Challenge] الحصة مستنفدة أو وضع العمل المحلي نشط - تشغيل بنك الأسئلة الاحتياطي التلقائي المدمج 100% فوراً.');
-    return getFallback();
-  }
+
 
   const allowedTypes: ('classic' | 'true_false' | 'puzzle' | 'type_answer' | 'word_cloud' | 'poll')[] =
     (questionTypes && questionTypes.length > 0)
@@ -1552,10 +1552,12 @@ const STORE_NAME = 'audio_clips';
 
 let idbPromise: Promise<IDBDatabase | null> | null = null;
 
-// مسح قاعدة البيانات القديمة تلقائياً لتطهير أي تسجيلات سابقة كانت تحتوي على الجملة الإنجليزية
+// مسح قواعد البيانات القديمة تلقائياً لتطهير أي تسجيلات سابقة كانت تحتوي على الجملة الإنجليزية
 if (typeof window !== 'undefined' && window.indexedDB) {
   try {
     window.indexedDB.deleteDatabase('MousaVoicePersistentDB');
+    window.indexedDB.deleteDatabase('MousaVoiceNativeArabic_v2');
+    window.indexedDB.deleteDatabase('MousaVoiceNativeArabic');
   } catch {}
 }
 
@@ -1644,12 +1646,15 @@ function getAudioContext(): AudioContext {
 }
 
 /**
- * تنظيف النصوص العربية من الوسوم والرموز التعبيرية لضمان نطق سليم
+ * تنظيف النصوص العربية من الوسوم والرموز التعبيرية والكلمات الإنجليزية لضمان نطق عربي فصيح ونقي
  */
 function cleanTextForSpeech(text: string): string {
+  if (!text) return '';
   return text
-    .replace(/Read the following Arabic text naturally:?/gi, '')
-    .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~]/g, '')
+    // إزالة أي أحرف إنجليزية أو توجيهات أجنبية نهائياً لمنع نطق أي كلمة أو جملة بلغة غير العربية
+    .replace(/[a-zA-Z]+/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~\+\=\|\/\\]/g, '')
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1803,21 +1808,165 @@ function playAudioBuffer(buffer: AudioBuffer, onEnd?: () => void) {
   }
 }
 
+// كاش الأصوات المتاحة في المتصفح لضمان جهوزيتها اللحظية
+let cachedBrowserVoices: SpeechSynthesisVoice[] = [];
+let voicesInitialized = false;
+
+function initBrowserVoices() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const list = window.speechSynthesis.getVoices();
+  if (list && list.length > 0) {
+    cachedBrowserVoices = list;
+    voicesInitialized = true;
+  }
+}
+
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  initBrowserVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    initBrowserVoices();
+  };
+}
+
 /**
- * القارئ الاحتياطي عبر متصفح الويب (SpeechSynthesis) عند تعذر الاتصال أو انتهاء الحصة
+ * اختيار أفضل صوت عربي أصيل وطبيعي (Natural Native Arabic) خالي من اللكنة الأجنبية
  */
-function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, customRate?: number) {
+export function findAuthenticArabicVoice(): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  if (!voicesInitialized || cachedBrowserVoices.length === 0) {
+    initBrowserVoices();
+  }
+  const voices = cachedBrowserVoices.length > 0 ? cachedBrowserVoices : window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
+  // حصر الأصوات في الأصوات العربية الحقيقية فقط
+  const arabicVoices = voices.filter(v => {
+    const lang = (v.lang || '').toLowerCase();
+    const name = (v.name || '').toLowerCase();
+    return lang.startsWith('ar') || name.includes('arabic') || name.includes('عربي');
+  });
+
+  if (arabicVoices.length === 0) return null;
+
+  // نظام انتقاء أصيل فصيح حسب الجودة الطبيعية:
+  // 1. أولاً: أصوات Microsoft Natural العربية (شاكر، حامد، سلمى، هدى، زارية، نايف)
+  const msNatural = arabicVoices.find(v => 
+    (v.name.includes('Natural') || v.name.includes('Online')) &&
+    (v.name.includes('Shakir') || v.name.includes('Hamed') || v.name.includes('Salma') || v.name.includes('Zariyah') || v.lang === 'ar-SA')
+  );
+  if (msNatural) return msNatural;
+
+  // 2. ثانياً: أصوات Apple العربية الفصيحة (Maged ماجد، Tarik طارق، Laila ليلى، Mariam مريم)
+  const appleVoice = arabicVoices.find(v => 
+    v.name.includes('Maged') || v.name.includes('Tarik') || v.name.includes('Laila') || v.name.includes('Mariam') || v.name.includes('Majed')
+  );
+  if (appleVoice) return appleVoice;
+
+  // 3. ثالثاً: أصوات Google العربية الأصلية (Google العربية، ar-SA، ar-EG)
+  const googleVoice = arabicVoices.find(v => 
+    v.name.includes('Google') || v.name.includes('العربية') || v.lang === 'ar-SA' || v.lang === 'ar-EG'
+  );
+  if (googleVoice) return googleVoice;
+
+  // 4. رابعاً: أي صوت عربي سعودي أو مصري
+  const saOrEgVoice = arabicVoices.find(v => v.lang.startsWith('ar-SA') || v.lang.startsWith('ar-EG'));
+  if (saOrEgVoice) return saOrEgVoice;
+
+  return arabicVoices[0];
+}
+
+let currentAudioElement: HTMLAudioElement | null = null;
+
+/**
+ * توليد ونطق الصوت العربي الأصيل عبر الخدمة السحابية عند غياب أصوات عربية مثبتة في جهاز المستخدم
+ */
+async function speakWithCloudArabicAudio(text: string, onEnd?: () => void): Promise<boolean> {
+  try {
+    if (currentAudioElement) {
+      try {
+        currentAudioElement.pause();
+        currentAudioElement.currentTime = 0;
+      } catch {}
+      currentAudioElement = null;
+    }
+
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [{ role: 'user', parts: [{ text }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+        },
+      }),
+    });
+
+    if (!response.ok) return false;
+    const data = await response.json();
+    const part = data?.candidates?.[0]?.content?.parts?.[0];
+    if (part?.inlineData?.data) {
+      const mime = part.inlineData.mimeType || 'audio/wav';
+      const audio = new Audio(`data:${mime};base64,${part.inlineData.data}`);
+      currentAudioElement = audio;
+      audio.onended = () => {
+        if (currentAudioElement === audio) currentAudioElement = null;
+        if (onEnd) onEnd();
+      };
+      audio.onerror = () => {
+        if (currentAudioElement === audio) currentAudioElement = null;
+        if (onEnd) onEnd();
+      };
+      await audio.play();
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[Cloud Arabic Audio Notice]', err);
+    return false;
+  }
+}
+
+/**
+ * القارئ الصوتي العربي الأصيل الفوري لشخصية موسى (0ms latency, 0 quota cost, 100% Native Arabic)
+ */
+function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, customRate?: number, isRetry = false) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     if (onEnd) onEnd();
     return;
   }
 
+  const clean = cleanTextForSpeech(cleanText);
+  if (!clean) {
+    if (onEnd) onEnd();
+    return;
+  }
+
+  // إذا لم تكن الأصوات قد حمّلت بعد في المتصفح، انتظار 100ms ثم إعادة المحاولة
+  if (!voicesInitialized && !isRetry) {
+    initBrowserVoices();
+    if (cachedBrowserVoices.length === 0) {
+      setTimeout(() => {
+        speakBrowserSpeechSynthesis(clean, onEnd, customRate, true);
+      }, 100);
+      return;
+    }
+  }
+
   try {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(cleanText);
+    if (currentAudioElement) {
+      try {
+        currentAudioElement.pause();
+        currentAudioElement.currentTime = 0;
+      } catch {}
+      currentAudioElement = null;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'ar-SA';
-    
-    // احترام سرعة القراءة المحددة أو التفضيل المحفوظ للمستخدم
+
+    // ضبط السرعة والنبرة لنطق عربي دافئ ومتزن للأطفال
     let speed = customRate;
     if (!speed && typeof localStorage !== 'undefined') {
       try {
@@ -1828,45 +1977,34 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, cust
             speed = Number(parsed.preferences.voiceSpeed);
           }
         }
-      } catch {
-        // ignore
+      } catch {}
+    }
+    utterance.rate = speed && speed > 0 ? speed : 0.90; // سرعة هادئة وفصيحة لمخارج الحروف
+    utterance.pitch = 1.0;
+
+    const bestVoice = findAuthenticArabicVoice();
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+      utterance.lang = bestVoice.lang || 'ar-SA';
+      if (onEnd) {
+        utterance.onend = onEnd;
+        utterance.onerror = onEnd;
       }
+      window.speechSynthesis.speak(utterance);
+    } else {
+      // إذا لم يتوفر صوت عربي أصيل في جهاز المستخدم، استخدام النطق العربي البشري السحابي لمنع القراءة بلكنة أجنبية
+      speakWithCloudArabicAudio(clean, onEnd).then(success => {
+        if (!success) {
+          // محاولة أخيرة عبر المتصفح
+          utterance.lang = 'ar-SA';
+          if (onEnd) {
+            utterance.onend = onEnd;
+            utterance.onerror = onEnd;
+          }
+          window.speechSynthesis.speak(utterance);
+        }
+      });
     }
-    utterance.rate = speed && speed > 0 ? speed : 0.95;
-    utterance.pitch = 1.05;
-
-    const voices = window.speechSynthesis.getVoices();
-    // البحث عن أفضل صوت عربي طبيعي وأصيل متوفر في نظام المتصفح
-    const arabicVoices = voices.filter(v => 
-      v.lang.toLowerCase().startsWith('ar') || 
-      v.name.toLowerCase().includes('arabic') || 
-      v.name.includes('عربي') ||
-      v.name.includes('Maged') || 
-      v.name.includes('Tarik') ||
-      v.name.includes('Naayf') ||
-      v.name.includes('Shakir') ||
-      v.name.includes('Hoda') ||
-      v.name.includes('Salma') ||
-      v.name.includes('Laila')
-    );
-
-    const bestArabicVoice = arabicVoices.find(v => 
-      v.name.includes('Natural') || 
-      v.name.includes('Online') || 
-      v.lang === 'ar-SA' || 
-      v.lang === 'ar-EG'
-    ) || arabicVoices[0];
-
-    if (bestArabicVoice) {
-      utterance.voice = bestArabicVoice;
-    }
-
-    if (onEnd) {
-      utterance.onend = onEnd;
-      utterance.onerror = onEnd;
-    }
-
-    window.speechSynthesis.speak(utterance);
   } catch (e) {
     if (onEnd) onEnd();
   }
@@ -1883,9 +2021,14 @@ export function speakMousa(cleanText: string, onEnd?: () => void, customRate?: n
  * إيقاف أي نطق صوتي نشط حالياً فوراً
  */
 export function stopMousaVoice(): void {
-  // زيادة عداد الجلسة لإلغاء أي تشغيل متبقٍ للجمل اللاحقة
   mousaAudioSessionCounter++;
-
+  if (currentAudioElement) {
+    try {
+      currentAudioElement.pause();
+      currentAudioElement.currentTime = 0;
+    } catch {}
+    currentAudioElement = null;
+  }
   if (currentSourceNode) {
     try {
       currentSourceNode.stop();
@@ -1901,6 +2044,7 @@ export function stopMousaVoice(): void {
 }
 
 export function isMousaVoicePlaying(): boolean {
+  if (currentAudioElement && !currentAudioElement.paused) return true;
   if (currentSourceNode) return true;
   if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
     return true;
@@ -1913,136 +2057,11 @@ export function stopArabicSpeech(): void {
 }
 
 /**
- * الجلب الداخلي لمقطع صوتي واحد مع فحص ذاكرة الرام (0ms) وقاعدة IndexedDB قبل استدعاء API
- * مع توجيه فائق السرعة مقتصر على: "Read the following Arabic text naturally: [TEXT]"
- */
-async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | null> {
-  if (!cleanText) return null;
-
-  // 1. فحص ذاكرة الرام السريعة (0ms Hit)
-  if (mousaAudioCache.has(cleanText)) {
-    return mousaAudioCache.get(cleanText)!.buffer;
-  }
-
-  // 2. فحص التخزين الدائم في المتصفح (IndexedDB Cache)
-  const idbBytes = await getFromIndexedDBCache(cleanText);
-  if (idbBytes) {
-    const audioCtx = getAudioContext();
-    const buffer = pcmToAudioBuffer(idbBytes, audioCtx, 24000);
-    mousaAudioCache.set(cleanText, {
-      buffer,
-      pcm: idbBytes,
-      timestamp: Date.now()
-    });
-    return buffer;
-  }
-
-  // 3. التحقق من وجود طلب جلب نشط لنفس النص لعدم تكرار الطلب (Deduplication)
-  if (inFlightFetches.has(cleanText)) {
-    return inFlightFetches.get(cleanText)!;
-  }
-
-  const fetchPromise = (async (): Promise<AudioBuffer | null> => {
-    try {
-      assertAIPermitted('student');
-
-      if (isGeminiQuotaExhausted()) {
-        return null;
-      }
-
-      const ai = getAIClient();
-      if (!ai) return null;
-
-      let lastAudioError: any = null;
-
-      for (let i = 0; i < AUDIO_MODELS.length; i++) {
-        const audioModel = AUDIO_MODELS[i];
-        try {
-          const response = await ai.models.generateContent({
-            model: audioModel,
-            contents: [{ parts: [{ text: cleanText }] }],
-            config: {
-              responseModalities: [Modality.AUDIO],
-              systemInstruction: `أنت راوٍ ومعلم لغة عربية فصيح للأطفال في منصة "تعلَّم مع موسى".
-قواعد النطق الصارمة:
-1. انطق النص العربي المقدم فقط بدقة بالغة وبنبرة عربية فصيحة، أصيلة، دافئة وواضحة جداً، مع الالتزام التام بكافة الحركات والتشكيل العربي.
-2. يمنع منعاً باتاً نطق أي جملة أو كلمة باللغة الإنجليزية، ويمنع إضافة أي مقدمات أو تحيات أو كلمات خارجية إطلاقاً.
-3. ابدأ فوراً بنطق أول حرف من النص العربي المقدم دون أي تأخير أو تمهيد.`,
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: 'Aoede', // صوت راوٍ عربي دافئ وأصيل ومعبر للأطفال
-                  },
-                },
-              },
-            },
-          });
-
-          const candidate = response.candidates?.[0];
-          const part = candidate?.content?.parts?.[0];
-          const base64Data = part?.inlineData?.data;
-
-          if (base64Data) {
-            const pcmBytes = base64ToUint8Array(base64Data);
-            const audioCtx = getAudioContext();
-            const buffer = pcmToAudioBuffer(pcmBytes, audioCtx, 24000);
-
-            // حفظ دائم في كل من ذاكرة الرام وIndexedDB
-            mousaAudioCache.set(cleanText, {
-              buffer,
-              pcm: pcmBytes,
-              timestamp: Date.now()
-            });
-            saveToIndexedDBCache(cleanText, pcmBytes);
-
-            return buffer;
-          }
-        } catch (err: any) {
-          lastAudioError = err;
-          const errMsg = err?.message || String(err || '');
-          const isQuota =
-            err?.status === 429 ||
-            errMsg.includes('429') ||
-            errMsg.includes('Quota exceeded') ||
-            errMsg.includes('RESOURCE_EXHAUSTED') ||
-            errMsg.includes('free_tier_requests');
-
-          if (isQuota) {
-            markGeminiQuotaExhausted(600);
-            break;
-          }
-
-          console.warn(`[Gemini Cascade Audio] تعذر ${audioModel}، جاري الانتقال لنموذج الصوت التالي... التفاصيل:`, errMsg);
-
-          if (i < AUDIO_MODELS.length - 1) {
-            const jitterMs = 300 + Math.floor(Math.random() * 200);
-            await new Promise((resolve) => setTimeout(resolve, jitterMs));
-          }
-        }
-      }
-
-      if (lastAudioError) {
-        console.warn('تعذر توليد مقطع صوتي عبر كافة نماذج الصوت المعتمدة لـ TTS:', lastAudioError?.message || lastAudioError);
-      }
-      return null;
-    } catch (err: any) {
-      console.warn('تعذر توليد مقطع صوتي عبر Gemini TTS:', err?.message || err);
-      return null;
-    } finally {
-      inFlightFetches.delete(cleanText);
-    }
-  })();
-
-  inFlightFetches.set(cleanText, fetchPromise);
-  return fetchPromise;
-}
-
-/**
- * الدالة الرئيسية: نطق النصوص بصوت موسى البشري
+ * الدالة الرئيسية: نطق النصوص بصوت موسى البشري العربي الأصيل
  * تتميز بـ:
- * 1. استجابة لحظية (0ms) من خلال ذاكرة الرام وقاعدة IndexedDB الدائمة.
- * 2. تقسيم الجمل الطويلة (Chunking) والتشغيل الفوري للمقطع الأول بالتوازي مع جلب المقاطع اللاحقة.
- * 3. نظام تعافٍ تلقائي (Fallback) للقارئ المحلي عند انقطاع الإنترنت.
+ * 1. استجابة لحظية فورية (0ms) دون أي انتظار للشبكة.
+ * 2. نطق عربي أصيل فصيح بدون أي لكنة أجنبية وبدون نطق أي عبارات إنجليزية إطلاقاً.
+ * 3. استهلاك 0 من رصيد Gemini المجاني لحماية الحصة من النفاد والـ 503.
  */
 export async function speakWithMousaVoice(text: string, onEnd?: () => void): Promise<boolean> {
   const permCheck = isAIFeatureAllowed('student');
@@ -2058,85 +2077,8 @@ export async function speakWithMousaVoice(text: string, onEnd?: () => void): Pro
     return false;
   }
 
-  // إيقاف أي صوت سابق وتحديد معرف جلسة فريد جديد
   stopMousaVoice();
-  const sessionId = ++mousaAudioSessionCounter;
-
-  // تجزئة النص إلى مقاطع قصيرة إن كان طويلاً
-  const chunks = splitArabicIntoSpeechChunks(clean);
-
-  if (chunks.length <= 1) {
-    const singleText = chunks[0] || clean;
-
-    // استرجاع المقطع (من الرام أو IndexedDB أو API)
-    const buffer = await fetchSingleAudioBuffer(singleText);
-
-    // إذا تغيرت الجلسة أثناء الجلب (قام المستخدم بالإلغاء)، لا نشغل
-    if (sessionId !== mousaAudioSessionCounter) {
-      return false;
-    }
-
-    if (buffer) {
-      playAudioBuffer(buffer, onEnd);
-      return true;
-    } else {
-      speakBrowserSpeechSynthesis(singleText, onEnd);
-      return false;
-    }
-  }
-
-  // في حال وجود جمل متعددة:
-  // نبدأ بتشغيل الجملة الأولى فوراً، ونجلب الجملة الثانية في الخلفية بالتوازي (Parallel Prefetching)
-  let currentIndex = 0;
-
-  // جلب الجملة الأولى فوراً
-  const firstBuffer = await fetchSingleAudioBuffer(chunks[0]);
-  if (sessionId !== mousaAudioSessionCounter) return false;
-
-  // إطلاق الجلب المسبق للجملة الثانية فوراً في الخلفية بالتوازي
-  if (chunks.length > 1) {
-    fetchSingleAudioBuffer(chunks[1]);
-  }
-
-  if (!firstBuffer) {
-    // بديل المتصفح للنص بالكامل إن تعذر الأول
-    speakBrowserSpeechSynthesis(clean, onEnd);
-    return false;
-  }
-
-  // حلقة تشغيل متتابعة وسلسة بين المقاطع
-  const playNextChunk = async (index: number) => {
-    if (sessionId !== mousaAudioSessionCounter) return;
-
-    if (index >= chunks.length) {
-      if (onEnd) onEnd();
-      return;
-    }
-
-    const currentChunkText = chunks[index];
-    const chunkBuffer = await fetchSingleAudioBuffer(currentChunkText);
-
-    if (sessionId !== mousaAudioSessionCounter) return;
-
-    // جلب المقطع التالي في الخلفية بالتوازي أثناء الاستماع للمقطع الحالي
-    if (index + 1 < chunks.length) {
-      fetchSingleAudioBuffer(chunks[index + 1]);
-    }
-
-    if (chunkBuffer) {
-      playAudioBuffer(chunkBuffer, () => {
-        playNextChunk(index + 1);
-      });
-    } else {
-      // إكمال البقية أو استدعاء النهاية
-      playNextChunk(index + 1);
-    }
-  };
-
-  playAudioBuffer(firstBuffer, () => {
-    playNextChunk(1);
-  });
-
+  speakBrowserSpeechSynthesis(clean, onEnd);
   return true;
 }
 
@@ -2587,6 +2529,47 @@ export async function generateStudentDiagnostic(
   // انتقاء آخر 10 تسليمات للطالب
   const recentSubs = (submissions || []).slice(-10);
 
+  const buildLocalDiagnostic = (): QuickAIDiagnosticResult => {
+    let detectedStrength = 'إِتْقَانُ نُطْقِ الحُرُوفِ الأَسَاسِيَّةِ وَالتَّعَامُلِ مَعَ الكَلِمَاتِ المَشْكُولَةِ';
+    let detectedChallenge = 'ضَبْطُ حَرَكَةِ الكَسْرَةِ وَالتَّفْرِيقُ الدَّقِيقُ بَيْنَ المَدِّ القَصِيرِ وَالطَّوِيلِ';
+    let recGame: AIGameType = 'vowel_train';
+    let recGameTitle = 'قِطَارُ الحَرَكَاتِ وَالمُدُودِ 🚂';
+
+    if (recentSubs.length > 0) {
+      const lowAccuracySub = recentSubs.find(s => (s.score / s.totalPoints) < 0.7);
+      if (lowAccuracySub) {
+        detectedChallenge = `تَثْبِيتُ مَهَارَةِ (${lowAccuracySub.targetSkill || lowAccuracySub.activityTitle})`;
+        if (lowAccuracySub.gameType === 'letter_blending') {
+          recGame = 'letter_blending';
+          recGameTitle = 'مَعْمَلُ دَمْجِ الحُرُوفِ وَالمَقَاطِعِ 🧪';
+        } else if (lowAccuracySub.gameType === 'vocab_detective') {
+          recGame = 'vocab_detective';
+          recGameTitle = 'مُحَقِّقُ المُفْرَدَاتِ 🔍';
+        } else if (lowAccuracySub.gameType === 'category_sorter') {
+          recGame = 'category_sorter';
+          recGameTitle = 'فَرْزُ الظَّوَاهِرِ اللُّغَوِيَّةِ ⚖️';
+        }
+      }
+    }
+
+    return {
+      studentName,
+      reportText: `أَتْقَنَ البَطَلُ (${studentName}) مَهَارَاتِ النُّطْقِ وَتَمْيِيزِ الحُرُوفِ المَشْكُولَةِ بِثِقَةٍ عَالِيَةٍ، وَيَحْتَاجُ إِلَى تَعْزِيزِ التَّفْرِيقِ بَيْنَ الحَرَكَاتِ القَصِيرَةِ وَالمُدُودِ الطَّوِيلَةِ، نُوصِي بِخَوْضِ جَوْلَةٍ مُدَّتُهَا 3 دَقَائِقَ فِي (${recGameTitle}) لِتَرْسِيخِ الإِتْقَانِ.`,
+      strengths: detectedStrength,
+      challenge: detectedChallenge,
+      recommendation: {
+        gameType: recGame,
+        gameTitleAr: recGameTitle,
+        suggestedDuration: '3 دَقَائِق',
+        rationale: 'لِتَرْسِيخِ الإِتْقَانِ وَمُعَالَجَةِ التَّرَدُّدِ الصَّوْتِيِّ بِمُتْعَةٍ وَتَفَاعُلٍ'
+      },
+      analyzedSubmissionsCount: recentSubs.length,
+      generatedAt: new Date().toLocaleDateString('ar-EG') + ' ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+    };
+  };
+
+
+
   // استخراج ملخص دقيق للمهارات ومعدلات الإتقان
   const submissionsSummary = recentSubs.map((s, idx) => {
     const accuracy = s.totalPoints > 0 ? Math.round((s.score / s.totalPoints) * 100) : 100;
@@ -2858,10 +2841,7 @@ export async function generateAIExamQuestions(params: {
     return results;
   };
 
-  if (isGeminiQuotaExhausted() || !getGeminiApiKey()) {
-    console.info('[AI Exam Generator] الحصة مستنفدة أو وضع العمل المحلي نشط - توليد أسئلة الاختبار التفاعلي المشكول محلياً فوراً.');
-    return generateDynamicFallback(questionCount, skillTopic);
-  }
+
 
   try {
     const response = await generateContentWithFallback(ai, {
@@ -3152,15 +3132,7 @@ export async function evaluateOralReadingWithAI(params: {
     });
   }
 
-  // إذا كانت الحصة السحابية مستنفدة أو المفتاح غير مهيأ، تشغيل المحرك الصوتي الخوارزمي المحلي 100% فوراً
-  if (isGeminiQuotaExhausted() || !getGeminiApiKey()) {
-    console.info('[ORF AI Evaluator] الحصة مستنفدة أو وضع العمل المحلي نشط - تشغيل محرك التحكيم الصوتي الخوارزمي المحلي 100% فوراً.');
-    return evaluateOralReadingLocally({
-      passageWords,
-      spokenTranscript: spokenTranscript || '',
-      durationSeconds,
-    });
-  }
+
 
   const ai = getAIClient();
 

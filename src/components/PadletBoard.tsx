@@ -458,7 +458,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -475,7 +475,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -497,7 +497,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasDrawnSomething(false);
@@ -527,7 +527,7 @@ export const PadletBoardView: React.FC<PadletBoardProps> = ({
           const canvas = document.createElement('canvas');
           canvas.width = width;
           canvas.height = height;
-          const ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
           if (ctx) {
             ctx.drawImage(image, 0, 0, width, height);
             resolve(canvas.toDataURL('image/jpeg', 0.8));
