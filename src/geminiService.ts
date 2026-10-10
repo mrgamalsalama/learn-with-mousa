@@ -1546,11 +1546,18 @@ let currentSourceNode: AudioBufferSourceNode | null = null;
 let mousaAudioSessionCounter = 0;
 
 // 2. إعداد قاعدة التخزين الدائمة في المتصفح (IndexedDB Persistent Storage)
-const DB_NAME = 'MousaVoicePersistentDB';
-const DB_VERSION = 1;
+const DB_NAME = 'MousaVoiceNativeArabic_v2';
+const DB_VERSION = 2;
 const STORE_NAME = 'audio_clips';
 
 let idbPromise: Promise<IDBDatabase | null> | null = null;
+
+// مسح قاعدة البيانات القديمة تلقائياً لتطهير أي تسجيلات سابقة كانت تحتوي على الجملة الإنجليزية
+if (typeof window !== 'undefined' && window.indexedDB) {
+  try {
+    window.indexedDB.deleteDatabase('MousaVoicePersistentDB');
+  } catch {}
+}
 
 function getIndexedDB(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !window.indexedDB) {
@@ -1641,6 +1648,7 @@ function getAudioContext(): AudioContext {
  */
 function cleanTextForSpeech(text: string): string {
   return text
+    .replace(/Read the following Arabic text naturally:?/gi, '')
     .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~]/g, '')
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
     .replace(/\s+/g, ' ')
@@ -1828,14 +1836,29 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, cust
     utterance.pitch = 1.05;
 
     const voices = window.speechSynthesis.getVoices();
-    const arabicVoice = voices.find(v => 
-      v.lang.startsWith('ar') || 
-      v.name.includes('Arabic') || 
+    // البحث عن أفضل صوت عربي طبيعي وأصيل متوفر في نظام المتصفح
+    const arabicVoices = voices.filter(v => 
+      v.lang.toLowerCase().startsWith('ar') || 
+      v.name.toLowerCase().includes('arabic') || 
+      v.name.includes('عربي') ||
       v.name.includes('Maged') || 
-      v.name.includes('Tarik')
+      v.name.includes('Tarik') ||
+      v.name.includes('Naayf') ||
+      v.name.includes('Shakir') ||
+      v.name.includes('Hoda') ||
+      v.name.includes('Salma') ||
+      v.name.includes('Laila')
     );
-    if (arabicVoice) {
-      utterance.voice = arabicVoice;
+
+    const bestArabicVoice = arabicVoices.find(v => 
+      v.name.includes('Natural') || 
+      v.name.includes('Online') || 
+      v.lang === 'ar-SA' || 
+      v.lang === 'ar-EG'
+    ) || arabicVoices[0];
+
+    if (bestArabicVoice) {
+      utterance.voice = bestArabicVoice;
     }
 
     if (onEnd) {
@@ -1923,8 +1946,9 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
     try {
       assertAIPermitted('student');
 
-      // تعليمات مختصرة للغاية بدون أي حشو لتقليل وقت معالجة النموذج لأدنى حد ممكن
-      const promptText = `Read the following Arabic text naturally: ${cleanText}`;
+      if (isGeminiQuotaExhausted()) {
+        return null;
+      }
 
       const ai = getAIClient();
       if (!ai) return null;
@@ -1936,13 +1960,18 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
         try {
           const response = await ai.models.generateContent({
             model: audioModel,
-            contents: [{ parts: [{ text: promptText }] }],
+            contents: [{ parts: [{ text: cleanText }] }],
             config: {
               responseModalities: [Modality.AUDIO],
+              systemInstruction: `أنت راوٍ ومعلم لغة عربية فصيح للأطفال في منصة "تعلَّم مع موسى".
+قواعد النطق الصارمة:
+1. انطق النص العربي المقدم فقط بدقة بالغة وبنبرة عربية فصيحة، أصيلة، دافئة وواضحة جداً، مع الالتزام التام بكافة الحركات والتشكيل العربي.
+2. يمنع منعاً باتاً نطق أي جملة أو كلمة باللغة الإنجليزية، ويمنع إضافة أي مقدمات أو تحيات أو كلمات خارجية إطلاقاً.
+3. ابدأ فوراً بنطق أول حرف من النص العربي المقدم دون أي تأخير أو تمهيد.`,
               speechConfig: {
                 voiceConfig: {
                   prebuiltVoiceConfig: {
-                    voiceName: 'Puck', // نبرة صوت دافئة واضحة ومرحة تناسب شخصية موسى
+                    voiceName: 'Aoede', // صوت راوٍ عربي دافئ وأصيل ومعبر للأطفال
                   },
                 },
               },
@@ -1971,6 +2000,18 @@ async function fetchSingleAudioBuffer(cleanText: string): Promise<AudioBuffer | 
         } catch (err: any) {
           lastAudioError = err;
           const errMsg = err?.message || String(err || '');
+          const isQuota =
+            err?.status === 429 ||
+            errMsg.includes('429') ||
+            errMsg.includes('Quota exceeded') ||
+            errMsg.includes('RESOURCE_EXHAUSTED') ||
+            errMsg.includes('free_tier_requests');
+
+          if (isQuota) {
+            markGeminiQuotaExhausted(600);
+            break;
+          }
+
           console.warn(`[Gemini Cascade Audio] تعذر ${audioModel}، جاري الانتقال لنموذج الصوت التالي... التفاصيل:`, errMsg);
 
           if (i < AUDIO_MODELS.length - 1) {
