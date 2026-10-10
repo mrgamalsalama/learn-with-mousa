@@ -88,10 +88,21 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
   // تحديث إجابة الطالب لعنصر ما
   const handleAnswerChange = (elementId: string, value: any) => {
     if (submissionResult) return; // مقفل بعد التسليم
-    setAnswers(prev => ({
-      ...prev,
-      [elementId]: value
-    }));
+    setAnswers(prev => {
+      const next = { ...prev, [elementId]: value };
+
+      // إذا كان العنصر خياراً ولديه مجموعة (groupName)، إلغاء تحديد باقي عناصر نفس المجموعة
+      const currentEl = worksheet?.elements?.find(e => e.id === elementId);
+      if (currentEl && (currentEl.type === 'choice' || (currentEl.type as string) === 'single_choice') && value === true && currentEl.groupName) {
+        worksheet?.elements?.forEach(other => {
+          if (other.id !== elementId && other.groupName === currentEl.groupName) {
+            next[other.id] = false;
+          }
+        });
+      }
+
+      return next;
+    });
   };
 
   // تفاعل التوصيل: اختيار نقطة البداية والنقر على نقطة الهدف
@@ -161,7 +172,7 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
       await submitWorksheetAnswers(submission);
 
       setSubmissionResult(submission);
-      setShowCelebration(grading.percentage >= 60);
+      setShowCelebration(true);
 
       if (onCompleted) {
         onCompleted(submission);
@@ -335,18 +346,30 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
         </div>
       )}
 
-      {/* لوحة الاحتفال بالنجاح والتهنئة الفورية */}
+      {/* لوحة الاحتفال بالنجاح والتهنئة الفورية بعد التسليم */}
       {showCelebration && submissionResult && (
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-4 text-center shadow-md animate-in slide-in-from-top-4">
+        <div className={`px-4 py-4 text-center shadow-md animate-in slide-in-from-top-4 text-white ${
+          submissionResult.percentage >= 80
+            ? 'bg-gradient-to-r from-emerald-600 to-teal-700'
+            : submissionResult.percentage >= 50
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-700'
+              : 'bg-gradient-to-r from-amber-600 to-orange-700'
+        }`}>
           <div className="max-w-3xl mx-auto flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">🎉</span>
+              <span className="text-3xl">
+                {submissionResult.percentage >= 80 ? '🎉' : submissionResult.percentage >= 50 ? '👏' : '💡'}
+              </span>
               <div className="text-right">
                 <h3 className="font-extrabold text-sm sm:text-base">
-                  أحسنت صنعاً يا بطل! تم تصحيح ورقتك وحفظ إجابتك بنجاح
+                  {submissionResult.percentage >= 80
+                    ? 'أحسنت صنعاً يا بطل! نتيجة متميزة ومتقنة 🌟'
+                    : submissionResult.percentage >= 50
+                      ? 'عمل جيد جداً! تم تصحيح ورقتك وحفظ إجابتك 👍'
+                      : 'تم تسليم الورقة ورصد نتيجتك! راجع إجاباتك لمزيد من التعلم 💪'}
                 </h3>
-                <p className="text-xs text-emerald-100">
-                  حصلت على {submissionResult.score} من {submissionResult.total_score} بنسبة إتقان {submissionResult.percentage}%
+                <p className="text-xs text-white/90">
+                  حصلت على <strong className="text-yellow-200 text-sm">{submissionResult.score}</strong> من <strong>{submissionResult.total_score}</strong> (نسبة {submissionResult.percentage}%)
                 </p>
               </div>
             </div>

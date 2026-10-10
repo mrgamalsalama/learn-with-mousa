@@ -4,24 +4,31 @@ import { InteractiveWorksheet, WorksheetSubmission, WorksheetElement } from '../
 const WORKSHEETS_KEY = 'mousa_interactive_worksheets_v1';
 const SUBMISSIONS_KEY = 'mousa_worksheet_submissions_v1';
 
-// دالة تنقية وتطبيع الإجابات العربية لمقارنة عادلة وذكية تتسامح مع اختلافات التشكيل والهمزات
+// دالة تنقية وتطبيع الإجابات العربية لمقارنة عادلة وذكية تتسامح مع اختلافات التشكيل والهمزات والتاء المربوطة
 export function normalizeArabicText(text: string | null | undefined): string {
-  if (!text) return '';
+  if (text === null || text === undefined) return '';
   return text
     .toString()
     .trim()
-    // إزالة التشكيل والحركات تماماً
+    // إزالة المحارف المخفية ومحارف التوجيه والتطويل والكشيدة
+    .replace(/[\u200B-\u200F\uFEFF]/g, '')
+    .replace(/ـ/g, '')
+    // إزالة التشكيل والتنوين بالكامل (Tashkeel strip)
     .replace(/[\u064B-\u065F\u0670]/g, '')
-    // توحيد الهمزات (أ، إ، آ -> ا)
-    .replace(/[أإآ]/g, 'ا')
+    // توحيد الهمزات والألف (أ، إ، آ، ٱ -> ا)
+    .replace(/[أإآٱ]/g, 'ا')
+    // توحيد الهمزات المركبة
+    .replace(/ؤ/g, 'و')
+    .replace(/[ئ]/g, 'ي')
     // توحيد التاء المربوطة والهاء (ة -> ه)
     .replace(/ة/g, 'ه')
     // توحيد الياء والألف المقصورة (ى -> ي)
     .replace(/ى/g, 'ي')
-    // إزالة الكشيدة والتطويل (ـ)
-    .replace(/ـ/g, '')
-    // توحيد المسافات
-    .replace(/\s+/g, ' ');
+    // إزالة علامات الترقيم والأقواس لضمان عدم تأثيرها
+    .replace(/[.,،؛:!؟?()\[\]{}"'«»\-]/g, ' ')
+    // توحيد المسافات الزائدة
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // قوالب أوراق عمل تفاعلية جاهزة ومزينة كخلفيات SVG عالية الدقة
@@ -545,23 +552,36 @@ export function evaluateStudentWorksheet(
 
   for (const el of elements) {
     const elPoints = Number(el.points) || 1;
-    totalScore += elPoints;
     const studentAns = answers[el.id];
-
     let isCorrect = false;
 
-    if (el.type === 'text') {
+    const elType = el.type as string;
+
+    // 1. ملء الفراغ القصير (Text Input / Short Answer)
+    if (elType === 'text' || elType === 'text_input') {
+      totalScore += elPoints;
       const normalizedStudent = normalizeArabicText(studentAns || '');
-      const validOptions = (el.correctAnswers || []).map(ans => normalizeArabicText(ans));
+      const validOptions: string[] = [];
+      if (Array.isArray(el.correctAnswers)) {
+        el.correctAnswers.forEach(ans => {
+          if (ans) validOptions.push(normalizeArabicText(ans));
+        });
+      }
+      if ((el as any).correctAnswer) {
+        validOptions.push(normalizeArabicText((el as any).correctAnswer));
+      }
+
       isCorrect = normalizedStudent.length > 0 && validOptions.some(opt => opt === normalizedStudent);
       breakdown[el.id] = {
         isCorrect,
         pointsEarned: isCorrect ? elPoints : 0,
-        expected: (el.correctAnswers || [])[0] || '',
+        expected: (el.correctAnswers && el.correctAnswers[0]) || (el as any).correctAnswer || '',
         studentAnswer: studentAns || ''
       };
-    } else if (el.type === 'essay') {
-      // تصحيح السؤال المقالي بناء على الكلمات المفتاحية
+    } 
+    // 2. سؤال مقالي تفاعلي (Open Essay / Paragraph)
+    else if (elType === 'essay' || elType === 'textarea') {
+      totalScore += elPoints;
       const rawEssay = (studentAns || '').toString().trim();
       const normalizedEssay = normalizeArabicText(rawEssay);
       const keywords = (el.keywords || []).map(k => normalizeArabicText(k)).filter(k => k.length > 0);
@@ -575,8 +595,8 @@ export function evaluateStudentWorksheet(
       if (keywords.length > 0) {
         isCorrect = matchedKeywordsCount >= minRequired;
       } else {
-        // إذا لم يحدد المعلم كلمات مفتاحية، احتساب الدرجة بمجرد كتابة الطالب لفقرة مجدية (> 10 حروف)
-        isCorrect = rawEssay.length >= 10;
+        // إذا لم يحدد المعلم كلمات مفتاحية، احتساب الدرجة بمجرد كتابة الطالب لفقرة مجدية (> 5 حروف)
+        isCorrect = rawEssay.length >= 5;
       }
 
       breakdown[el.id] = {
@@ -585,32 +605,51 @@ export function evaluateStudentWorksheet(
         expected: keywords.length > 0 ? ('الكلمات المطلوبة: ' + (el.keywords || []).join('، ')) : 'إجابة مقالية كاملة',
         studentAnswer: rawEssay
       };
-    } else if (el.type === 'choice') {
-      const isSelected = studentAns === true || studentAns === el.id;
-      const expectedCorrect = el.isCorrect ?? false;
-      isCorrect = (isSelected && expectedCorrect) || (!isSelected && !expectedCorrect);
+    } 
+    // 3. اختيار من متعدد (Single Choice / Choice Box)
+    else if (elType === 'choice' || elType === 'single_choice') {
+      const expectedCorrect = Boolean(el.isCorrect);
+      // الصناديق الصحيحة فقط هي التي تحتسب درجات في الإجمالي لتجنب إعطاء درجات للخيارات الخاطئة غير المحددة
       if (expectedCorrect) {
+        totalScore += elPoints;
+        const isSelected = studentAns === true || studentAns === el.id || studentAns === 'true' || studentAns === 1;
         isCorrect = isSelected;
+        breakdown[el.id] = {
+          isCorrect,
+          pointsEarned: isCorrect ? elPoints : 0,
+          expected: 'المربع الصحيح المطلوب اختياره',
+          studentAnswer: isSelected ? 'تم اختياره' : 'لم يتم اختياره'
+        };
+      } else {
+        // خيار غير صحيح: إذا ضغطه الطالب فهو خاطئ، ولا يضيف درجات للمجموع الكلي
+        const isSelected = studentAns === true || studentAns === el.id || studentAns === 'true' || studentAns === 1;
+        isCorrect = !isSelected;
+        breakdown[el.id] = {
+          isCorrect,
+          pointsEarned: 0,
+          expected: 'خيار غير صحيح (تجنب اختياره)',
+          studentAnswer: isSelected ? 'تم اختياره خطأ' : 'لم يتم اختياره'
+        };
       }
-      breakdown[el.id] = {
-        isCorrect,
-        pointsEarned: isCorrect ? elPoints : 0,
-        expected: expectedCorrect,
-        studentAnswer: isSelected
-      };
-    } else if (el.type === 'checkbox') {
-      const isChecked = Boolean(studentAns);
-      const expectedCheck = el.isCorrect ?? false;
+    } 
+    // 4. صح أو خطأ / خانة اختيار (Checkbox / True-False)
+    else if (elType === 'checkbox' || elType === 'boolean') {
+      totalScore += elPoints;
+      const isChecked = studentAns === true || studentAns === 'true' || studentAns === 1;
+      const expectedCheck = el.isCorrect ?? true;
       isCorrect = isChecked === expectedCheck;
       breakdown[el.id] = {
         isCorrect,
         pointsEarned: isCorrect ? elPoints : 0,
-        expected: expectedCheck,
-        studentAnswer: isChecked
+        expected: expectedCheck ? 'علامة صح (✓)' : 'فارغ (بدون تحديد)',
+        studentAnswer: isChecked ? 'علامة صح (✓)' : 'فارغ'
       };
-    } else if (el.type === 'join_point') {
-      // تصحيح أداة التوصيل بين الأعمدة
-      if (el.joinRole === 'source') {
+    } 
+    // 5. أداة التوصيل بين الأعمدة (Join / Matching Lines)
+    else if (elType === 'join_point' || elType === 'matching') {
+      // نقطة الانطلاق (source) فقط هي التي تحتسب درجات لتجنب الازدواجية
+      if (el.joinRole === 'source' || (!el.joinRole && el.targetPointId)) {
+        totalScore += elPoints;
         const connectedTargetId = studentAns; // معرّف النقطة التي وصلها الطالب
         const expectedTargetId = el.targetPointId;
         isCorrect = Boolean(connectedTargetId && connectedTargetId === expectedTargetId);
@@ -620,26 +659,33 @@ export function evaluateStudentWorksheet(
         breakdown[el.id] = {
           isCorrect,
           pointsEarned: isCorrect ? elPoints : 0,
-          expected: targetElement?.label || expectedTargetId || 'النقطة الصحيحة المقابلة',
+          expected: targetElement?.label || expectedTargetId || 'النقطة المقابلة الصحيحة',
           studentAnswer: connectedTargetId || 'لم يتم التوصيل'
         };
       } else {
-        // نقطة الوصول (target) لا تحتسب نقطة مستقلة لمنع مضاعفة الدرجة
-        continue;
+        // نقطة الهدف (target)
+        breakdown[el.id] = {
+          isCorrect: true,
+          pointsEarned: 0,
+          expected: 'نقطة وصول (Target)',
+          studentAnswer: 'نقطة وصول'
+        };
       }
     }
 
-    if (isCorrect) {
-      score += elPoints;
+    if (breakdown[el.id]?.pointsEarned) {
+      score += breakdown[el.id].pointsEarned;
     }
   }
 
-  const percentage = totalScore > 0 ? Math.round((score / totalScore) * 100) : 100;
+  // في حال لم تحتوِ الورقة على درجات محددة، احتساب إجمالي مبدئي
+  const effectiveTotal = totalScore > 0 ? totalScore : (worksheet.total_points || 1);
+  const percentage = Math.round((score / effectiveTotal) * 100);
 
   return {
     score,
-    totalScore,
-    percentage,
+    totalScore: effectiveTotal,
+    percentage: Math.min(100, Math.max(0, percentage)),
     breakdown
   };
 }
