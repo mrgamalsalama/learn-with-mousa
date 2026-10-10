@@ -318,7 +318,9 @@ export function saveWorksheetLocally(worksheet: InteractiveWorksheet): Interacti
     updated = [worksheet, ...all];
   }
   try {
-    localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(updated));
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(updated));
+    }
   } catch (e) {
     console.warn('LocalStorage save worksheet quota notice', e);
   }
@@ -326,49 +328,66 @@ export function saveWorksheetLocally(worksheet: InteractiveWorksheet): Interacti
 }
 
 // حفظ ورقة العمل سحابياً في Supabase + محلياً
-export async function saveWorksheet(worksheet: InteractiveWorksheet): Promise<{ success: boolean; worksheet: InteractiveWorksheet; error?: any }> {
-  // 1. حفظ فوري في الكاش المحلي
-  saveWorksheetLocally(worksheet);
-
-  // 2. مزامنة سحابية مع جدول interactive_worksheets في Supabase
+export async function saveWorksheet(worksheet: InteractiveWorksheet): Promise<{ success: boolean; worksheet: InteractiveWorksheet; error?: any; status?: number }> {
   try {
+    const imageUrl = worksheet.image_url || worksheet.background_url || SAMPLE_WORKSHEET_SVG_1;
+    const worksheetElements = Array.isArray(worksheet.elements) ? worksheet.elements : [];
+    const targetClassId = worksheet.target_class_id || worksheet.class_id || null;
+
+    // تجهيز كائن البيانات وفقاً لمتطلبات وتصميم جدول interactive_worksheets في Supabase بدقة
     const supabasePayload = {
       id: worksheet.id,
-      school_id: worksheet.school_id || '00000000-0000-0000-0000-000000000001',
+      school_id: worksheet.school_id || 'school_demo_mousa',
       teacher_id: worksheet.teacher_id,
-      class_id: worksheet.target_class_id || worksheet.class_id || null,
-      target_class_id: worksheet.target_class_id || worksheet.class_id || null,
       title: worksheet.title,
+      image_url: imageUrl,
+      background_url: imageUrl,
+      elements: worksheetElements,
+      elements_schema: worksheetElements,
+      target_class_id: targetClassId,
+      class_id: targetClassId,
+      is_public: worksheet.is_public ?? true,
+      is_public_link_enabled: worksheet.is_public ?? true,
       description: worksheet.description || null,
       grade_level: worksheet.grade_level || null,
       subject: worksheet.subject || 'اللغة العربية',
-      image_url: worksheet.image_url || worksheet.background_url,
-      background_url: worksheet.image_url || worksheet.background_url,
-      pages: worksheet.pages || [],
-      elements: worksheet.elements,
-      elements_schema: worksheet.elements,
+      pages: Array.isArray(worksheet.pages) && worksheet.pages.length > 0 ? worksheet.pages : [imageUrl],
       total_points: worksheet.total_points || 20,
-      is_public: worksheet.is_public ?? true,
-      is_public_link_enabled: worksheet.is_public ?? true,
       due_date: worksheet.due_date || null,
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase
+    const { data, error, status } = await supabase
       .from('interactive_worksheets')
       .upsert(supabasePayload, { onConflict: 'id' })
       .select()
       .maybeSingle();
 
-    if (error) {
-      console.warn('[Supabase Worksheet Save notice]:', error.message);
-      return { success: true, worksheet };
+    if (error || (status !== 200 && status !== 201)) {
+      console.error('[Supabase Worksheet Save error]:', error?.message || `HTTP Status: ${status}`, error);
+      return { 
+        success: false, 
+        worksheet, 
+        error: error || new Error(`فشلت استجابة خادم Supabase برمز: ${status}`),
+        status 
+      };
     }
 
-    return { success: true, worksheet: { ...worksheet, ...(data || {}) } };
+    // تم التحقق بنجاح من استجابة Supabase بـ (200 أو 201)
+    const savedWorksheet: InteractiveWorksheet = {
+      ...worksheet,
+      ...(data || {}),
+      elements: (data?.elements as any) || worksheetElements,
+      pages: (data?.pages as any) || supabasePayload.pages
+    };
+
+    // حفظ محلي في الكاش بعد استجابة Supabase الناجحة
+    saveWorksheetLocally(savedWorksheet);
+
+    return { success: true, worksheet: savedWorksheet, status };
   } catch (err: any) {
-    console.warn('[Supabase Worksheet Save Exception]:', err);
-    return { success: true, worksheet };
+    console.error('[Supabase Worksheet Save Exception]:', err);
+    return { success: false, worksheet, error: err };
   }
 }
 

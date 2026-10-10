@@ -1798,14 +1798,35 @@ function AppContent() {
   );
 
   // ================= 0. دعم فتح ورقة العمل مباشرة بالرابط العام /worksheets/play/:id =================
-  const [publicWorksheetId, setPublicWorksheetId] = useState<string | null>(() => {
+  const extractWorksheetIdFromLocation = () => {
     if (typeof window === 'undefined') return null;
     const path = window.location.pathname;
     const match = path.match(/\/worksheets\/play\/([^\/\?#]+)/);
     if (match) return match[1];
+    const hash = window.location.hash;
+    const hashMatch = hash.match(/\/worksheets\/play\/([^\/\?#]+)/);
+    if (hashMatch) return hashMatch[1];
     const params = new URLSearchParams(window.location.search);
-    return params.get('worksheet_id') || params.get('play_worksheet');
-  });
+    return params.get('worksheet_id') || params.get('play_worksheet') || null;
+  };
+
+  const [publicWorksheetId, setPublicWorksheetId] = useState<string | null>(() => extractWorksheetIdFromLocation());
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const detectedId = extractWorksheetIdFromLocation();
+      if (detectedId !== publicWorksheetId) {
+        setPublicWorksheetId(detectedId);
+      }
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, [publicWorksheetId]);
 
   if (publicWorksheetId) {
     return (
@@ -1818,6 +1839,7 @@ function AppContent() {
           try {
             const url = new URL(window.location.href);
             url.pathname = '/';
+            url.hash = '';
             url.searchParams.delete('worksheet_id');
             url.searchParams.delete('play_worksheet');
             window.history.pushState(null, '', url.toString());

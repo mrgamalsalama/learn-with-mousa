@@ -303,13 +303,19 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
 
     try {
       const res = await saveWorksheet(worksheetToSave);
+      if (!res.success) {
+        console.error('Supabase worksheet save failed:', res.error);
+        const errMsg = res.error?.message || 'تعذر تأكيد استجابة خادم قاعدة البيانات (Supabase)';
+        showToast(`خطأ في الحفظ السحابي: ${errMsg}`);
+        return;
+      }
       setPublishedWorksheet(res.worksheet);
       setIsPublishModalOpen(true);
       if (onSave) onSave(res.worksheet);
-      showToast('تم حفظ ورقة العمل بنجاح!');
-    } catch (err) {
+      showToast('تم حفظ ورقة العمل بنجاح في Supabase!');
+    } catch (err: any) {
       console.error('Error saving worksheet:', err);
-      showToast('حدث خطأ أثناء الحفظ، يرجى المحاولة ثانية');
+      showToast(err?.message ? `حدث خطأ: ${err.message}` : 'حدث خطأ أثناء الحفظ، يرجى المحاولة ثانية');
     } finally {
       setIsSaving(false);
     }

@@ -4119,4 +4119,16 @@ export const setPreferredUILanguage = (lang: UILanguage): void => {
   } catch {}
 };
 
+// ==============================================================================
+// 10. تصدير أوراق العمل التفاعلية (Interactive Worksheets) للتكامل الموحد
+// ==============================================================================
+export {
+  saveWorksheet,
+  fetchWorksheetById,
+  fetchWorksheets,
+  deleteWorksheet,
+  saveWorksheetLocally,
+  getStoredWorksheets
+} from './services/worksheetService';
+
 
