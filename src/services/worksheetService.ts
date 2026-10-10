@@ -216,6 +216,7 @@ export async function fetchWorksheets(filter?: { schoolId?: string; teacherId?: 
         subject: item.subject || "اللغة العربية",
         image_url: item.image_url || item.background_url,
         background_url: item.image_url || item.background_url,
+        pages: Array.isArray(item.pages) && item.pages.length > 0 ? item.pages : [item.image_url || item.background_url],
         elements: Array.isArray(item.elements) && item.elements.length > 0 ? item.elements : (Array.isArray(item.elements_schema) ? item.elements_schema : []),
         elements_schema: Array.isArray(item.elements_schema) ? item.elements_schema : [],
         total_points: Number(item.total_points) || 20,
@@ -343,6 +344,7 @@ export async function saveWorksheet(worksheet: InteractiveWorksheet): Promise<{ 
       subject: worksheet.subject || 'اللغة العربية',
       image_url: worksheet.image_url || worksheet.background_url,
       background_url: worksheet.image_url || worksheet.background_url,
+      pages: worksheet.pages || [],
       elements: worksheet.elements,
       elements_schema: worksheet.elements,
       total_points: worksheet.total_points || 20,
@@ -539,11 +541,35 @@ export function evaluateStudentWorksheet(
         expected: (el.correctAnswers || [])[0] || '',
         studentAnswer: studentAns || ''
       };
+    } else if (el.type === 'essay') {
+      // تصحيح السؤال المقالي بناء على الكلمات المفتاحية
+      const rawEssay = (studentAns || '').toString().trim();
+      const normalizedEssay = normalizeArabicText(rawEssay);
+      const keywords = (el.keywords || []).map(k => normalizeArabicText(k)).filter(k => k.length > 0);
+      const minRequired = el.minKeywordsRequired || (keywords.length > 0 ? Math.ceil(keywords.length / 2) : 1);
+      
+      let matchedKeywordsCount = 0;
+      keywords.forEach(kw => {
+        if (normalizedEssay.includes(kw)) matchedKeywordsCount++;
+      });
+
+      if (keywords.length > 0) {
+        isCorrect = matchedKeywordsCount >= minRequired;
+      } else {
+        // إذا لم يحدد المعلم كلمات مفتاحية، احتساب الدرجة بمجرد كتابة الطالب لفقرة مجدية (> 10 حروف)
+        isCorrect = rawEssay.length >= 10;
+      }
+
+      breakdown[el.id] = {
+        isCorrect,
+        pointsEarned: isCorrect ? elPoints : 0,
+        expected: keywords.length > 0 ? ('الكلمات المطلوبة: ' + (el.keywords || []).join('، ')) : 'إجابة مقالية كاملة',
+        studentAnswer: rawEssay
+      };
     } else if (el.type === 'choice') {
       const isSelected = studentAns === true || studentAns === el.id;
       const expectedCorrect = el.isCorrect ?? false;
       isCorrect = (isSelected && expectedCorrect) || (!isSelected && !expectedCorrect);
-      // إذا كان السؤال اختياراً فردياً من مجموعة
       if (expectedCorrect) {
         isCorrect = isSelected;
       }
@@ -563,6 +589,25 @@ export function evaluateStudentWorksheet(
         expected: expectedCheck,
         studentAnswer: isChecked
       };
+    } else if (el.type === 'join_point') {
+      // تصحيح أداة التوصيل بين الأعمدة
+      if (el.joinRole === 'source') {
+        const connectedTargetId = studentAns; // معرّف النقطة التي وصلها الطالب
+        const expectedTargetId = el.targetPointId;
+        isCorrect = Boolean(connectedTargetId && connectedTargetId === expectedTargetId);
+        
+        // إيجاد تسمية النقطة المقابلة لعرضها
+        const targetElement = elements.find(item => item.id === expectedTargetId);
+        breakdown[el.id] = {
+          isCorrect,
+          pointsEarned: isCorrect ? elPoints : 0,
+          expected: targetElement?.label || expectedTargetId || 'النقطة الصحيحة المقابلة',
+          studentAnswer: connectedTargetId || 'لم يتم التوصيل'
+        };
+      } else {
+        // نقطة الوصول (target) لا تحتسب نقطة مستقلة لمنع مضاعفة الدرجة
+        continue;
+      }
     }
 
     if (isCorrect) {

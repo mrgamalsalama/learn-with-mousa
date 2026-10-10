@@ -970,19 +970,30 @@ export interface LanguagePassportEntry {
 }
 
 // ===================== 4. أوراق العمل التفاعلية المدرسية (Interactive Worksheets Hub) =====================
-export type WorksheetElementType = 'text' | 'choice' | 'checkbox';
+export type WorksheetElementType = 
+  | 'text'        // ملء فراغ قصير (Short text input)
+  | 'essay'       // سؤال مقالي تفاعلي (Open Essay / Paragraph with keywords)
+  | 'choice'      // اختيار من متعدد (Single Choice box)
+  | 'checkbox'    // خانة اختيار / صح أو خطأ (Checkbox / True-False)
+  | 'join_point'; // أداة التوصيل بين الأعمدة (Join / Matching Lines)
 
 export interface WorksheetElement {
   id: string;
   type: WorksheetElementType;
+  page?: number; // رقم الصفحة التابعة لها (يبدأ من 1)
   x: number; // النسبة المئوية من العرض الكلي (0 - 100)
   y: number; // النسبة المئوية من الارتفاع الكلي (0 - 100)
   width: number; // النسبة المئوية لعرض العنصر (0 - 100)
   height: number; // النسبة المئوية لارتفاع العنصر (0 - 100)
-  correctAnswers?: string[]; // الإجابات المقبولة الصحيحة للحقول النصية
+  correctAnswers?: string[]; // الإجابات المقبولة للحقول النصية
+  keywords?: string[]; // الكلمات المفتاحية المطلوبة للأسئلة المقالية
+  minKeywordsRequired?: number; // عدد الكلمات المفتاحية المطلوب ورودها لاحتساب الدرجة
   isCorrect?: boolean; // هل الخيار أو الصندوق هو الإجابة الصحيحة
-  groupName?: string; // اسم المجموعة لتجميع أسئلة الاختيار من متعدد
-  label?: string; // وصف أو تلميح إرشادي اختياري
+  groupName?: string; // اسم المجموعة لأسئلة الاختيار
+  joinGroup?: string; // اسم مجموعة التوصيل
+  joinRole?: 'source' | 'target'; // نقطة انطلاق أو نقطة وصول
+  targetPointId?: string; // معرّف النقطة المقابلة الصحيحة في التوصيل
+  label?: string; // وصف أو تلميح اختياري
   points: number; // الدرجة المخصصة لهذا الحقل
 }
 
@@ -998,6 +1009,7 @@ export interface InteractiveWorksheet {
   grade_level?: GradeLevel | string | null;
   subject?: string;
   image_url: string; // رابط أو بيانات صورة ورقة العمل الأصلية
+  pages?: string[]; // مصفوفة صور الصفحات في حال كانت الورقة ملف PDF متعدد الصفحات
   background_url?: string; // للتوافق مع جدول Supabase السحابي
   elements: WorksheetElement[];
   elements_schema?: WorksheetElement[]; // للتوافق مع جدول Supabase السحابي
