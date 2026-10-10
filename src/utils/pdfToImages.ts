@@ -1,13 +1,13 @@
 /**
- * خدمة معالجة وتحويل ملفات الـ PDF في المتصفح إلى صور فائقة الدقة باستخدام pdfjs-dist
+ * أداة متطورة لتحويل ملفات PDF في المتصفح إلى صور فائقة الدقة لكل صفحة
+ * باستخدام pdfjs-dist مع دعم كامل ومستقر لـ Web Worker المحلي
  */
 import * as pdfjsLib from 'pdfjs-dist';
 
-// تعيين مسار الـ worker ليعمل بسلاسة داخل بيئة المتصفح
-if (typeof window !== 'undefined' && 'Worker' in window) {
+// إعداد مسار الـ Worker محلياً من ملف public/pdf.worker.min.mjs
+if (typeof window !== 'undefined') {
   try {
-    // استخدام مسار Worker الموثوق من unpkg المتوافق مع إصدار pdfjs-dist
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
   } catch (err) {
     console.warn('pdfjs worker configuration notice:', err);
   }
@@ -19,7 +19,7 @@ export interface ConvertedPdfResult {
 }
 
 /**
- * تحويل ملف PDF (ArrayBuffer أو File) إلى مصفوفة صور Base64 عالية الجودة
+ * تحويل ملف PDF (File أو ArrayBuffer) إلى مصفوفة صور Base64 عالية النقاء
  */
 export async function convertPdfToImages(
   fileOrBuffer: File | ArrayBuffer,
@@ -46,20 +46,20 @@ export async function convertPdfToImages(
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum);
-    
-    // ضبط دقة العرض لضمان جودة قراءة الخط العربي ونقاء النص (scale 1.8 - 2.0)
+
+    // دقة 1.8 مناسبة جداً لوضوح الخطوط العربية والنصوص في شاشات الحواسيب والأجهزة اللوحية
     const viewport = page.getViewport({ scale: 1.8 });
-    
+
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     canvas.height = viewport.height;
     canvas.width = viewport.width;
 
     if (!context) {
-      throw new Error('Unable to create canvas context for PDF rendering');
+      throw new Error('تعذر إنشاء مساحة الرسم (Canvas Context) لمعالجة مستند الـ PDF');
     }
 
-    // تلوين الخلفية بالأبيض لتفادي الشفافية
+    // تلوين الخلفية بالأبيض لمنع الشفافية
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -68,11 +68,10 @@ export async function convertPdfToImages(
       viewport: viewport,
     };
 
-    // معالجة تصيير الصفحة على الـ Canvas
     // @ts-ignore
     await page.render(renderContext).promise;
 
-    // تحويل الـ Canvas إلى صورة JPEG عالية الجودة لتقليل الحجم مع الاحتفاظ بالنقاء
+    // تحويل إلى صورة JPEG عالية النقاء ومضغوطة
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     pageImages.push(dataUrl);
 

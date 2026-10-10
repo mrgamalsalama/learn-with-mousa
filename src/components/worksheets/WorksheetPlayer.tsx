@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   InteractiveWorksheet, 
   WorksheetSubmission, 
@@ -35,6 +35,14 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
   const [showCelebration, setShowCelebration] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // دعم الصفحات المتعددة ومستندات الـ PDF
+  const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
+
+  // حالة التوصيل التفاعلي بالخطوط (Join Lines interaction)
+  const [activeSourcePointId, setActiveSourcePointId] = useState<string | null>(null);
+  
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
   // تحميل ورقة العمل
   useEffect(() => {
     let isMounted = true;
@@ -65,6 +73,18 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
     return () => { isMounted = false; };
   }, [worksheetId]);
 
+  // قائمة الصفحات
+  const pages = (worksheet?.pages && worksheet.pages.length > 0)
+    ? worksheet.pages
+    : [worksheet?.image_url || worksheet?.background_url || ''];
+
+  const currentImageUrl = pages[currentPageIndex] || pages[0] || '';
+
+  // عناصر الصفحة المعروضة حالياً
+  const currentPageElements = (worksheet?.elements || []).filter(
+    el => (el.page || 1) === (currentPageIndex + 1)
+  );
+
   // تحديث إجابة الطالب لعنصر ما
   const handleAnswerChange = (elementId: string, value: any) => {
     if (submissionResult) return; // مقفل بعد التسليم
@@ -72,6 +92,33 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
       ...prev,
       [elementId]: value
     }));
+  };
+
+  // تفاعل التوصيل: اختيار نقطة البداية والنقر على نقطة الهدف
+  const handleJoinPointClick = (el: any) => {
+    if (submissionResult) return;
+
+    if (el.joinRole === 'source') {
+      if (activeSourcePointId === el.id) {
+        setActiveSourcePointId(null); // إلغاء التحديد
+      } else {
+        setActiveSourcePointId(el.id);
+      }
+    } else if (el.joinRole === 'target' && activeSourcePointId) {
+      // إتمام الربط بين نقطة البداية وهذه النقطة
+      handleAnswerChange(activeSourcePointId, el.id);
+      setActiveSourcePointId(null);
+    }
+  };
+
+  // إلغاء خط توصيل قائم لنقطة انطلاق معينة
+  const handleRemoveConnection = (sourceId: string) => {
+    if (submissionResult) return;
+    setAnswers(prev => {
+      const next = { ...prev };
+      delete next[sourceId];
+      return next;
+    });
   };
 
   // تسليم الإجابات والتصحيح التلقائي الفوري
@@ -88,7 +135,7 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
     setIsSubmitting(true);
 
     try {
-      // 1. التصحيح التلقائي الدقيق
+      // 1. التصحيح التلقائي الدقيق لكافة أنواع الأسئلة
       const grading = gradeWorksheetSubmission(worksheet, answers);
 
       // 2. إعداد كائن التسليم
@@ -184,6 +231,7 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                 </span>
                 <span className="text-xs text-slate-500">
                   {worksheet.elements.length} أسئلة • الدرجة الكلية: {worksheet.total_points || 20}
+                  {pages.length > 1 && ` • ${pages.length} صفحات`}
                 </span>
               </div>
               <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate max-w-md">
@@ -241,6 +289,52 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
         </div>
       )}
 
+      {/* شريط التنقل بين الصفحات في مستندات PDF متعددة الصفحات */}
+      {pages.length > 1 && (
+        <div className="bg-white border-b border-slate-200 py-2.5 px-4 shadow-xs sticky top-[65px] z-20">
+          <div className="max-w-4xl mx-auto flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-slate-700 font-bold">
+              <span>📄</span>
+              <span>الصفحة {currentPageIndex + 1} من {pages.length}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                disabled={currentPageIndex === 0}
+                onClick={() => setCurrentPageIndex(prev => Math.max(0, prev - 1))}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold disabled:opacity-40 transition"
+              >
+                السابق ⬅️
+              </button>
+
+              <div className="flex gap-1.5">
+                {pages.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentPageIndex(i)}
+                    className={`w-7 h-7 rounded-xl font-bold text-xs transition ${
+                      currentPageIndex === i
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                disabled={currentPageIndex >= pages.length - 1}
+                onClick={() => setCurrentPageIndex(prev => Math.min(pages.length - 1, prev + 1))}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold disabled:opacity-40 transition"
+              >
+                ➡️ التالي
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* لوحة الاحتفال بالنجاح والتهنئة الفورية */}
       {showCelebration && submissionResult && (
         <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-4 text-center shadow-md animate-in slide-in-from-top-4">
@@ -277,19 +371,59 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
 
         {/* حاوية الورقة بالخلفية والحقول التفاعلية التراكبية */}
         <div
+          ref={canvasContainerRef}
           className="relative w-full max-w-[800px] bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-300 select-text"
           style={{ minHeight: '900px' }}
         >
-          {/* صورة الورقة الأصلية */}
+          {/* صورة الورقة الأصلية للصفحة الحالية */}
           <img
-            src={worksheet.image_url || worksheet.background_url}
-            alt={worksheet.title}
+            src={currentImageUrl}
+            alt={`ورقة العمل - صفحة ${currentPageIndex + 1}`}
             className="w-full h-auto block select-none pointer-events-none"
             draggable={false}
           />
 
+          {/* خطوط التوصيل (SVG overlay lines) */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
+            {currentPageElements
+              .filter(el => el.type === 'join_point' && el.joinRole === 'source')
+              .map(sourceEl => {
+                const connectedTargetId = answers[sourceEl.id];
+                if (!connectedTargetId) return null;
+                const targetEl = currentPageElements.find(item => item.id === connectedTargetId);
+                if (!targetEl) return null;
+
+                const result = breakdown[sourceEl.id];
+                let strokeColor = '#3b82f6'; // أزرق أثناء الحل
+                if (isGraded && result) {
+                  strokeColor = result.isCorrect ? '#10b981' : '#f43f5e';
+                }
+
+                const x1 = sourceEl.x + sourceEl.width / 2;
+                const y1 = sourceEl.y + sourceEl.height / 2;
+                const x2 = targetEl.x + targetEl.width / 2;
+                const y2 = targetEl.y + targetEl.height / 2;
+
+                return (
+                  <g key={`conn_${sourceEl.id}_${targetEl.id}`}>
+                    <line
+                      x1={`${x1}%`}
+                      y1={`${y1}%`}
+                      x2={`${x2}%`}
+                      y2={`${y2}%`}
+                      stroke={strokeColor}
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                    />
+                    <circle cx={`${x1}%`} cy={`${y1}%`} r="5" fill={strokeColor} />
+                    <circle cx={`${x2}%`} cy={`${y2}%`} r="5" fill={strokeColor} />
+                  </g>
+                );
+              })}
+          </svg>
+
           {/* الحقول التفاعلية التراكبية (Interactive Inputs Overlay) */}
-          {worksheet.elements.map((el, idx) => {
+          {currentPageElements.map((el) => {
             const studentAns = answers[el.id];
             const result = breakdown[el.id];
 
@@ -312,7 +446,7 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                   height: `${el.height}%`,
                 }}
               >
-                {/* 1. حقل إدخال النص (Text Input) */}
+                {/* 1. ملء الفراغ القصير (Text Input) */}
                 {el.type === 'text' && (
                   <div className="w-full h-full relative flex items-center">
                     <input
@@ -339,7 +473,33 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                   </div>
                 )}
 
-                {/* 2. خيار من متعدد (Choice Box) */}
+                {/* 2. سؤال مقالي تفاعلي (Open Essay / Paragraph) */}
+                {el.type === 'essay' && (
+                  <div className="w-full h-full relative flex flex-col p-1">
+                    <textarea
+                      disabled={isGraded}
+                      value={studentAns || ''}
+                      onChange={(e) => handleAnswerChange(el.id, e.target.value)}
+                      placeholder="اكتب إجابتك وشرحك هنا بالتفصيل..."
+                      rows={2}
+                      className={`w-full h-full font-medium text-xs bg-transparent focus:outline-none focus:bg-purple-50/70 resize-none transition leading-relaxed ${
+                        isGraded
+                          ? result?.isCorrect
+                            ? 'text-emerald-900'
+                            : 'text-rose-900'
+                          : 'text-slate-900'
+                      }`}
+                    />
+
+                    {isGraded && result && (
+                      <div className="mt-1 text-[9px] font-bold text-slate-600 truncate border-t border-slate-200/60 pt-0.5">
+                        {result.expected}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. خيار من متعدد (Single Choice Box) */}
                 {el.type === 'choice' && (
                   <button
                     type="button"
@@ -359,7 +519,7 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                   </button>
                 )}
 
-                {/* 3. خانة اختيار (Checkbox) */}
+                {/* 4. خانة اختيار / صح وخطأ (Checkbox) */}
                 {el.type === 'checkbox' && (
                   <label className="w-full h-full flex items-center justify-center cursor-pointer">
                     <input
@@ -372,8 +532,42 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                   </label>
                 )}
 
+                {/* 5. أداة التوصيل بين الأعمدة (Join Line Point) */}
+                {el.type === 'join_point' && (
+                  <button
+                    type="button"
+                    disabled={isGraded}
+                    onClick={() => handleJoinPointClick(el)}
+                    className={`w-full h-full flex flex-col items-center justify-center text-xs font-bold transition rounded cursor-pointer ${
+                      activeSourcePointId === el.id
+                        ? 'bg-rose-600 text-white animate-pulse'
+                        : el.joinRole === 'source'
+                          ? studentAns
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                          : 'bg-cyan-50 text-cyan-800 hover:bg-cyan-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span>{el.joinRole === 'source' ? '🔗 انطلاق' : '🎯 هدف'}</span>
+                    </div>
+                    {el.joinRole === 'source' && studentAns && !isGraded && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveConnection(el.id);
+                        }}
+                        className="text-[9px] underline text-white hover:text-rose-200 mt-0.5"
+                        title="إلغاء التوصيل"
+                      >
+                        (فك الربط)
+                      </span>
+                    )}
+                  </button>
+                )}
+
                 {/* شارة صغيرة لدرجة السؤال بعد التصحيح */}
-                {isGraded && result && (
+                {isGraded && result && el.joinRole !== 'target' && (
                   <div
                     className={`absolute -top-3 -left-2 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full shadow ${
                       result.isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
