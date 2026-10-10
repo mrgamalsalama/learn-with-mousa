@@ -2379,6 +2379,10 @@ function AppContent() {
             </div>
           )}
 
+          {hodTab === 'worksheets' && (
+            <WorksheetTeacherHub currentUser={currentUser} />
+          )}
+
           {hodTab === 'library' && (
             <div className="space-y-6">
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -3145,6 +3149,10 @@ function AppContent() {
                 </form>
               )}
             </div>
+          )}
+
+          {teacherTab === 'worksheets' && (
+            <WorksheetTeacherHub currentUser={currentUser} />
           )}
 
           {teacherTab === 'activities' && (
@@ -4365,6 +4373,10 @@ function AppContent() {
                 </div>
               )}
             </div>
+          )}
+
+          {studentTab === 'worksheets' && (
+            <StudentWorksheetsTab currentUser={currentUser} />
           )}
 
           {studentTab === 'activities' && (
