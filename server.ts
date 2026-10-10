@@ -572,6 +572,91 @@ async function startServer() {
     }
   });
 
+  // ذاكرة تخزين صوتية بشرية استوديو على مستوى الخادم لحفظ المقاطع ومنع استهلاك الرصيد نهائياً
+  const serverAudioMemoryCache = new Map<string, { audioBase64: string; mimeType: string }>();
+
+  app.post('/api/tts/speak', async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Text is required' });
+      }
+
+      const cleanText = text
+        .replace(/[a-zA-Z]+/g, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/[\*\#\`\_\[\]\(\)\{\}\>\~\+\=\|\/\\]/g, '')
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) {
+        return res.status(400).json({ error: 'Empty text after Arabic cleaning' });
+      }
+
+      // 1. فحص كاش الخادم اللحظي (0ms - Zero Quota Cost)
+      const cached = serverAudioMemoryCache.get(cleanText);
+      if (cached) {
+        return res.json({
+          audioBase64: cached.audioBase64,
+          mimeType: cached.mimeType,
+          fromCache: true,
+        });
+      }
+
+      // 2. توليد الصوت البشري الحقيقي عبر Gemini Flash Lite TTS
+      let ai: GoogleGenAI;
+      try {
+        ai = getAIClient();
+      } catch (err: any) {
+        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server' });
+      }
+
+      let lastError: any = null;
+      for (const ttsModel of AUDIO_FALLBACK_MODELS) {
+        try {
+          const response = await ai.models.generateContent({
+            model: ttsModel,
+            contents: [{ role: 'user', parts: [{ text: cleanText }] }],
+            config: {
+              responseModalities: ['AUDIO'],
+            },
+          });
+
+          const part = response?.candidates?.[0]?.content?.parts?.[0];
+          if (part?.inlineData?.data) {
+            const result = {
+              audioBase64: part.inlineData.data,
+              mimeType: part.inlineData.mimeType || 'audio/wav',
+            };
+
+            // كاش خادم بحجم 1000 مقطع للوقاية من تسرب الذاكرة
+            if (serverAudioMemoryCache.size > 1000) {
+              const firstKey = serverAudioMemoryCache.keys().next().value;
+              if (firstKey) serverAudioMemoryCache.delete(firstKey);
+            }
+            serverAudioMemoryCache.set(cleanText, result);
+
+            return res.json({
+              ...result,
+              fromCache: false,
+            });
+          }
+        } catch (modelErr: any) {
+          lastError = modelErr;
+          console.warn(`[TTS Server Error - ${ttsModel}]`, modelErr?.message || modelErr);
+        }
+      }
+
+      res.status(lastError?.status || 500).json({
+        error: lastError?.message || 'Failed to synthesize human speech',
+      });
+    } catch (topErr: any) {
+      console.error('Unhandled TTS endpoint error:', topErr);
+      res.status(500).json({ error: topErr?.message || 'Server error' });
+    }
+  });
+
   // Vite middleware in development vs static serving in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

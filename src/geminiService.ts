@@ -1543,42 +1543,35 @@ const inFlightFetches = new Map<string, Promise<AudioBuffer | null>>();
 
 let audioContextInstance: AudioContext | null = null;
 let currentSourceNode: AudioBufferSourceNode | null = null;
+let currentAudioElement: HTMLAudioElement | null = null;
 let mousaAudioSessionCounter = 0;
 
-// 2. إعداد قاعدة التخزين الدائمة في المتصفح (IndexedDB Persistent Storage)
-const DB_NAME = 'MousaVoiceNativeArabic_v2';
-const DB_VERSION = 2;
-const STORE_NAME = 'audio_clips';
+// ذاكرة الكاش السريعة للجلسة الحالية (0ms / 0 Network / 0 Quota)
+const memoryAudioDataUrlCache = new Map<string, string>();
 
-let idbPromise: Promise<IDBDatabase | null> | null = null;
+// قاعدة التخزين الدائمة للأصوات البشرية الاستوديو في المتصفح (Persistent IndexedDB)
+const AUDIO_IDB_NAME = 'MousaStudioHumanVoiceDB_v5';
+const AUDIO_IDB_STORE = 'human_speech';
+let audioIdbPromise: Promise<IDBDatabase | null> | null = null;
 
-// مسح قواعد البيانات القديمة تلقائياً لتطهير أي تسجيلات سابقة كانت تحتوي على الجملة الإنجليزية
-if (typeof window !== 'undefined' && window.indexedDB) {
-  try {
-    window.indexedDB.deleteDatabase('MousaVoicePersistentDB');
-    window.indexedDB.deleteDatabase('MousaVoiceNativeArabic_v2');
-    window.indexedDB.deleteDatabase('MousaVoiceNativeArabic');
-  } catch {}
-}
-
-function getIndexedDB(): Promise<IDBDatabase | null> {
+function getAudioIDB(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     return Promise.resolve(null);
   }
-  if (idbPromise) return idbPromise;
+  if (audioIdbPromise) return audioIdbPromise;
 
-  idbPromise = new Promise((resolve) => {
+  audioIdbPromise = new Promise((resolve) => {
     try {
-      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+      const request = window.indexedDB.open(AUDIO_IDB_NAME, 1);
       request.onupgradeneeded = (event: any) => {
         const db = event.target.result as IDBDatabase;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+        if (!db.objectStoreNames.contains(AUDIO_IDB_STORE)) {
+          db.createObjectStore(AUDIO_IDB_STORE, { keyPath: 'key' });
         }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => {
-        console.warn('تعذر فتح IndexedDB لأصوات موسى');
+        console.warn('تعذر فتح قاعدة IndexedDB للصوت البشري');
         resolve(null);
       };
     } catch {
@@ -1586,22 +1579,25 @@ function getIndexedDB(): Promise<IDBDatabase | null> {
     }
   });
 
-  return idbPromise;
+  return audioIdbPromise;
 }
 
-async function getFromIndexedDBCache(key: string): Promise<Uint8Array | null> {
+async function getFromAudioIDBCache(key: string): Promise<{ audioBase64: string; mimeType: string } | null> {
   try {
-    const db = await getIndexedDB();
+    const db = await getAudioIDB();
     if (!db) return null;
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(AUDIO_IDB_STORE, 'readonly');
+        const store = tx.objectStore(AUDIO_IDB_STORE);
         const req = store.get(key);
         req.onsuccess = () => {
-          if (req.result && req.result.pcm) {
-            resolve(new Uint8Array(req.result.pcm));
+          if (req.result && req.result.audioBase64) {
+            resolve({
+              audioBase64: req.result.audioBase64,
+              mimeType: req.result.mimeType || 'audio/wav',
+            });
           } else {
             resolve(null);
           }
@@ -1616,22 +1612,20 @@ async function getFromIndexedDBCache(key: string): Promise<Uint8Array | null> {
   }
 }
 
-async function saveToIndexedDBCache(key: string, pcm: Uint8Array): Promise<void> {
+async function saveToAudioIDBCache(key: string, audioBase64: string, mimeType: string): Promise<void> {
   try {
-    const db = await getIndexedDB();
+    const db = await getAudioIDB();
     if (!db) return;
 
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    // تخزين مصفوفة البايتات كـ ArrayBuffer للتخزين السريع في مساحة المتصفح
+    const tx = db.transaction(AUDIO_IDB_STORE, 'readwrite');
+    const store = tx.objectStore(AUDIO_IDB_STORE);
     store.put({
       key,
-      pcm: pcm.buffer,
-      timestamp: Date.now()
+      audioBase64,
+      mimeType,
+      createdAt: Date.now(),
     });
-  } catch (err) {
-    // تجاوز أخطاء المساحة أو الوضع الخاص بهدوء
-  }
+  } catch {}
 }
 
 /**
@@ -1875,12 +1869,10 @@ export function findAuthenticArabicVoice(): SpeechSynthesisVoice | null {
   return arabicVoices[0];
 }
 
-let currentAudioElement: HTMLAudioElement | null = null;
-
 /**
- * توليد ونطق الصوت العربي الأصيل عبر الخدمة السحابية عند غياب أصوات عربية مثبتة في جهاز المستخدم
+ * مشغل الصوت البشري الحقيقي المباشر (HTML5 Audio Player)
  */
-async function speakWithCloudArabicAudio(text: string, onEnd?: () => void): Promise<boolean> {
+function playHumanAudioUrl(url: string, sessionId: number, onEnd?: () => void) {
   try {
     if (currentAudioElement) {
       try {
@@ -1890,45 +1882,39 @@ async function speakWithCloudArabicAudio(text: string, onEnd?: () => void): Prom
       currentAudioElement = null;
     }
 
-    const response = await fetch('/api/gemini/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gemini-3.8-flash-lite-tts',
-        contents: [{ role: 'user', parts: [{ text }] }],
-        config: {
-          responseModalities: ['AUDIO'],
-        },
-      }),
-    });
+    const audio = new Audio(url);
+    currentAudioElement = audio;
 
-    if (!response.ok) return false;
-    const data = await response.json();
-    const part = data?.candidates?.[0]?.content?.parts?.[0];
-    if (part?.inlineData?.data) {
-      const mime = part.inlineData.mimeType || 'audio/wav';
-      const audio = new Audio(`data:${mime};base64,${part.inlineData.data}`);
-      currentAudioElement = audio;
-      audio.onended = () => {
-        if (currentAudioElement === audio) currentAudioElement = null;
-        if (onEnd) onEnd();
-      };
-      audio.onerror = () => {
-        if (currentAudioElement === audio) currentAudioElement = null;
-        if (onEnd) onEnd();
-      };
-      await audio.play();
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.warn('[Cloud Arabic Audio Notice]', err);
-    return false;
+    audio.onended = () => {
+      if (currentAudioElement === audio) {
+        currentAudioElement = null;
+      }
+      if (sessionId === mousaAudioSessionCounter && onEnd) {
+        onEnd();
+      }
+    };
+
+    audio.onerror = () => {
+      if (currentAudioElement === audio) {
+        currentAudioElement = null;
+      }
+      if (sessionId === mousaAudioSessionCounter && onEnd) {
+        onEnd();
+      }
+    };
+
+    audio.play().catch(() => {
+      if (sessionId === mousaAudioSessionCounter && onEnd) {
+        onEnd();
+      }
+    });
+  } catch {
+    if (onEnd) onEnd();
   }
 }
 
 /**
- * القارئ الصوتي العربي الأصيل الفوري لشخصية موسى (0ms latency, 0 quota cost, 100% Native Arabic)
+ * القارئ الصوتي للمتصفح (مسار احتياطي محلي عند غياب الشبكة تماماً)
  */
 function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, customRate?: number, isRetry = false) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
@@ -1942,7 +1928,6 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, cust
     return;
   }
 
-  // إذا لم تكن الأصوات قد حمّلت بعد في المتصفح، انتظار 100ms ثم إعادة المحاولة
   if (!voicesInitialized && !isRetry) {
     initBrowserVoices();
     if (cachedBrowserVoices.length === 0) {
@@ -1955,18 +1940,8 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, cust
 
   try {
     window.speechSynthesis.cancel();
-    if (currentAudioElement) {
-      try {
-        currentAudioElement.pause();
-        currentAudioElement.currentTime = 0;
-      } catch {}
-      currentAudioElement = null;
-    }
-
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'ar-SA';
-
-    // ضبط السرعة والنبرة لنطق عربي دافئ ومتزن للأطفال
     let speed = customRate;
     if (!speed && typeof localStorage !== 'undefined') {
       try {
@@ -1979,42 +1954,23 @@ function speakBrowserSpeechSynthesis(cleanText: string, onEnd?: () => void, cust
         }
       } catch {}
     }
-    utterance.rate = speed && speed > 0 ? speed : 0.90; // سرعة هادئة وفصيحة لمخارج الحروف
+    utterance.rate = speed && speed > 0 ? speed : 0.90;
     utterance.pitch = 1.0;
 
     const bestVoice = findAuthenticArabicVoice();
     if (bestVoice) {
       utterance.voice = bestVoice;
       utterance.lang = bestVoice.lang || 'ar-SA';
-      if (onEnd) {
-        utterance.onend = onEnd;
-        utterance.onerror = onEnd;
-      }
-      window.speechSynthesis.speak(utterance);
-    } else {
-      // إذا لم يتوفر صوت عربي أصيل في جهاز المستخدم، استخدام النطق العربي البشري السحابي لمنع القراءة بلكنة أجنبية
-      speakWithCloudArabicAudio(clean, onEnd).then(success => {
-        if (!success) {
-          // محاولة أخيرة عبر المتصفح
-          utterance.lang = 'ar-SA';
-          if (onEnd) {
-            utterance.onend = onEnd;
-            utterance.onerror = onEnd;
-          }
-          window.speechSynthesis.speak(utterance);
-        }
-      });
     }
-  } catch (e) {
+
+    if (onEnd) {
+      utterance.onend = onEnd;
+      utterance.onerror = onEnd;
+    }
+    window.speechSynthesis.speak(utterance);
+  } catch {
     if (onEnd) onEnd();
   }
-}
-
-/**
- * نطق صوتي مع دعم تحديد سرعة القراءة وسرعة تفضيلات المستخدم
- */
-export function speakMousa(cleanText: string, onEnd?: () => void, customRate?: number): void {
-  speakBrowserSpeechSynthesis(cleanText, onEnd, customRate);
 }
 
 /**
@@ -2057,11 +2013,12 @@ export function stopArabicSpeech(): void {
 }
 
 /**
- * الدالة الرئيسية: نطق النصوص بصوت موسى البشري العربي الأصيل
- * تتميز بـ:
- * 1. استجابة لحظية فورية (0ms) دون أي انتظار للشبكة.
- * 2. نطق عربي أصيل فصيح بدون أي لكنة أجنبية وبدون نطق أي عبارات إنجليزية إطلاقاً.
- * 3. استهلاك 0 من رصيد Gemini المجاني لحماية الحصة من النفاد والـ 503.
+ * الدالة الرئيسية: نطق النصوص بصوت بشري استوديو حقيقي عالي الجودة
+ * نظام هجين ذكي متدرج:
+ * 1. فحص كاش الرام اللحظي (0ms - 0 رصيد)
+ * 2. فحص كاش IndexedDB الدائم في المتصفح (0ms - 0 رصيد - 0 شبكة)
+ * 3. التوليد عبر خادم المنصة /api/tts/speak بصوت Gemini Flash Lite TTS البشري وحفظه دائماً
+ * 4. مسار احتياطي عبر المتصفح في حال انقطاع النت تماماً
  */
 export async function speakWithMousaVoice(text: string, onEnd?: () => void): Promise<boolean> {
   const permCheck = isAIFeatureAllowed('student');
@@ -2078,7 +2035,55 @@ export async function speakWithMousaVoice(text: string, onEnd?: () => void): Pro
   }
 
   stopMousaVoice();
-  speakBrowserSpeechSynthesis(clean, onEnd);
+  const currentSession = ++mousaAudioSessionCounter;
+
+  // 1. فحص كاش الرام للجلسة الحالية
+  const memUrl = memoryAudioDataUrlCache.get(clean);
+  if (memUrl) {
+    playHumanAudioUrl(memUrl, currentSession, onEnd);
+    return true;
+  }
+
+  // 2. فحص كاش IndexedDB الدائم محلياً لدى الطالب
+  const idbAudio = await getFromAudioIDBCache(clean);
+  if (idbAudio && currentSession === mousaAudioSessionCounter) {
+    const dataUrl = `data:${idbAudio.mimeType};base64,${idbAudio.audioBase64}`;
+    memoryAudioDataUrlCache.set(clean, dataUrl);
+    playHumanAudioUrl(dataUrl, currentSession, onEnd);
+    return true;
+  }
+
+  // 3. جلب الصوت البشري الحقيقي بالذكاء الاصطناعي عبر خادم المنصة (/api/tts/speak)
+  try {
+    const response = await fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.audioBase64 && currentSession === mousaAudioSessionCounter) {
+        const mimeType = data.mimeType || 'audio/wav';
+        const dataUrl = `data:${mimeType};base64,${data.audioBase64}`;
+
+        // حفظ في كاش الرام
+        memoryAudioDataUrlCache.set(clean, dataUrl);
+        // حفظ دائم في كاش المتصفح لعدم طلب الرصيد مجدداً مدى الحياة
+        saveToAudioIDBCache(clean, data.audioBase64, mimeType).catch(() => {});
+
+        playHumanAudioUrl(dataUrl, currentSession, onEnd);
+        return true;
+      }
+    }
+  } catch (netErr) {
+    console.warn('[Human Studio Voice Net Error]', netErr);
+  }
+
+  // 4. مسار احتياطي أخير إذا تعذر الوصول للخادم
+  if (currentSession === mousaAudioSessionCounter) {
+    speakBrowserSpeechSynthesis(clean, onEnd);
+  }
   return true;
 }
 
@@ -2086,24 +2091,54 @@ export function speakArabicText(text: string, onEnd?: () => void): void {
   speakWithMousaVoice(text, onEnd);
 }
 
+export function speakMousa(cleanText: string, onEnd?: () => void, customRate?: number): void {
+  speakWithMousaVoice(cleanText, onEnd);
+}
+
 /**
- * فحص ما إذا كان الصوت متاحاً في الرام أو في قاعدة IndexedDB
+ * فحص ما إذا كان الصوت متاحاً في كاش الذاكرة
  */
 export function isMousaVoiceCached(text: string): boolean {
   const clean = cleanTextForSpeech(text);
-  return mousaAudioCache.has(clean);
+  return memoryAudioDataUrlCache.has(clean);
 }
 
 export function getMousaVoiceCacheSize(): number {
-  return mousaAudioCache.size;
+  return memoryAudioDataUrlCache.size;
 }
 
 /**
- * التوليد والاستباق المسبق (Pre-buffering) - تم تعطيله لمنع إطلاق أي طلب صوتي عبر الخلفية ما لم ينقر الطالب بنفسه
+ * التحميل المسبق الذكي في الخلفية للخيارات والكلمات لتشغيل فوري بصوت بشري
  */
-export async function prebufferMousaAudio(_texts: (string | undefined | null)[]): Promise<void> {
-  // معطل عمداً: لا يتم تشغيل أو طلب أي مقطع صوتي في الخلفية إلا عند النقر اليدوي الصريح للطالب
-  return;
+export async function prebufferMousaAudio(texts: (string | undefined | null)[]): Promise<void> {
+  if (!Array.isArray(texts) || texts.length === 0) return;
+  const valid = texts
+    .map(t => cleanTextForSpeech(t || ''))
+    .filter(t => t.length > 0 && !memoryAudioDataUrlCache.has(t));
+
+  for (const text of valid.slice(0, 6)) {
+    const fromIdb = await getFromAudioIDBCache(text);
+    if (fromIdb) {
+      memoryAudioDataUrlCache.set(text, `data:${fromIdb.mimeType};base64,${fromIdb.audioBase64}`);
+      continue;
+    }
+
+    fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.audioBase64) {
+          const mime = data.mimeType || 'audio/wav';
+          const dataUrl = `data:${mime};base64,${data.audioBase64}`;
+          memoryAudioDataUrlCache.set(text, dataUrl);
+          saveToAudioIDBCache(text, data.audioBase64, mime).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 export async function preloadMousaVoice(texts: string[]): Promise<void> {
