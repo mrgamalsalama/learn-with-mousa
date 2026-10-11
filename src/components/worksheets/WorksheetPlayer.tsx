@@ -146,7 +146,21 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
     setIsSubmitting(true);
 
     try {
-      // 1. التصحيح التلقائي الدقيق لكافة أنواع الأسئلة
+      const elements = worksheet.elements || [];
+
+      // 1. كشف سبب إعطاء درجة 0 فوراً في الكونسول
+      console.log("== تفاصيل عناصر الورقة من المعلم ==", elements);
+      console.log("== إجابات الطالب المسجلة ==", answers);
+      elements.forEach((el, idx) => {
+        console.log(`عنصر ${idx}:`, {
+          نوع: el.type,
+          الإجابة_المطلوبة: (el as any).correctAnswer ?? (el as any).correctAnswers ?? el.isCorrect ?? (el as any).value ?? (el as any).targetPointId,
+          إجابة_الطالب: answers[el.id],
+          الدرجة_المستحقة: el.points
+        });
+      });
+
+      // 2. التصحيح التلقائي الدقيق لكافة أنواع الأسئلة
       const grading = gradeWorksheetSubmission(worksheet, answers);
 
       // 2. إعداد كائن التسليم

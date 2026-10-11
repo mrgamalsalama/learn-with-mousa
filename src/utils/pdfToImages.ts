@@ -45,15 +45,27 @@ export async function convertPdfToImages(
   const pageImages: string[] = [];
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    // السماح للواجهة بالتنفس والتحديث لمنع تجميد المتصفح (UI Freeze prevention)
+    await new Promise(resolve => setTimeout(resolve, 15));
+
     const page = await pdfDoc.getPage(pageNum);
 
-    // دقة 1.8 مناسبة جداً لوضوح الخطوط العربية والنصوص في شاشات الحواسيب والأجهزة اللوحية
-    const viewport = page.getViewport({ scale: 1.8 });
+    // قياس افتراضي 1.0 لتحديد الأبعاد الأصلية للصفحة
+    const unscaledViewport = page.getViewport({ scale: 1.0 });
+
+    // حساب مقياس عرض مناسب (1.5 كحد أقصى) مع ضبط الحد الأقصى للعرض والارتفاع لمنع استهلاك الذاكرة وتجميد المتصفح
+    let targetScale = 1.5;
+    const maxDimension = Math.max(unscaledViewport.width, unscaledViewport.height);
+    if (maxDimension * targetScale > 2200) {
+      targetScale = Math.min(1.5, 2200 / maxDimension);
+    }
+
+    const viewport = page.getViewport({ scale: targetScale });
 
     const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
+    const context = canvas.getContext('2d', { willReadFrequently: false });
+    canvas.height = Math.floor(viewport.height);
+    canvas.width = Math.floor(viewport.width);
 
     if (!context) {
       throw new Error('تعذر إنشاء مساحة الرسم (Canvas Context) لمعالجة مستند الـ PDF');
@@ -71,9 +83,13 @@ export async function convertPdfToImages(
     // @ts-ignore
     await page.render(renderContext).promise;
 
-    // تحويل إلى صورة JPEG عالية النقاء ومضغوطة
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    // تحويل إلى صورة JPEG خفيفة ومضغوطة (جودة 0.85) لمنع تراكم الذاكرة
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     pageImages.push(dataUrl);
+
+    // تحرير ذاكرة الـ Canvas فوراً
+    canvas.width = 1;
+    canvas.height = 1;
 
     if (onProgress) {
       onProgress(pageNum, numPages);

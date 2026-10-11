@@ -1088,15 +1088,22 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                         <select
                           value={selectedElement.targetPointId || ''}
                           onChange={(e) => handleUpdateElement(selectedElement.id, { targetPointId: e.target.value })}
-                          className="w-full bg-white border border-rose-300 rounded-lg p-2 font-medium"
+                          className={`w-full bg-white border rounded-lg p-2 font-medium ${
+                            !selectedElement.targetPointId ? 'border-rose-500 ring-2 ring-rose-200' : 'border-rose-300'
+                          }`}
                         >
-                          <option value="">-- اختر النقطة المقابلة --</option>
+                          <option value="">-- اختر النقطة المقابلة (مطلوب للتصحيح) --</option>
                           {availableTargetPoints.map((pt, i) => (
                             <option key={pt.id} value={pt.id}>
                               {pt.label || `نقطة وصول هدف #${i + 1}`} ({pt.x}%, {pt.y}%)
                             </option>
                           ))}
                         </select>
+                        {!selectedElement.targetPointId && availableTargetPoints.length > 0 && (
+                          <p className="text-[10px] text-amber-700 font-bold mt-1 bg-amber-50 p-1.5 rounded border border-amber-200">
+                            ⚠️ تنبيه: يرجى اختيار النقطة المقابلة من القائمة أعلاه ليتمكن النظام من تصحيح توصيل الطالب تلقائياً ورصد الدرجة!
+                          </p>
+                        )}
                         {availableTargetPoints.length === 0 && (
                           <p className="text-[10px] text-rose-600 mt-1">
                             ⚠️ ارسم صندوقاً آخر أولاً واجعله من نوع "نقطة وصول (Point B)" لتربطهما معاً.
