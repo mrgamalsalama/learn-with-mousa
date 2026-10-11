@@ -647,23 +647,48 @@ export function evaluateStudentWorksheet(
     } 
     // 5. أداة التوصيل بين الأعمدة (Join / Matching Lines)
     else if (elType === 'join_point' || elType === 'matching') {
-      // نقطة الانطلاق (source) فقط هي التي تحتسب درجات لتجنب الازدواجية
-      if (el.joinRole === 'source' || (!el.joinRole && el.targetPointId)) {
+      const isTarget = el.joinRole === 'target' || (el as any).role === 'target';
+      
+      // نقاط البداية فقط (Source أو التي ليست Target صراحة) هي التي يُحتسب لها درجات في totalScore والـ score
+      if (!isTarget) {
         totalScore += elPoints;
-        const connectedTargetId = studentAns; // معرّف النقطة التي وصلها الطالب
-        const expectedTargetId = el.targetPointId;
-        isCorrect = Boolean(connectedTargetId && connectedTargetId === expectedTargetId);
-        
+        const studentConnected = studentAns; // معرّف النقطة التي وصلها الطالب
+
+        // 1. قراءة الهدف الصحيح عبر فحص كافة الخصائص المحتملة
+        let target = (el as any).targetId || (el as any).matchId || (el as any).correctTargetId || el.targetPointId || (el as any).connectsTo || (el as any).correctAnswer;
+
+        // إذا لم يكن المعلم قد حدد targetId في ورقة سابقة، محاذاة تلقائية مع نقاط الهدف حسب الترتيب في نفس المجموعة
+        if (!target) {
+          const sources = elements.filter(item => (item.type === 'join_point' || (item.type as string) === 'matching') && item.joinRole !== 'target' && (item as any).role !== 'target');
+          const targets = elements.filter(item => (item.type === 'join_point' || (item.type as string) === 'matching') && (item.joinRole === 'target' || (item as any).role === 'target'));
+          const myIndex = sources.findIndex(s => s.id === el.id);
+          if (myIndex >= 0 && targets[myIndex]) {
+            target = targets[myIndex].id;
+          }
+        }
+
+        // 2. المقارنة الصحيحة:
+        // const isMatched = answers[el.id] === target || answers[target] === el.id;
+        const isMatched = Boolean(
+          target && (
+            studentConnected === target ||
+            answers[target] === el.id ||
+            (answers[el.id] && answers[el.id] === target)
+          )
+        );
+
+        isCorrect = isMatched;
+
         // إيجاد تسمية النقطة المقابلة لعرضها
-        const targetElement = elements.find(item => item.id === expectedTargetId);
+        const targetElement = elements.find(item => item.id === target);
         breakdown[el.id] = {
           isCorrect,
           pointsEarned: isCorrect ? elPoints : 0,
-          expected: targetElement?.label || expectedTargetId || 'النقطة المقابلة الصحيحة',
-          studentAnswer: connectedTargetId || 'لم يتم التوصيل'
+          expected: targetElement?.label || target || 'النقطة المقابلة الصحيحة',
+          studentAnswer: studentConnected || 'لم يتم التوصيل'
         };
       } else {
-        // نقطة الهدف (target)
+        // نقاط الهدف التلقائية (role === 'target') لا تزيد الدرجة الكلية ولا يُمنح عليها نقاط مستقلة
         breakdown[el.id] = {
           isCorrect: true,
           pointsEarned: 0,

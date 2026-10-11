@@ -103,7 +103,9 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
 
   // حساب الدرجة الكلية للورقة (نقاط الهدف target لا تكرر احتساب الدرجة)
   const totalPoints = elements.reduce((acc, el) => {
-    if (el.type === 'join_point' && el.joinRole === 'target') return acc;
+    if ((el.type === 'join_point' || (el.type as string) === 'matching') && (el.joinRole === 'target' || (el as any).role === 'target')) {
+      return acc;
+    }
     return acc + (Number(el.points) || 1);
   }, 0);
 
@@ -224,6 +226,7 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
           minKeywordsRequired: activeTool === 'essay' ? 1 : undefined,
           isCorrect: activeTool === 'choice' || activeTool === 'checkbox' ? true : undefined,
           joinRole: activeTool === 'join_point' ? 'source' : undefined,
+          role: activeTool === 'join_point' ? 'source' : undefined,
           joinGroup: activeTool === 'join_point' ? 'group_1' : undefined,
           points: 1,
           label: ''
@@ -1058,9 +1061,9 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => handleUpdateElement(selectedElement.id, { joinRole: 'source' })}
+                        onClick={() => handleUpdateElement(selectedElement.id, { joinRole: 'source', role: 'source' })}
                         className={`flex-1 py-1.5 rounded-lg font-bold text-xs transition ${
-                          selectedElement.joinRole === 'source'
+                          (selectedElement.joinRole === 'source' || selectedElement.role === 'source')
                             ? 'bg-rose-600 text-white'
                             : 'bg-white text-slate-700 border border-slate-200'
                         }`}
@@ -1069,9 +1072,9 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleUpdateElement(selectedElement.id, { joinRole: 'target' })}
+                        onClick={() => handleUpdateElement(selectedElement.id, { joinRole: 'target', role: 'target', targetId: undefined, targetPointId: undefined })}
                         className={`flex-1 py-1.5 rounded-lg font-bold text-xs transition ${
-                          selectedElement.joinRole === 'target'
+                          (selectedElement.joinRole === 'target' || selectedElement.role === 'target')
                             ? 'bg-cyan-600 text-white'
                             : 'bg-white text-slate-700 border border-slate-200'
                         }`}
@@ -1086,10 +1089,20 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                           اختر نقطة الوصول الصحيحة المقابلة:
                         </label>
                         <select
-                          value={selectedElement.targetPointId || ''}
-                          onChange={(e) => handleUpdateElement(selectedElement.id, { targetPointId: e.target.value })}
+                          value={selectedElement.targetId || selectedElement.targetPointId || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleUpdateElement(selectedElement.id, {
+                              targetId: val,
+                              targetPointId: val,
+                              matchId: val,
+                              connectsTo: val,
+                              correctTargetId: val,
+                              correctAnswer: val
+                            });
+                          }}
                           className={`w-full bg-white border rounded-lg p-2 font-medium ${
-                            !selectedElement.targetPointId ? 'border-rose-500 ring-2 ring-rose-200' : 'border-rose-300'
+                            !(selectedElement.targetId || selectedElement.targetPointId) ? 'border-rose-500 ring-2 ring-rose-200' : 'border-rose-300'
                           }`}
                         >
                           <option value="">-- اختر النقطة المقابلة (مطلوب للتصحيح) --</option>

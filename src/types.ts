@@ -990,9 +990,15 @@ export interface WorksheetElement {
   minKeywordsRequired?: number; // عدد الكلمات المفتاحية المطلوب ورودها لاحتساب الدرجة
   isCorrect?: boolean; // هل الخيار أو الصندوق هو الإجابة الصحيحة
   groupName?: string; // اسم المجموعة لأسئلة الاختيار
-  joinGroup?: string; // اسم مجموعة التوصيل
   joinRole?: 'source' | 'target'; // نقطة انطلاق أو نقطة وصول
+  role?: 'source' | 'target'; // للتوافق
   targetPointId?: string; // معرّف النقطة المقابلة الصحيحة في التوصيل
+  targetId?: string; // معرّف النقطة الهدف للتوصيل
+  matchId?: string; // معرّف المطابقة
+  connectsTo?: string; // معرّف التوصيل المقابل
+  correctTargetId?: string; // معرّف الهدف الصحيح
+  correctAnswer?: string; // إجابة صحيحة مفردة
+  value?: any; // القيمة المخزنة
   label?: string; // وصف أو تلميح اختياري
   points: number; // الدرجة المخصصة لهذا الحقل
 }

@@ -152,9 +152,20 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
       console.log("== تفاصيل عناصر الورقة من المعلم ==", elements);
       console.log("== إجابات الطالب المسجلة ==", answers);
       elements.forEach((el, idx) => {
+        let target = (el as any).targetId || (el as any).matchId || (el as any).correctTargetId || el.targetPointId || (el as any).connectsTo || (el as any).correctAnswer;
+        if (!target && (el.type === 'join_point' || (el.type as string) === 'matching') && el.joinRole !== 'target') {
+          const sources = elements.filter(item => (item.type === 'join_point' || (item.type as string) === 'matching') && item.joinRole !== 'target');
+          const targets = elements.filter(item => (item.type === 'join_point' || (item.type as string) === 'matching') && item.joinRole === 'target');
+          const myIndex = sources.findIndex(s => s.id === el.id);
+          if (myIndex >= 0 && targets[myIndex]) target = targets[myIndex].id;
+        }
+
         console.log(`عنصر ${idx}:`, {
           نوع: el.type,
-          الإجابة_المطلوبة: (el as any).correctAnswer ?? (el as any).correctAnswers ?? el.isCorrect ?? (el as any).value ?? (el as any).targetPointId,
+          الدور: (el as any).joinRole || (el as any).role,
+          الإجابة_المطلوبة: (el.type === 'join_point' || (el.type as string) === 'matching')
+            ? target
+            : ((el as any).correctAnswer ?? (el as any).correctAnswers ?? el.isCorrect ?? (el as any).value),
           إجابة_الطالب: answers[el.id],
           الدرجة_المستحقة: el.points
         });
