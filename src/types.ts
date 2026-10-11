@@ -971,11 +971,12 @@ export interface LanguagePassportEntry {
 
 // ===================== 4. أوراق العمل التفاعلية المدرسية (Interactive Worksheets Hub) =====================
 export type WorksheetElementType = 
-  | 'text'        // ملء فراغ قصير (Short text input)
-  | 'essay'       // سؤال مقالي تفاعلي (Open Essay / Paragraph with keywords)
-  | 'choice'      // اختيار من متعدد (Single Choice box)
-  | 'checkbox'    // خانة اختيار / صح أو خطأ (Checkbox / True-False)
-  | 'join_point'; // أداة التوصيل بين الأعمدة (Join / Matching Lines)
+  | 'text'            // ملء فراغ قصير (Short text input)
+  | 'essay'           // سؤال مقالي تفاعلي (Open Essay / Paragraph with keywords)
+  | 'choice'          // اختيار من متعدد (Single Choice box)
+  | 'checkbox'        // خانة اختيار / صح أو خطأ (Checkbox / True-False)
+  | 'join_point'      // أداة التوصيل بين الأعمدة (Join / Matching Lines)
+  | 'voice_recording'; // سؤال التسجيل الصوتي وقراءة الفقرات (Audio Recording Task)
 
 export interface WorksheetElement {
   id: string;
@@ -990,6 +991,7 @@ export interface WorksheetElement {
   minKeywordsRequired?: number; // عدد الكلمات المفتاحية المطلوب ورودها لاحتساب الدرجة
   isCorrect?: boolean; // هل الخيار أو الصندوق هو الإجابة الصحيحة
   groupName?: string; // اسم المجموعة لأسئلة الاختيار
+  joinGroup?: string; // اسم مجموعة التوصيل
   joinRole?: 'source' | 'target'; // نقطة انطلاق أو نقطة وصول
   role?: 'source' | 'target'; // للتوافق
   targetPointId?: string; // معرّف النقطة المقابلة الصحيحة في التوصيل
@@ -1001,6 +1003,8 @@ export interface WorksheetElement {
   value?: any; // القيمة المخزنة
   label?: string; // وصف أو تلميح اختياري
   points: number; // الدرجة المخصصة لهذا الحقل
+  targetText?: string; // النص المشكول المطلوب قراءته لسؤال التسجيل الصوتي
+  evaluationMode?: 'ai_orf' | 'manual'; // خيار تفعيل التصحيح الآلي للطلاقة (AI ORF Evaluation) أو التقييم اليدوي للمعلم
 }
 
 export interface InteractiveWorksheet {
@@ -1044,6 +1048,8 @@ export interface WorksheetSubmission {
   status?: string;
   submitted_at: string;
   results_breakdown?: Record<string, { isCorrect: boolean; pointsEarned: number; expected?: any; studentAnswer?: any }>;
+  teacher_feedback?: string; // ملاحظات أو تعليق المعلم
+  teacher_audio_feedback?: string; // تسجيل صوتي تشجيعي من المعلم
 }
 
 

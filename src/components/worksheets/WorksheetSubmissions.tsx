@@ -6,8 +6,10 @@ import {
 } from '../../types';
 import { 
   fetchWorksheetSubmissions, 
-  fetchWorksheetById 
+  fetchWorksheetById,
+  updateWorksheetSubmission
 } from '../../services/worksheetService';
+import { WorksheetAudioReviewer } from './WorksheetAudioReviewer';
 
 interface WorksheetSubmissionsProps {
   worksheetId?: string;
@@ -27,6 +29,47 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectingSubmission, setInspectingSubmission] = useState<WorksheetSubmission | null>(null);
+
+  // تحديث درجة وملاحظات الطالب يدوياً من المعلم
+  const handleUpdateStudentScore = async (
+    elementId: string,
+    newPoints: number,
+    feedbackText?: string,
+    feedbackAudioUrl?: string
+  ) => {
+    if (!inspectingSubmission || !worksheet) return;
+
+    const currentBreakdown = { ...(inspectingSubmission.results_breakdown || {}) };
+    const oldElementPoints = currentBreakdown[elementId]?.pointsEarned ?? 0;
+    const scoreDiff = newPoints - oldElementPoints;
+    const newTotalScore = Math.max(0, (inspectingSubmission.score || 0) + scoreDiff);
+    const maxScore = inspectingSubmission.total_score || inspectingSubmission.max_score || worksheet.total_points || 20;
+    const newPercentage = Math.min(100, Math.round((newTotalScore / maxScore) * 100));
+
+    currentBreakdown[elementId] = {
+      ...(currentBreakdown[elementId] || {}),
+      isCorrect: newPoints > 0,
+      pointsEarned: newPoints,
+      expected: currentBreakdown[elementId]?.expected || 'تسجيل صوتي مطلوب',
+      studentAnswer: currentBreakdown[elementId]?.studentAnswer || 'تسجيل صوتي'
+    };
+
+    const updatedSubmission: WorksheetSubmission = {
+      ...inspectingSubmission,
+      score: newTotalScore,
+      percentage: newPercentage,
+      results_breakdown: currentBreakdown,
+      teacher_feedback: feedbackText !== undefined ? feedbackText : inspectingSubmission.teacher_feedback,
+      teacher_audio_feedback: feedbackAudioUrl !== undefined ? feedbackAudioUrl : inspectingSubmission.teacher_audio_feedback
+    };
+
+    // تحديث الحالة المعروضة
+    setInspectingSubmission(updatedSubmission);
+    setSubmissions(prev => prev.map(s => s.id === updatedSubmission.id ? updatedSubmission : s));
+
+    // حفظ في قاعدة البيانات والكاش
+    await updateWorksheetSubmission(updatedSubmission);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -276,6 +319,22 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
               </button>
             </div>
 
+            {/* شريط الملاحظات التشجيعية إن وجدت */}
+            {(inspectingSubmission.teacher_feedback || inspectingSubmission.teacher_audio_feedback) && (
+              <div className="mx-4 mt-3 p-3 bg-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">💬</span>
+                  <div>
+                    <span className="font-bold text-amber-900 block">ملاحظة وتوجيه المعلم للطالب:</span>
+                    <span className="text-amber-800">{inspectingSubmission.teacher_feedback || 'ملاحظة صوتية مرفقة'}</span>
+                  </div>
+                </div>
+                {inspectingSubmission.teacher_audio_feedback && (
+                  <audio controls src={inspectingSubmission.teacher_audio_feedback} className="h-8 max-w-[200px]" />
+                )}
+              </div>
+            )}
+
             {/* مساحة عرض الورقة مع إجابات الطالب ومواضع الأخطاء */}
             <div className="flex-1 overflow-auto p-4 flex flex-col items-center bg-slate-100">
               <div
@@ -292,6 +351,33 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
                   const studentAns = inspectingSubmission.answers?.[el.id];
                   const breakdown = inspectingSubmission.results_breakdown?.[el.id];
                   const isCorrect = breakdown ? breakdown.isCorrect : false;
+
+                  if (el.type === 'voice_recording') {
+                    return (
+                      <div
+                        key={el.id}
+                        className="absolute z-20"
+                        style={{
+                          left: `${el.x}%`,
+                          top: `${el.y}%`,
+                          width: `${el.width}%`,
+                          height: `${el.height}%`,
+                        }}
+                      >
+                        <WorksheetAudioReviewer
+                          element={el}
+                          studentAudioUrl={studentAns}
+                          pointsEarned={breakdown?.pointsEarned ?? (isCorrect ? el.points : 0)}
+                          maxPoints={el.points || 1}
+                          teacherFeedback={inspectingSubmission.teacher_feedback}
+                          teacherAudioFeedback={inspectingSubmission.teacher_audio_feedback}
+                          onUpdateGradeAndFeedback={async (newPoints, note, audioNote) => {
+                            await handleUpdateStudentScore(el.id, newPoints, note, audioNote);
+                          }}
+                        />
+                      </div>
+                    );
+                  }
 
                   return (
                     <div
@@ -326,6 +412,9 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
                         )}
                         {el.type === 'checkbox' && (
                           <span>{studentAns ? 'محدد ✓' : 'غير محدد'}</span>
+                        )}
+                        {el.type === 'join_point' && (
+                          <span>{studentAns ? `موصول` : 'غير موصول'}</span>
                         )}
                       </div>
 

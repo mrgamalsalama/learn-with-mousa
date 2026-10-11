@@ -228,6 +228,8 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
           joinRole: activeTool === 'join_point' ? 'source' : undefined,
           role: activeTool === 'join_point' ? 'source' : undefined,
           joinGroup: activeTool === 'join_point' ? 'group_1' : undefined,
+          targetText: activeTool === 'voice_recording' ? '' : undefined,
+          evaluationMode: activeTool === 'voice_recording' ? 'ai_orf' : undefined,
           points: 1,
           label: ''
         };
@@ -629,6 +631,20 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                 <span>🔗</span>
                 <span>توصيل خطوط (Matching Lines)</span>
               </button>
+
+              {/* 6. سؤال التسجيل الصوتي وقراءة الفقرات */}
+              <button
+                type="button"
+                onClick={() => setActiveTool('voice_recording')}
+                className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition ${
+                  activeTool === 'voice_recording'
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                }`}
+              >
+                <span>🎙️</span>
+                <span>تسجيل صوتي 🎙️ (Audio Task)</span>
+              </button>
             </div>
           </div>
 
@@ -755,6 +771,9 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                     ? 'bg-rose-500/30 border-rose-600 text-rose-900'
                     : 'bg-cyan-500/30 border-cyan-600 text-cyan-900';
                   typeBadge = el.joinRole === 'source' ? '🔗 انطلاق' : '🎯 وصول';
+                } else if (el.type === 'voice_recording') {
+                  bgStyle = 'bg-violet-500/25 border-violet-600 text-violet-950';
+                  typeBadge = '🎙️ تسجيل صوتي';
                 }
 
                 return (
@@ -795,6 +814,9 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                       )}
                       {el.type === 'join_point' && (
                         <span>{el.label || (el.joinRole === 'source' ? 'نقطة انطلاق' : 'نقطة هدف')}</span>
+                      )}
+                      {el.type === 'voice_recording' && (
+                        <span>{el.targetText ? `📖 ${el.targetText.slice(0, 24)}...` : '🎙️ تسجيل قراءة الفقرة'}</span>
                       )}
                     </div>
                   </div>
@@ -920,6 +942,7 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                     <option value="choice">خيار من متعدد (Single Choice)</option>
                     <option value="checkbox">خانة اختيار (Checkbox / True-False)</option>
                     <option value="join_point">أداة التوصيل بين الأعمدة (Join Line Point)</option>
+                    <option value="voice_recording">تسجيل صوتي وقراءة الفقرة 🎙️ (Voice Recording)</option>
                   </select>
                 </div>
 
@@ -1124,6 +1147,67 @@ export const WorksheetEditor: React.FC<WorksheetEditorProps> = ({
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* 6. ضبط سؤال التسجيل الصوتي وقراءة الفقرات */}
+                {selectedElement.type === 'voice_recording' && (
+                  <div className="space-y-3 bg-violet-50/70 p-3.5 rounded-xl border border-violet-200">
+                    <div className="flex items-center gap-1.5 text-violet-900 font-bold text-xs mb-1">
+                      <span>🎙️</span>
+                      <span>إعدادات مهمة القراءة والتسجيل الصوتي</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1 text-xs">
+                        النص المشكول المطلوب قراءته (targetText):
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={selectedElement.targetText || ''}
+                        onChange={(e) => handleUpdateElement(selectedElement.id, { targetText: e.target.value })}
+                        placeholder="أدخل النص المشكول المطلوب من الطالب قراءته بصوت واضح (مثال: قَرَأَ مُحَمَّدٌ الدَّرْسَ بِطَلَاقَةٍ)..."
+                        className="w-full bg-white border border-violet-300 rounded-lg p-2 font-medium text-xs resize-none focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        💡 هذا النص هو المرجع الأساسي للمقارنة وتقييم طلاقة قراءة الطالب ومخارج الحروف.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1 text-xs">
+                        طريقة التصحيح ورصد الدرجة:
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateElement(selectedElement.id, { evaluationMode: 'ai_orf' })}
+                          className={`py-2 px-1.5 rounded-lg font-bold text-[11px] transition text-center ${
+                            (selectedElement.evaluationMode || 'ai_orf') === 'ai_orf'
+                              ? 'bg-violet-600 text-white shadow-sm'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          🤖 تصحيح آلي (AI ORF)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateElement(selectedElement.id, { evaluationMode: 'manual' })}
+                          className={`py-2 px-1.5 rounded-lg font-bold text-[11px] transition text-center ${
+                            selectedElement.evaluationMode === 'manual'
+                              ? 'bg-slate-800 text-white shadow-sm'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          👨‍🏫 تقييم يدوي للمعلم
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {(selectedElement.evaluationMode || 'ai_orf') === 'ai_orf'
+                          ? 'يتم رصد الدرجة تلقائياً بمجرد إتمام الطالب للتسجيل الصوتي بنجاح.'
+                          : 'يستمع المعلم إلى التسجيل في لوحة رصد النتائج ويحدد الدرجة يدوياً مع إمكانية ترك تعليق صوتي.'}
+                      </p>
+                    </div>
                   </div>
                 )}
 

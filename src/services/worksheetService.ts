@@ -454,13 +454,15 @@ export async function submitWorksheetAnswers(submission: WorksheetSubmission): P
       answers_data: {
         answers: submission.answers,
         results_breakdown: submission.results_breakdown,
-        guest_name: submission.guest_name
+        guest_name: submission.guest_name,
+        teacher_feedback: submission.teacher_feedback,
+        teacher_audio_feedback: submission.teacher_audio_feedback
       },
       score: submission.score,
       total_score: submission.total_score,
       max_score: submission.total_score,
       percentage: submission.percentage,
-      status: 'graded',
+      status: submission.status || 'graded',
       submitted_at: submission.submitted_at || new Date().toISOString()
     };
 
@@ -697,6 +699,20 @@ export function evaluateStudentWorksheet(
         };
       }
     }
+    // 6. سؤال التسجيل الصوتي وقراءة الفقرات (Audio Recording Task)
+    else if (elType === 'voice_recording') {
+      totalScore += elPoints;
+      // الطالب يُعتبر مسلّماً للإجابة إذا قام بتسجيل صوته ورفعه (رابط سحابي أو Data URL)
+      const hasRecording = Boolean(studentAns && typeof studentAns === 'string' && studentAns.trim().length > 0);
+      isCorrect = hasRecording;
+
+      breakdown[el.id] = {
+        isCorrect,
+        pointsEarned: isCorrect ? elPoints : 0,
+        expected: el.targetText ? `النص المطلوب قراءته: ${el.targetText}` : 'تسجيل صوتي لقراءة الفقرة',
+        studentAnswer: hasRecording ? 'تم تسجيل القراءة بصوت الطالب 🎙️' : 'لم يسجل الطالب صوته بعد'
+      };
+    }
 
     if (breakdown[el.id]?.pointsEarned) {
       score += breakdown[el.id].pointsEarned;
@@ -714,3 +730,48 @@ export function evaluateStudentWorksheet(
     breakdown
   };
 }
+
+// ===================== أدوات تسجيل ومعالجة الصوت لأوراق العمل =====================
+
+/**
+ * رفع التسجيل الصوتي للورقة إلى Supabase Storage (Bucket: worksheets) مع التراجع الذكي إلى Data URI Base64
+ */
+export async function uploadWorksheetAudio(audioBlob: Blob, filename?: string): Promise<string> {
+  const safeName = filename || `audio_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
+  try {
+    const { data, error } = await supabase.storage.from('worksheets').upload(safeName, audioBlob, {
+      contentType: audioBlob.type || 'audio/webm',
+      upsert: true
+    });
+    if (!error && data?.path) {
+      const { data: publicUrlData } = supabase.storage.from('worksheets').getPublicUrl(data.path);
+      if (publicUrlData?.publicUrl) {
+        return publicUrlData.publicUrl;
+      }
+    }
+  } catch (e) {
+    console.warn('Supabase storage upload fallback to base64 data URI:', e);
+  }
+
+  // التراجع التلقائي إلى Base64 Data URL لضمان عدم فقدان التسجيل واستمرارية العمل 100%
+  return new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve((reader.result as string) || '');
+    };
+    reader.onerror = () => {
+      resolve('');
+    };
+    reader.readAsDataURL(audioBlob);
+  });
+}
+
+/**
+ * تحديث تسليم الطالب (لتعديل الدرجة يدوياً أو إضافة ملاحظة صوتية تشجيعية من المعلم)
+ */
+export async function updateWorksheetSubmission(
+  submission: WorksheetSubmission
+): Promise<{ success: boolean; submission: WorksheetSubmission }> {
+  return submitWorksheetAnswers(submission);
+}
+

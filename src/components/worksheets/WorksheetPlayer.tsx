@@ -10,6 +10,7 @@ import {
   submitWorksheetAnswers, 
   normalizeArabicText 
 } from '../../services/worksheetService';
+import { WorksheetAudioRecorder } from './WorksheetAudioRecorder';
 
 interface WorksheetPlayerProps {
   worksheetId: string;
@@ -476,7 +477,9 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
             const result = breakdown[el.id];
 
             // تخصيص مظهر الحقل قبل وبعد التصحيح
-            let containerBorder = 'border-blue-400 bg-white/90 hover:border-blue-600 shadow-sm';
+            let containerBorder = el.type === 'voice_recording'
+              ? 'border-violet-400 bg-violet-50/90 hover:border-violet-600 shadow-sm'
+              : 'border-blue-400 bg-white/90 hover:border-blue-600 shadow-sm';
             if (isGraded && result) {
               containerBorder = result.isCorrect
                 ? 'border-emerald-500 bg-emerald-50/95 ring-2 ring-emerald-400/50'
@@ -612,6 +615,18 @@ export const WorksheetPlayer: React.FC<WorksheetPlayerProps> = ({
                       </span>
                     )}
                   </button>
+                )}
+
+                {/* 6. سؤال التسجيل الصوتي وقراءة الفقرات (Audio Recording Task) */}
+                {el.type === 'voice_recording' && (
+                  <WorksheetAudioRecorder
+                    element={el}
+                    currentAudioUrl={studentAns}
+                    onSaveAudio={(audioUrl) => handleAnswerChange(el.id, audioUrl)}
+                    onRemoveAudio={() => handleAnswerChange(el.id, '')}
+                    isGraded={isGraded}
+                    result={result}
+                  />
                 )}
 
                 {/* شارة صغيرة لدرجة السؤال بعد التصحيح */}
