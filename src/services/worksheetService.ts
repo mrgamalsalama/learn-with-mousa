@@ -280,6 +280,27 @@ export async function fetchWorksheetById(worksheetId: string): Promise<Interacti
       .maybeSingle();
 
     if (!error && data) {
+      let rawPages = data.pages;
+      let parsedPages: string[] = [];
+      if (Array.isArray(rawPages)) {
+        parsedPages = rawPages;
+      } else if (typeof rawPages === 'string') {
+        try {
+          const parsed = JSON.parse(rawPages);
+          if (Array.isArray(parsed)) parsedPages = parsed;
+          else if (rawPages.trim()) parsedPages = [rawPages];
+        } catch {
+          if (rawPages.trim()) parsedPages = [rawPages];
+        }
+      }
+      if (parsedPages.length === 0 && (data.background_url || data.image_url)) {
+        parsedPages = [data.image_url || data.background_url];
+      }
+
+      const parsedElements = (Array.isArray(data.elements) && data.elements.length > 0)
+        ? data.elements
+        : (Array.isArray(data.elements_schema) && data.elements_schema.length > 0 ? data.elements_schema : []);
+
       const mapped: InteractiveWorksheet = {
         id: data.id,
         school_id: data.school_id,
@@ -290,10 +311,11 @@ export async function fetchWorksheetById(worksheetId: string): Promise<Interacti
         description: data.description,
         grade_level: data.grade_level,
         subject: data.subject || 'اللغة العربية',
-        image_url: data.background_url,
-        background_url: data.background_url,
-        elements: Array.isArray(data.elements_schema) ? data.elements_schema : [],
-        elements_schema: Array.isArray(data.elements_schema) ? data.elements_schema : [],
+        image_url: data.image_url || data.background_url || (parsedPages[0] || ''),
+        background_url: data.background_url || data.image_url || (parsedPages[0] || ''),
+        pages: parsedPages,
+        elements: parsedElements,
+        elements_schema: parsedElements,
         total_points: Number(data.total_points) || 100,
         is_public: data.is_public_link_enabled ?? true,
         is_public_link_enabled: data.is_public_link_enabled ?? true,

@@ -29,6 +29,7 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectingSubmission, setInspectingSubmission] = useState<WorksheetSubmission | null>(null);
+  const [inspectingPageIndex, setInspectingPageIndex] = useState<number>(0);
 
   // تحديث درجة وملاحظات الطالب يدوياً من المعلم
   const handleUpdateStudentScore = async (
@@ -335,99 +336,195 @@ export const WorksheetSubmissions: React.FC<WorksheetSubmissionsProps> = ({
               </div>
             )}
 
+            {/* شريط التنقل بين الصفحات في المعاينة إن كانت الورقة متعددة الصفحات */}
+            {(() => {
+              const getElementPageNumber = (el: any): number => {
+                if (typeof el.page === 'number') return el.page;
+                if (typeof el.pageIndex === 'number') return el.pageIndex + 1;
+                return 1;
+              };
+
+              const rawInspectionPages = (worksheet.pages && Array.isArray(worksheet.pages) && worksheet.pages.length > 0)
+                ? worksheet.pages
+                : [worksheet.image_url || worksheet.background_url || ''];
+
+              const maxElPage = (worksheet.elements || []).reduce((max, el) => {
+                return Math.max(max, getElementPageNumber(el));
+              }, 1);
+
+              const inspectionPages = [...rawInspectionPages];
+              while (inspectionPages.length < maxElPage) {
+                inspectionPages.push(rawInspectionPages[0] || '');
+              }
+
+              if (inspectionPages.length <= 1) return null;
+
+              return (
+                <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <span>📄</span>
+                    <span>معاينة صفحة {inspectingPageIndex + 1} من {inspectionPages.length}</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={inspectingPageIndex === 0}
+                      onClick={() => setInspectingPageIndex(prev => Math.max(0, prev - 1))}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold disabled:opacity-40 transition text-slate-700"
+                    >
+                      ⬅️ السابقة
+                    </button>
+
+                    {inspectionPages.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setInspectingPageIndex(idx)}
+                        className={`w-6 h-6 rounded-lg font-bold text-xs transition ${
+                          inspectingPageIndex === idx
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {idx + 1}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      disabled={inspectingPageIndex >= inspectionPages.length - 1}
+                      onClick={() => setInspectingPageIndex(prev => Math.min(inspectionPages.length - 1, prev + 1))}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold disabled:opacity-40 transition text-slate-700"
+                    >
+                      التالية ➡️
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* مساحة عرض الورقة مع إجابات الطالب ومواضع الأخطاء */}
             <div className="flex-1 overflow-auto p-4 flex flex-col items-center bg-slate-100">
-              <div
-                className="relative w-full max-w-[750px] bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-300"
-                style={{ minHeight: '850px' }}
-              >
-                <img
-                  src={worksheet.image_url || worksheet.background_url}
-                  alt="ورقة العمل"
-                  className="w-full h-auto block select-none pointer-events-none"
-                />
+              {(() => {
+                const getElementPageNumber = (el: any): number => {
+                  if (typeof el.page === 'number') return el.page;
+                  if (typeof el.pageIndex === 'number') return el.pageIndex + 1;
+                  return 1;
+                };
 
-                {worksheet.elements.map((el, i) => {
-                  const studentAns = inspectingSubmission.answers?.[el.id];
-                  const breakdown = inspectingSubmission.results_breakdown?.[el.id];
-                  const isCorrect = breakdown ? breakdown.isCorrect : false;
+                const rawInspectionPages = (worksheet.pages && Array.isArray(worksheet.pages) && worksheet.pages.length > 0)
+                  ? worksheet.pages
+                  : [worksheet.image_url || worksheet.background_url || ''];
 
-                  if (el.type === 'voice_recording') {
-                    return (
-                      <div
-                        key={el.id}
-                        className="absolute z-20"
-                        style={{
-                          left: `${el.x}%`,
-                          top: `${el.y}%`,
-                          width: `${el.width}%`,
-                          height: `${el.height}%`,
-                        }}
-                      >
-                        <WorksheetAudioReviewer
-                          element={el}
-                          studentAudioUrl={studentAns}
-                          pointsEarned={breakdown?.pointsEarned ?? (isCorrect ? el.points : 0)}
-                          maxPoints={el.points || 1}
-                          teacherFeedback={inspectingSubmission.teacher_feedback}
-                          teacherAudioFeedback={inspectingSubmission.teacher_audio_feedback}
-                          onUpdateGradeAndFeedback={async (newPoints, note, audioNote) => {
-                            await handleUpdateStudentScore(el.id, newPoints, note, audioNote);
+                const maxElPage = (worksheet.elements || []).reduce((max, el) => {
+                  return Math.max(max, getElementPageNumber(el));
+                }, 1);
+
+                const inspectionPages = [...rawInspectionPages];
+                while (inspectionPages.length < maxElPage) {
+                  inspectionPages.push(rawInspectionPages[0] || '');
+                }
+
+                const currentImage = inspectionPages[inspectingPageIndex] || inspectionPages[0];
+                const currentPageEls = (worksheet.elements || []).filter(
+                  el => getElementPageNumber(el) === (inspectingPageIndex + 1)
+                );
+
+                return (
+                  <div
+                    className="relative w-full max-w-[750px] bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-300"
+                    style={{ minHeight: '850px' }}
+                  >
+                    <img
+                      src={currentImage}
+                      alt="ورقة العمل"
+                      className="w-full h-auto block select-none pointer-events-none"
+                    />
+
+                    {currentPageEls.map((el, i) => {
+                      const studentAns = inspectingSubmission.answers?.[el.id];
+                      const breakdown = inspectingSubmission.results_breakdown?.[el.id];
+                      const isCorrect = breakdown ? breakdown.isCorrect : false;
+
+                      if (el.type === 'voice_recording') {
+                        return (
+                          <div
+                            key={el.id}
+                            className="absolute z-20"
+                            style={{
+                              left: `${el.x}%`,
+                              top: `${el.y}%`,
+                              width: `${el.width}%`,
+                              height: `${el.height}%`,
+                            }}
+                          >
+                            <WorksheetAudioReviewer
+                              element={el}
+                              studentAudioUrl={studentAns}
+                              pointsEarned={breakdown?.pointsEarned ?? (isCorrect ? el.points : 0)}
+                              maxPoints={el.points || 1}
+                              teacherFeedback={inspectingSubmission.teacher_feedback}
+                              teacherAudioFeedback={inspectingSubmission.teacher_audio_feedback}
+                              onUpdateGradeAndFeedback={async (newPoints, note, audioNote) => {
+                                await handleUpdateStudentScore(el.id, newPoints, note, audioNote);
+                              }}
+                            />
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={el.id}
+                          className={`absolute border-2 rounded-lg p-1 flex flex-col justify-between text-[11px] font-bold ${
+                            isCorrect
+                              ? 'border-emerald-500 bg-emerald-50/90 text-emerald-950'
+                              : 'border-rose-500 bg-rose-50/90 text-rose-950'
+                          }`}
+                          style={{
+                            left: `${el.x}%`,
+                            top: `${el.y}%`,
+                            width: `${el.width}%`,
+                            height: `${el.height}%`,
                           }}
-                        />
-                      </div>
-                    );
-                  }
+                        >
+                          <div className="flex items-center justify-between text-[9px] pointer-events-none">
+                            <span className="bg-black/60 text-white px-1 rounded">
+                              #{i + 1}
+                            </span>
+                            <span className={`px-1 rounded text-white ${isCorrect ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+                              {isCorrect ? '✓ صحيح' : '✗ خطأ'}
+                            </span>
+                          </div>
 
-                  return (
-                    <div
-                      key={el.id}
-                      className={`absolute border-2 rounded-lg p-1 flex flex-col justify-between text-[11px] font-bold ${
-                        isCorrect
-                          ? 'border-emerald-500 bg-emerald-50/90 text-emerald-950'
-                          : 'border-rose-500 bg-rose-50/90 text-rose-950'
-                      }`}
-                      style={{
-                        left: `${el.x}%`,
-                        top: `${el.y}%`,
-                        width: `${el.width}%`,
-                        height: `${el.height}%`,
-                      }}
-                    >
-                      <div className="flex items-center justify-between text-[9px] pointer-events-none">
-                        <span className="bg-black/60 text-white px-1 rounded">
-                          #{i + 1}
-                        </span>
-                        <span className={`px-1 rounded text-white ${isCorrect ? 'bg-emerald-600' : 'bg-rose-600'}`}>
-                          {isCorrect ? '✓ صحيح' : '✗ خطأ'}
-                        </span>
-                      </div>
+                          <div className="text-center font-bold text-xs truncate">
+                            {el.type === 'text' && (
+                              <span>{studentAns || <em className="text-slate-400">فارغ</em>}</span>
+                            )}
+                            {el.type === 'choice' && (
+                              <span>{studentAns ? 'تم اختياره' : 'لم يختره'}</span>
+                            )}
+                            {el.type === 'checkbox' && (
+                              <span>{studentAns ? 'محدد ✓' : 'غير محدد'}</span>
+                            )}
+                            {el.type === 'join_point' && (
+                              <span>{studentAns ? `موصول` : 'غير موصول'}</span>
+                            )}
+                          </div>
 
-                      <div className="text-center font-bold text-xs truncate">
-                        {el.type === 'text' && (
-                          <span>{studentAns || <em className="text-slate-400">فارغ</em>}</span>
-                        )}
-                        {el.type === 'choice' && (
-                          <span>{studentAns ? 'تم اختياره' : 'لم يختره'}</span>
-                        )}
-                        {el.type === 'checkbox' && (
-                          <span>{studentAns ? 'محدد ✓' : 'غير محدد'}</span>
-                        )}
-                        {el.type === 'join_point' && (
-                          <span>{studentAns ? `موصول` : 'غير موصول'}</span>
-                        )}
-                      </div>
-
-                      {/* إظهار الإجابة الصحيحة عند الخطأ */}
-                      {!isCorrect && (
-                        <div className="text-[9px] text-rose-700 bg-white/90 px-1 rounded text-center truncate border border-rose-200">
-                          الصواب: {el.type === 'text' ? (el.correctAnswers?.[0] || breakdown?.expected) : (el.isCorrect ? 'مطلوب اختياره' : 'خاطئ')}
+                          {/* إظهار الإجابة الصحيحة عند الخطأ */}
+                          {!isCorrect && (
+                            <div className="text-[9px] text-rose-700 bg-white/90 px-1 rounded text-center truncate border border-rose-200">
+                              الصواب: {el.type === 'text' ? (el.correctAnswers?.[0] || breakdown?.expected) : (el.isCorrect ? 'مطلوب اختياره' : 'خاطئ')}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
