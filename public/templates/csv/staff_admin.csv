@@ -1,0 +1,5 @@
+staff_id,national_id,first_name,last_name,full_name,email,role,department,job_title,phone_number,permissions_group,status,hire_date
+STF-001,1012345678,عبد الله,الراشد,أ. عبد الله محمد الراشد,principal@school.edu.sa,school_admin,Executive Administration,مدير عام المدرسة,+966500112233,full_admin,active,2020-08-01
+STF-002,1023456789,أحمد,المنصوري,د. أحمد فهد المنصوري,academic.coord@school.edu.sa,academic_coordinator,Academic Supervision,المنسق الأكاديمي ورئيس قسم اللغة العربية,+966502233445,academic_supervision,active,2021-09-01
+STF-003,1034567890,خالد,التميمي,أ. خالد بن إبراهيم التميمي,finance@school.edu.sa,accountant,Financial Affairs,المحاسب المالي ورئيس الحسابات,+966503344556,finance_readonly,active,2022-01-10
+STF-004,1045678901,نورة,القحطاني,أ. نورة صالح القحطاني,supervisor@school.edu.sa,supervisor,Student Affairs,مشرفة التوجيه والإرشاد الطلابي,+966504455667,student_affairs,active,2023-08-15

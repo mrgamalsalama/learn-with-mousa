@@ -73,51 +73,18 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
 
   if (!isOpen) return null;
 
-  // 1. تنزيل نموذج الإكسيل الاسترشادي (Download Sample Excel Template)
+  // 1. تنزيل نموذج الإكسيل الاسترشادي الشامل المعتمد لـ Supabase (Classes, Teachers, Students, Staff, Lookups)
   const handleDownloadTemplate = () => {
-    const wb = XLSX.utils.book_new();
-
-    // Sheet 1: بيانات المدرسة والمدير
-    const schoolData = [
-      ['اسم المدرسة', 'المعرف النصي (slug)', 'نوع الخطة (trial/annual)', 'مدة الاشتراك بالأيام', 'الحد الأقصى للطلاب', 'اسم المدير', 'اسم مستخدم المدير', 'كلمة سر المدير', 'بريد المدير'],
-      ['أكاديمية الفرسان العالمية', 'al-fursan-academy', 'annual', 365, 500, 'أ. عبد الرحمن الغامدي', 'fursan_admin', '123456', 'admin@fursan.edu.sa']
-    ];
-    const wsSchool = XLSX.utils.aoa_to_sheet(schoolData);
-    XLSX.utils.book_append_sheet(wb, wsSchool, 'بيانات المدرسة والمدير');
-
-    // Sheet 2: المعلمون
-    const teachersData = [
-      ['الاسم الكامل', 'اسم المستخدم', 'كلمة المرور', 'الصفوف المصرح بها (مفصولة بفواصل)', 'المسار (arabic-a أو arabic-b)'],
-      ['أ. مريم السعيد', 'teacher_maryam', '123456', 'grade-1, grade-2', 'arabic-a'],
-      ['أ. طارق عبد الله', 'teacher_tariq', '123456', 'grade-3, grade-4', 'arabic-a, arabic-b'],
-      ['أ. هبة يوسف', 'teacher_heba', '123456', 'grade-5, grade-6', 'arabic-a']
-    ];
-    const wsTeachers = XLSX.utils.aoa_to_sheet(teachersData);
-    XLSX.utils.book_append_sheet(wb, wsTeachers, 'المعلمون');
-
-    // Sheet 3: الطلاب
-    const studentsData = [
-      ['الاسم الكامل', 'اسم المستخدم', 'كلمة المرور', 'المرحلة (primary/middle/high)', 'الصف (grade-1 إلى grade-12)', 'المسار (arabic-a/arabic-b)'],
-      ['موسى البطل 🌟', 'student_mousa', '123', 'primary', 'grade-1', 'arabic-a'],
-      ['سارة أحمد', 'student_sara', '123', 'primary', 'grade-1', 'arabic-a'],
-      ['عمر خالد', 'student_omar', '123', 'primary', 'grade-2', 'arabic-a'],
-      ['يوسف محمود', 'student_youssef', '123', 'primary', 'grade-2', 'arabic-b'],
-      ['ليلى المنصور', 'student_layla', '123', 'primary', 'grade-3', 'arabic-a']
-    ];
-    const wsStudents = XLSX.utils.aoa_to_sheet(studentsData);
-    XLSX.utils.book_append_sheet(wb, wsStudents, 'الطلاب');
-
-    // Sheet 4: الفصول
-    const classesData = [
-      ['اسم الفصل', 'المرحلة', 'الصف', 'المسار'],
-      ['الصف الأول (أ) - براعم الفصحى', 'primary', 'grade-1', 'arabic-a'],
-      ['الصف الثاني (أ) - رواد المعرفة', 'primary', 'grade-2', 'arabic-a'],
-      ['الصف الثاني (ب) - جسور اللغات', 'primary', 'grade-2', 'arabic-b']
-    ];
-    const wsClasses = XLSX.utils.aoa_to_sheet(classesData);
-    XLSX.utils.book_append_sheet(wb, wsClasses, 'الفصول');
-
-    XLSX.writeFile(wb, 'نموذج_إضافة_مدرسة_مجمعة_تعلّم_مع_موسى.xlsx');
+    try {
+      const link = document.createElement('a');
+      link.href = '/templates/school_onboarding_template.xlsx';
+      link.download = 'قالب_استيراد_بيانات_المدرسة_الشامل_موسى.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      window.location.href = '/templates/school_onboarding_template.xlsx';
+    }
   };
 
   // 2. قراءة وتحليل ملف الإكسيل المرفوع
@@ -130,31 +97,60 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
       const wb = XLSX.read(buffer, { type: 'array' });
 
       // قراءة الورقة الأولى (بيانات المدرسة والمدير)
-      const schoolSheetName = wb.SheetNames.find(n => n.includes('مدرسة') || n.toLowerCase().includes('school')) || wb.SheetNames[0];
-      const schoolRows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[schoolSheetName], { header: 1 });
+      // 1. تحديد بيانات المدرسة والمدير
+      let schoolName = 'مدرسة الأجيال الأهلية';
+      let rawSlug = 'al-ajyal-school';
+      let planTier: 'trial' | 'annual' = 'annual';
+      let durationDays = 365;
+      let maxStudents = 500;
+      let adminName = 'أ. عبد الله الراشد';
+      let adminUsername = 'school_admin';
+      let adminPassword = '123456';
+      let adminEmail: string | undefined = 'admin@school.edu.sa';
 
-      if (schoolRows.length < 2) {
-        throw new Error('لم يتم العثور على صفوف بيانات المدرسة في ورقة "بيانات المدرسة والمدير"');
-      }
-
-      const row = schoolRows[1];
-      const schoolName = String(row[0] || '').trim();
-      const rawSlug = String(row[1] || '').trim().toLowerCase().replace(/\s+/g, '-');
-      const planTier: 'trial' | 'annual' = String(row[2] || '').toLowerCase().includes('trial') ? 'trial' : 'annual';
-      const durationDays = Number(row[3]) || (planTier === 'trial' ? 30 : 365);
-      const maxStudents = Number(row[4]) || 500;
-      const adminName = String(row[5] || `مدير ${schoolName}`).trim();
-      const adminUsername = String(row[6] || (rawSlug ? `${rawSlug}_admin` : 'school_admin')).trim();
-      const adminPassword = String(row[7] || '123456').trim();
-      const adminEmail = row[8] ? String(row[8]).trim() : undefined;
-
-      if (!schoolName) {
-        throw new Error('اسم المدرسة مطلوب في الورقة الأولى');
+      // فحص ورقة بيانات المدرسة المخصصة (إن وجدت)
+      const dedicatedSchoolSheet = wb.SheetNames.find(n => n.includes('مدرسة') || n.toLowerCase().includes('school'));
+      if (dedicatedSchoolSheet && wb.Sheets[dedicatedSchoolSheet]) {
+        const schoolRows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[dedicatedSchoolSheet], { header: 1 });
+        if (schoolRows.length >= 2) {
+          const row = schoolRows[1];
+          if (row && row[0]) {
+            schoolName = String(row[0] || schoolName).trim();
+            rawSlug = String(row[1] || schoolName.toLowerCase().replace(/\s+/g, '-')).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+            planTier = String(row[2] || '').toLowerCase().includes('trial') ? 'trial' : 'annual';
+            durationDays = Number(row[3]) || (planTier === 'trial' ? 30 : 365);
+            maxStudents = Number(row[4]) || 500;
+            adminName = String(row[5] || `مدير ${schoolName}`).trim();
+            adminUsername = String(row[6] || (rawSlug ? `${rawSlug}_admin` : 'school_admin')).trim();
+            adminPassword = String(row[7] || '123456').trim();
+            adminEmail = row[8] ? String(row[8]).trim() : undefined;
+          }
+        }
+      } else {
+        // فحص ورقة Staff_Admin للبحث عن مدير المدرسة في النموذج الشامل القياسي
+        const staffSheet = wb.SheetNames.find(n => n.toLowerCase().includes('staff') || n.includes('إدارة') || n.includes('ادارة'));
+        if (staffSheet && wb.Sheets[staffSheet]) {
+          const staffRows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[staffSheet], { header: 1 });
+          for (let i = 1; i < staffRows.length; i++) {
+            const r = staffRows[i];
+            if (!r || !r[0]) continue;
+            if (String(r[0]).includes('staff_id') || String(r[0]).includes('معرف')) continue;
+            const role = String(r[6] || r[4] || '').toLowerCase();
+            if (role.includes('admin') || role.includes('principal') || role.includes('مدير')) {
+              adminName = String(r[4] || r[2] || adminName).trim();
+              adminEmail = r[5] ? String(r[5]).trim() : adminEmail;
+              adminUsername = adminEmail ? adminEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'admin_school';
+              schoolName = `مدرسة ${adminName.replace(/أ\.|د\.|المدير/g, '').trim()} النموذجية`;
+              rawSlug = adminUsername.replace(/_admin|admin_/g, '') || 'mousa-school';
+              break;
+            }
+          }
+        }
       }
 
       setParsedSchool({
         name: schoolName,
-        slug: rawSlug || schoolName.toLowerCase().replace(/\s+/g, '-'),
+        slug: rawSlug || 'school-demo',
         plan_tier: planTier,
         durationDays,
         max_students: maxStudents,
@@ -164,74 +160,127 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         adminEmail
       });
 
-      // قراءة ورقة المعلمين
+      // 2. قراءة ورقة المعلمين (Teachers)
       const teachersSheetName = wb.SheetNames.find(n => n.includes('معلم') || n.toLowerCase().includes('teacher'));
       const teachersList: ParsedTeacher[] = [];
       if (teachersSheetName && wb.Sheets[teachersSheetName]) {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[teachersSheetName], { header: 1 });
-        for (let i = 1; i < rows.length; i++) {
+        const isStandard = rows[0] && String(rows[0][0]).toLowerCase().includes('teacher_id');
+        const startIdx = isStandard ? 2 : 1; // تخطي الصفين الفني والوصفي إن وُجدا
+
+        for (let i = startIdx; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[0]) continue;
-          const name = String(r[0]).trim();
-          const username = String(r[1] || `t_${i}`).trim();
-          const password = String(r[2] || '123456').trim();
-          const gradesStr = String(r[3] || 'grade-1');
-          const allowedGrades = gradesStr.split(/[,،]/).map(g => g.trim() as GradeLevel).filter(Boolean);
-          const tracksStr = String(r[4] || 'arabic-a');
-          const allowedTracks = tracksStr.split(/[,،]/).map(t => t.trim() as ArabicTrack).filter(Boolean);
+          if (String(r[0]).includes('معرف') || String(r[0]).includes('teacher_id') || String(r[0]).includes('الاسم')) continue;
 
-          teachersList.push({
-            name,
-            username,
-            password,
-            allowedGrades: allowedGrades.length > 0 ? allowedGrades : ['grade-1'],
-            allowedTracks: allowedTracks.length > 0 ? allowedTracks : ['arabic-a']
-          });
+          if (isStandard) {
+            // هيكل جدول المعلمين التقني: col 0: teacher_id, col 4: full_name_ar, col 6: email, col 11: assigned_classes
+            const name = String(r[4] || `${r[2] || ''} ${r[3] || ''}` || r[0]).trim();
+            const email = r[6] ? String(r[6]).trim() : '';
+            const username = email ? email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_') : `t_${r[0]}`.toLowerCase();
+            const password = '123';
+            const gradesStr = String(r[11] || 'grade-1');
+            const allowedGrades = gradesStr.split(/[,،]/).map(g => g.trim() as GradeLevel).filter(Boolean);
+
+            teachersList.push({
+              name,
+              username,
+              password,
+              allowedGrades: allowedGrades.length > 0 ? allowedGrades : ['grade-1'],
+              allowedTracks: ['arabic-a']
+            });
+          } else {
+            // الهيكل البسيط القديم
+            const name = String(r[0]).trim();
+            const username = String(r[1] || `t_${i}`).trim();
+            const password = String(r[2] || '123456').trim();
+            const gradesStr = String(r[3] || 'grade-1');
+            const allowedGrades = gradesStr.split(/[,،]/).map(g => g.trim() as GradeLevel).filter(Boolean);
+            const tracksStr = String(r[4] || 'arabic-a');
+            const allowedTracks = tracksStr.split(/[,،]/).map(t => t.trim() as ArabicTrack).filter(Boolean);
+
+            teachersList.push({
+              name,
+              username,
+              password,
+              allowedGrades: allowedGrades.length > 0 ? allowedGrades : ['grade-1'],
+              allowedTracks: allowedTracks.length > 0 ? allowedTracks : ['arabic-a']
+            });
+          }
         }
       }
       setParsedTeachers(teachersList);
 
-      // قراءة ورقة الطلاب
-      const studentsSheetName = wb.SheetNames.find(n => n.includes('طالب') || n.toLowerCase().includes('student'));
+      // 3. قراءة ورقة الطلاب (Students)
+      const studentsSheetName = wb.SheetNames.find(n => n.includes('طالب') || n.includes('طلاب') || n.toLowerCase().includes('student'));
       const studentsList: ParsedStudent[] = [];
       if (studentsSheetName && wb.Sheets[studentsSheetName]) {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[studentsSheetName], { header: 1 });
-        for (let i = 1; i < rows.length; i++) {
+        const isStandard = rows[0] && String(rows[0][0]).toLowerCase().includes('student_id');
+        const startIdx = isStandard ? 2 : 1;
+
+        for (let i = startIdx; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[0]) continue;
-          const name = String(r[0]).trim();
-          const username = String(r[1] || `s_${i}`).trim();
-          const password = String(r[2] || '123').trim();
-          const stage = (r[3] ? String(r[3]).trim() : 'primary') as SchoolStage;
-          const grade = (r[4] ? String(r[4]).trim() : 'grade-1') as GradeLevel;
-          const track = (r[5] ? String(r[5]).trim() : 'arabic-a') as ArabicTrack;
+          if (String(r[0]).includes('الرقم') || String(r[0]).includes('student_id') || String(r[0]).includes('الاسم')) continue;
 
-          studentsList.push({
-            name,
-            username,
-            password,
-            stage,
-            grade,
-            track
-          });
+          if (isStandard) {
+            // هيكل جدول الطلاب التقني: col 0: student_id, col 4: full_name_ar, col 7: grade_level, col 10: track
+            const name = String(r[4] || `${r[2] || ''} ${r[3] || ''}` || r[0]).trim();
+            const username = String(r[0]).toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+            const password = '123';
+            const gradeRaw = String(r[7] || 'Grade 1');
+            const grade = (gradeRaw.toLowerCase().includes('kg') ? 'kg' : 
+                          gradeRaw.includes('2') ? 'grade-2' : 
+                          gradeRaw.includes('3') ? 'grade-3' : 'grade-1') as GradeLevel;
+            const stage = (grade === 'kg' ? 'kindergarten' : 'primary') as SchoolStage;
+            const track = (String(r[10] || '').toLowerCase().includes('b') ? 'arabic-b' : 'arabic-a') as ArabicTrack;
+
+            studentsList.push({ name, username, password, stage, grade, track });
+          } else {
+            const name = String(r[0]).trim();
+            const username = String(r[1] || `s_${i}`).trim();
+            const password = String(r[2] || '123').trim();
+            const stage = (r[3] ? String(r[3]).trim() : 'primary') as SchoolStage;
+            const grade = (r[4] ? String(r[4]).trim() : 'grade-1') as GradeLevel;
+            const track = (r[5] ? String(r[5]).trim() : 'arabic-a') as ArabicTrack;
+
+            studentsList.push({ name, username, password, stage, grade, track });
+          }
         }
       }
       setParsedStudents(studentsList);
 
-      // قراءة ورقة الفصول
-      const classesSheetName = wb.SheetNames.find(n => n.includes('فصل') || n.toLowerCase().includes('class'));
+      // 4. قراءة ورقة الفصول (Classes_Grades)
+      const classesSheetName = wb.SheetNames.find(n => n.includes('فصل') || n.includes('فصول') || n.toLowerCase().includes('class'));
       const classesList: ParsedClass[] = [];
       if (classesSheetName && wb.Sheets[classesSheetName]) {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[classesSheetName], { header: 1 });
-        for (let i = 1; i < rows.length; i++) {
+        const isStandard = rows[0] && String(rows[0][0]).toLowerCase().includes('class_id');
+        const startIdx = isStandard ? 2 : 1;
+
+        for (let i = startIdx; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[0]) continue;
-          const name = String(r[0]).trim();
-          const stage = (r[1] ? String(r[1]).trim() : 'primary') as SchoolStage;
-          const grade = (r[2] ? String(r[2]).trim() : 'grade-1') as GradeLevel;
-          const track = (r[3] ? String(r[3]).trim() : 'arabic-a') as ArabicTrack;
+          if (String(r[0]).includes('معرف') || String(r[0]).includes('class_id') || String(r[0]).includes('اسم')) continue;
 
-          classesList.push({ name, stage, grade, track });
+          if (isStandard) {
+            // هيكل الفصول التقني: col 0: class_id, col 2: class_name_ar, col 3: stage, col 4: grade_level, col 5: track
+            const name = String(r[2] || r[0]).trim();
+            const stage = (r[3] ? String(r[3]).trim() : 'primary') as SchoolStage;
+            const gradeRaw = String(r[4] || 'Grade 1');
+            const grade = (gradeRaw.toLowerCase().includes('kg') ? 'kg' : 
+                          gradeRaw.includes('2') ? 'grade-2' : 
+                          gradeRaw.includes('3') ? 'grade-3' : 'grade-1') as GradeLevel;
+            const track = (String(r[5] || '').toLowerCase().includes('b') ? 'arabic-b' : 'arabic-a') as ArabicTrack;
+            classesList.push({ name, stage, grade, track });
+          } else {
+            const name = String(r[0]).trim();
+            const stage = (r[1] ? String(r[1]).trim() : 'primary') as SchoolStage;
+            const grade = (r[2] ? String(r[2]).trim() : 'grade-1') as GradeLevel;
+            const track = (r[3] ? String(r[3]).trim() : 'arabic-a') as ArabicTrack;
+            classesList.push({ name, stage, grade, track });
+          }
         }
       }
       setParsedClasses(classesList);
@@ -413,23 +462,41 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         {/* Step 1: Upload or Template if no parsed data */}
         {!parsedSchool && !completedCredentials && (
           <div className="space-y-6">
-            <div className="bg-gradient-to-r from-emerald-950/40 via-teal-950/20 to-slate-900 p-5 rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="bg-gradient-to-r from-emerald-950/40 via-teal-950/20 to-slate-900 p-5 rounded-2xl border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <FileSpreadsheet className="w-8 h-8 text-emerald-400 shrink-0" />
+                <FileSpreadsheet className="w-9 h-9 text-emerald-400 shrink-0" />
                 <div>
-                  <h4 className="font-extrabold text-sm text-emerald-200">النموذج الاسترشادي المعتمد</h4>
-                  <p className="text-xs text-slate-400">حمل قالب الإكسيل الجاهز واملأ أوراق: (المدرسة، المعلمين، الطلاب، الفصول)</p>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-extrabold text-sm text-emerald-200">النموذج الاسترشادي الشامل المعتمد (Supabase Architecture)</h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      5 أوراق عمل منظمة
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    يتضمن قوالب الطلاب، المعلمين، الإدارة، الفصول، ودليل التحقق وقواعد الربط العلائقي
+                  </p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-600/20 whitespace-nowrap"
-              >
-                <Download className="w-4 h-4" />
-                <span>تحميل قالب Excel (.xlsx)</span>
-              </button>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="flex-1 md:flex-initial py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 whitespace-nowrap"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>تحميل قالب Excel (.xlsx)</span>
+                </button>
+                <a
+                  href="/templates/csv/students.csv"
+                  download="students_template.csv"
+                  className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition flex items-center gap-1.5 border border-slate-700 whitespace-nowrap"
+                  title="تحميل قالب الطلاب بصيغة CSV لـ Supabase"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-400" />
+                  <span>CSV طلاب</span>
+                </a>
+              </div>
             </div>
 
             {/* Drop Zone */}

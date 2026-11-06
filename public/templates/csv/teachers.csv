@@ -1,0 +1,4 @@
+teacher_id,national_id,first_name,last_name,full_name_ar,full_name_en,email,phone_number,gender,department,subject_specialization,assigned_classes,employment_status,hire_date
+TCH-1001,1092837461,مريم,السعيد,أ. مريم عبد العزيز السعيد,Maryam Abdulaziz Al-Saeed,maryam.saeed@school.edu.sa,+966501234567,female,Arabic Language,القراءة الصوتية والتأسيس اللغوي,"CLS-G1-A, CLS-G1-B",active,2023-08-20
+TCH-1002,1083746592,طارق,المنصور,أ. طارق عبد الله المنصور,Tariq Abdullah Al-Mansoor,tariq.mansoor@school.edu.sa,+966559876543,male,Arabic Language,النحو العربي والبلاغة,CLS-G2-A,active,2022-09-01
+TCH-1003,1074635291,سعاد,المهدي,أ. سعاد محمد المهدي,Souad Mohamed Al-Mahdi,souad.mahdi@school.edu.sa,+966567890123,female,Early Childhood,رياض الأطفال وأنشطة الطفولة المبكرة,CLS-KG2-A,active,2024-01-15

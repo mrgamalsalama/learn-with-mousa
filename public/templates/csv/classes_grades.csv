@@ -1,0 +1,5 @@
+class_id,section_code,class_name_ar,stage,grade_level,track,room_number,max_capacity,academic_year,is_active
+CLS-G1-A,G1-A,الصف الأول (أ) - براعم الفصحى,primary,Grade 1,arabic-a,101,25,2026-2027,TRUE
+CLS-G1-B,G1-B,الصف الأول (ب) - رواد القراءة,primary,Grade 1,arabic-a,102,25,2026-2027,TRUE
+CLS-G2-A,G2-A,الصف الثاني (أ) - عباقرة البيان,primary,Grade 2,arabic-a,103,28,2026-2027,TRUE
+CLS-KG2-A,KG2-A,روضة ثانية (أ) - سنابل الضاد,kindergarten,KG2,arabic-a,K01,20,2026-2027,TRUE

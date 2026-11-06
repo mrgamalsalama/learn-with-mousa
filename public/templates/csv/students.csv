@@ -1,0 +1,5 @@
+student_id,national_id,first_name,last_name,full_name_ar,gender,birth_date,grade_level,section_code,class_id,track,guardian_name,guardian_relation,guardian_phone,guardian_email,address,status,enrollment_date
+STU-2026-001,1198765432,موسى,الغامدي,موسى عمر الغامدي,male,2019-03-15,Grade 1,G1-A,CLS-G1-A,arabic-a,عمر عبد الله الغامدي,father,+966551234567,omar.ghamdi@example.com,الرياض - حي الياسمين,active,2025-09-01
+STU-2026-002,1187654321,سارة,الشهري,سارة فهد الشهري,female,2019-07-22,Grade 1,G1-B,CLS-G1-B,arabic-a,فهد بن سعد الشهري,father,+966542345678,fahad.shehri@example.com,جدة - حي الشاطئ,active,2025-09-01
+STU-2026-003,1176543210,عمر,العتيبي,عمر يوسف العتيبي,male,2018-11-05,Grade 2,G2-A,CLS-G2-A,arabic-a,يوسف بن ناصر العتيبي,father,+966533456789,youssef.otaibi@example.com,الدمام - حي الشاطئ الشرقي,active,2024-09-01
+STU-2026-004,1165432109,زينب,المهيدب,زينب طلال المهيدب,female,2020-02-18,KG2,KG2-A,CLS-KG2-A,arabic-a,منى عبد الرحمن السبيعي,mother,+966524567890,mona.subaie@example.com,الرياض - حي النرجس,active,2025-09-01
