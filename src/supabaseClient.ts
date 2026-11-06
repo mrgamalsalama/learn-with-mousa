@@ -55,16 +55,16 @@ export function generateUniqueUsername(
     raw = raw.slice(cleanSlug.length + 1);
   }
 
-  // توليد رقم عشوائي يضمن الفرادة
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  let candidate = `${cleanSlug}_${raw}_${randomSuffix}`;
+  // استخدام Date.now() مباشرة لضمان عدم التعارض أبداً: ${school.slug}_admin_${Date.now()}
+  const timestamp = Date.now();
+  let candidate = `${cleanSlug}_${raw}_${timestamp}`;
 
   // إذا تم توفير قائمة الأسماء الموجودة محلياً أو سحابياً، نضمن عدم التصادم
   if (existingUsernames) {
     const nameSet = existingUsernames instanceof Set ? existingUsernames : new Set(existingUsernames);
     let attempts = 0;
     while (nameSet.has(candidate) && attempts < 20) {
-      candidate = `${cleanSlug}_${raw}_${Date.now().toString().slice(-6)}_${Math.floor(100 + Math.random() * 900)}`;
+      candidate = `${cleanSlug}_${raw}_${Date.now()}_${attempts + 1}`;
       attempts++;
     }
   }
@@ -167,10 +167,27 @@ export async function upsertUserInSupabase(
     userData.last_login = user.lastLogin || null;
   }
 
-  // 4. تحديد عمود الدمج الصريح: 'username' أو 'id'
-  const conflictTarget = options?.onConflict || 'id';
+  // 4. تحديد عمود الدمج الصريح (الافتراضي هو 'username' لمنع التعارض تماماً)
+  const conflictTarget = options?.onConflict || 'username';
 
   try {
+    // التحقق المسبق عند استخدام username كعمود دمج لتفادي تصادم الـ primary key (id)
+    if (conflictTarget === 'username') {
+      try {
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id, username')
+          .eq('username', userData.username)
+          .maybeSingle();
+
+        if (existingUser && existingUser.id) {
+          userData.id = existingUser.id;
+        }
+      } catch (checkErr) {
+        console.warn('[Supabase users] تخطي فحص المستخدم المسبق:', checkErr);
+      }
+    }
+
     let { data, error } = await supabase
       .from('users')
       .upsert(userData, { onConflict: conflictTarget })
@@ -194,32 +211,31 @@ export async function upsertUserInSupabase(
 
     // معالجة تعارض القيد الفريد لاسم المستخدم (users_username_key / code 23505)
     if (error && (error.code === '23505' || error.message?.includes('users_username_key'))) {
-      console.warn('[Supabase users upsert] تم رصد تعارض في users_username_key، جارٍ الحل التلقائي...');
+      console.warn('[Supabase users upsert] تم رصد تعارض في users_username_key، جارٍ الحل الذكي والتوليد بـ Date.now()...');
 
-      // إذا كان الدمج مقصوداً على اسم المستخدم، نقوم بتحديث السجل الذي يملك نفس اسم المستخدم
-      if (conflictTarget === 'username') {
-        const updateRes = await supabase
-          .from('users')
-          .update(userData)
-          .eq('username', userData.username)
-          .select();
-        if (!updateRes.error) {
-          console.log('[Supabase users] تم تحديث المستخدم بنجاح وفق username:', userData.username);
-          return { data: updateRes.data, error: null };
-        }
+      // 1. محاولة التحديث المباشر بناء على اسم المستخدم
+      const updateRes = await supabase
+        .from('users')
+        .update(userData)
+        .eq('username', userData.username)
+        .select();
+      if (!updateRes.error) {
+        console.log('[Supabase users] تم تحديث المستخدم بنجاح وفق username:', userData.username);
+        return { data: updateRes.data, error: null };
       }
 
-      // في حال الإدراج كحساب جديد وكان اسم المستخدم مأخوذاً، يتم توليد لاحقة فريدة والمحاولة من جديد
-      const newUniqueUsername = `${userData.username}_${Date.now().toString().slice(-4)}_${Math.floor(100 + Math.random() * 900)}`;
-      userData.username = newUniqueUsername;
+      // 2. توليد اسم مستخدم فريد حتماً بربطه بالوقت الحالي Date.now()
+      const basePrefix = userData.username.split('_')[0] || 'admin';
+      const freshUnique = `${basePrefix}_${Date.now()}`;
+      userData.username = freshUnique;
 
       const retryUnique = await supabase
         .from('users')
-        .upsert(userData, { onConflict: 'id' })
+        .upsert(userData, { onConflict: 'username' })
         .select();
 
       if (!retryUnique.error) {
-        console.log('[Supabase users] تم حل تعارض اسم المستخدم بنجاح بالاسم الفريد:', userData.username);
+        console.log('[Supabase users] تم حل تعارض اسم المستخدم بنجاح وحفظ الحساب بالاسم الفريد:', userData.username);
         return { data: retryUnique.data, error: null };
       }
 
@@ -256,7 +272,7 @@ export function generateValidUUID(): string {
 }
 
 /**
- * دالة إدراج مدرسة جديدة فعلياً في جدول public.schools في Supabase مع التحقق الكامل وإرجاع رسالة النجاح أو كود وتفاصيل الخطأ
+ * دالة إدراج أو مزامنة مدرسة جديدة فعلياً في جدول public.schools في Supabase مع التحقق الكامل
  */
 export async function insertSchoolInSupabase(school: {
   id?: string;
@@ -286,18 +302,19 @@ export async function insertSchoolInSupabase(school: {
   };
 
   try {
+    // نستخدم upsert على id لضمان عدم حدوث تعارض إذا أعيد الإدراج
     const { data, error } = await supabase
       .from('schools')
-      .insert(schoolData)
+      .upsert(schoolData, { onConflict: 'id' })
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
-      console.error('[Supabase schools insert error]:', error.message, error.details, error.code, error.hint);
+      console.error('[Supabase schools upsert error]:', error.message, error.details, error.code, error.hint);
       return { data: null, error };
     }
 
-    console.log('[Supabase schools insert success]:', data);
+    console.log('[Supabase schools upsert success]:', data);
     return { data, error: null };
   } catch (err: any) {
     console.error('[Supabase schools insert exception]:', err);

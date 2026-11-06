@@ -189,14 +189,35 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
       created_at: new Date().toISOString()
     };
 
+    // الخطوة 1: إنشاء المدرسة في جدول public.schools والتخزين المحلي بشكل مستقل تماماً
+    let schoolResult: any = null;
     try {
-      const result = await createSchoolWithCloudFeedback(newSchool);
-      setSchools(result.schools);
+      schoolResult = await createSchoolWithCloudFeedback(newSchool);
+      setSchools(schoolResult.schools);
+    } catch (err: any) {
+      setModalError(err?.message || 'تعذر إرسال المدرسة إلى Supabase');
+      setActionLoadingId(null);
+      return;
+    }
 
-      let createdAdminUsername = '';
-      if (formAdminUsername || formAdminName) {
+    // إغلاق المودال فوراً وتفريغ الحقول حتى تبقى المدرسة ولا تلغى
+    setIsCreateModalOpen(false);
+    setFormName('');
+    setFormSlug('');
+    setFormAdminName('');
+    setFormAdminUsername('');
+    setFormAdminPassword('123456');
+    setFormAdminEmail('');
+    onSchoolsUpdated?.();
+
+    // الخطوة 2: محاولة إنشاء حساب مدير المدرسة في جدول public.users بشكل معزول ومستقل
+    let createdAdminUsername = '';
+    let userWarning: string | null = null;
+
+    if (formAdminUsername || formAdminName) {
+      try {
         const adminId = generateValidUUID();
-        // توليد اسم مستخدم فريد تماماً بربطه بكود المدرسة لمنع أي تعارض في Supabase
+        // توليد اسم مستخدم فريد حتماً بربطه بكود المدرسة والوقت الحالي لمنع تصادم Unique Constraint
         const uniqueAdminUsername = generateUniqueUsername(
           formAdminUsername || 'admin',
           cleanSlug,
@@ -218,34 +239,31 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
           allowedTracks: ['arabic-a', 'arabic-b'],
           loginCount: 0
         };
+
         const userSaveRes = await saveUser(newAdminUser, { onConflict: 'username' });
         if (userSaveRes.error) {
-          console.warn('تحذير أثناء حفظ مدير المدرسة سحابياً:', userSaveRes.error);
+          userWarning = userSaveRes.error.message || 'تعذر حفظ المستخدم في Supabase';
+          console.warn('تنبيه أثناء حفظ مدير المدرسة سحابياً:', userSaveRes.error);
         }
         setUsers(getUsers());
+      } catch (userErr: any) {
+        userWarning = userErr?.message || 'حدث خطأ في جدول users';
+        console.warn('خطأ معزول في جدول users دون التأثير على إضافة المدرسة:', userErr);
       }
-
-      setIsCreateModalOpen(false);
-      setFormName('');
-      setFormSlug('');
-      setFormAdminName('');
-      setFormAdminUsername('');
-      setFormAdminPassword('123456');
-      setFormAdminEmail('');
-
-      if (result.cloudSuccess) {
-        const adminMsg = createdAdminUsername ? ` وحساب المدير (${createdAdminUsername})` : '';
-        setSuccessToast(`تم إرسال وحفظ مدرسة "${newSchool.name}"${adminMsg} بنجاح في جدول public.schools في Supabase ☁️✨`);
-      } else {
-        const errDetail = result.cloudError || 'تعذر الاتصال بالسحابة';
-        setErrorToast(`تم الحفظ محلياً! تعذر إدراج السجل في جدول schools في Supabase: ${errDetail}`);
-      }
-      onSchoolsUpdated?.();
-    } catch (err: any) {
-      setModalError(err?.message || 'حدث خطأ غير متوقع أثناء إرسال السجل إلى Supabase');
-    } finally {
-      setActionLoadingId(null);
     }
+
+    // الخطوة 3: إشعار المستخدم بالنتيجة
+    if (schoolResult.cloudSuccess) {
+      const userMsg = createdAdminUsername 
+        ? (userWarning ? ` (تنبيه حساب المدير: ${userWarning})` : ` وحساب المدير (${createdAdminUsername})`)
+        : '';
+      setSuccessToast(`تم إرسال وحفظ مدرسة "${newSchool.name}"${userMsg} بنجاح في جدول public.schools في Supabase ☁️✨`);
+    } else {
+      const errDetail = schoolResult.cloudError || 'تعذر الاتصال بالسحابة';
+      setErrorToast(`تم الحفظ محلياً! تنبيه مزامنة السحابة لجدول schools: ${errDetail}`);
+    }
+
+    setActionLoadingId(null);
   };
 
   // Filtered Schools

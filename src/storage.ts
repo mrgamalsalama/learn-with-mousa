@@ -396,8 +396,8 @@ export const deleteSchool = async (schoolId: string): Promise<School[]> => {
 export const syncSchoolsFromCloud = async (): Promise<School[]> => {
   try {
     const { data, error } = await supabase.from('schools').select('*').order('created_at', { ascending: false });
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const mapped: School[] = data.map((d: any) => ({
+    if (!error && Array.isArray(data)) {
+      const cloudSchools: School[] = data.map((d: any) => ({
         id: String(d.id),
         name: d.name,
         slug: d.slug,
@@ -409,8 +409,20 @@ export const syncSchoolsFromCloud = async (): Promise<School[]> => {
         max_students: Number(d.max_students) || 500,
         created_at: d.created_at
       }));
-      localStorage.setItem(SCHOOLS_KEY, JSON.stringify(mapped));
-      return mapped;
+
+      // دمج ذكي يحافظ على المدارس المنشأة محلياً وسحابياً دون حذف أي مدرسة عند تحديث الصفحة
+      const localSchools = getSchools();
+      const mergedMap = new Map<string, School>();
+      for (const ls of localSchools) {
+        mergedMap.set(ls.id, ls);
+      }
+      for (const cs of cloudSchools) {
+        mergedMap.set(cs.id, cs);
+      }
+
+      const merged = Array.from(mergedMap.values());
+      localStorage.setItem(SCHOOLS_KEY, JSON.stringify(merged));
+      return merged;
     }
   } catch (err) {
     console.warn('Failed to sync schools from cloud:', err);
