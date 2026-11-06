@@ -13,8 +13,10 @@ import {
 } from '../types';
 import { 
   getSchools, saveSchool, getUsers, saveUser, deleteUser,
-  getTeacherTasks, getSubmissions, getAIGovernanceRules, saveAIGovernanceRules
+  getTeacherTasks, getSubmissions, getAIGovernanceRules, saveAIGovernanceRules,
+  generateUniqueUsername
 } from '../storage';
+import { generateValidUUID } from '../supabaseClient';
 import { AdminDelegationModal } from './AdminDelegationModal';
 import { EditTeacherGradesModal } from './EditTeacherGradesModal';
 import { TeacherTasksManager } from './TeacherTasksManager';
@@ -114,11 +116,18 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
     e.preventDefault();
     if (!formName.trim() || !formUsername.trim()) return;
 
-    const newId = `usr_${formRole}_${Date.now()}`;
+    const uniqueUsername = generateUniqueUsername(
+      formUsername,
+      currentSchool.slug,
+      formRole,
+      users.map(u => u.username)
+    );
+
+    const newId = generateValidUUID();
     const newUser: UserProfile = {
       id: newId,
       name: formName.trim(),
-      username: formUsername.trim(),
+      username: uniqueUsername,
       password: formPassword.trim() || '123',
       role: formRole,
       school_id: currentSchool.id, // عزْلٌ تامّ داخل نطاق المدرسة
@@ -138,14 +147,14 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
       newUser.studentId = selectedStudentId || undefined;
     }
 
-    await saveUser(newUser);
+    await saveUser(newUser, { onConflict: 'username' });
     setUsers(getUsers());
 
     // Reset Form
     setFormName('');
     setFormUsername('');
     setFormPassword('123');
-    showToast(`تمت إضافة حساب ${newUser.name} بنجاح إلى منظومة ${currentSchool.name}`);
+    showToast(`تمت إضافة حساب ${newUser.name} بنجاح باسم مستخدم [${newUser.username}]`);
   };
 
   // Handle Delete User

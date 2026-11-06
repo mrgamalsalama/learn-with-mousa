@@ -10,8 +10,10 @@ import {
 } from '../types';
 import { 
   getUsers, saveUser, deleteUser, 
-  getClasses, saveClass, deleteClass 
+  getClasses, saveClass, deleteClass,
+  generateUniqueUsername
 } from '../storage';
+import { generateValidUUID } from '../supabaseClient';
 
 interface SchoolStaffManagementModalProps {
   isOpen: boolean;
@@ -123,10 +125,18 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     e.preventDefault();
     if (!studentName.trim() || !studentUsername.trim()) return;
 
+    const schoolSlug = school.slug || school.name;
+    const uniqueUsername = generateUniqueUsername(
+      studentUsername,
+      schoolSlug,
+      'student',
+      users.map(u => u.username)
+    );
+
     const newStudent: UserProfile = {
-      id: `usr_std_${Date.now()}`,
+      id: generateValidUUID(),
       name: studentName.trim(),
-      username: studentUsername.trim(),
+      username: uniqueUsername,
       password: studentPassword.trim() || '123',
       role: 'student',
       school_id: school.id,
@@ -137,13 +147,13 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
     };
 
-    await saveUser(newStudent);
+    await saveUser(newStudent, { onConflict: 'username' });
     refreshLocalData();
     setStudentName('');
     setStudentUsername('');
     setStudentPassword('123');
     setIsAddStudentOpen(false);
-    showToast(`تمت إضافة الطالب (${newStudent.name}) إلى مدرسة ${school.name}`);
+    showToast(`تمت إضافة الطالب (${newStudent.name}) باسم المستخدم [${newStudent.username}]`);
   };
 
   const handleDeleteUser = async (userId: string, name: string) => {
@@ -167,7 +177,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       grade: editGrade,
       track: editTrack
     };
-    await saveUser(updated);
+    await saveUser(updated, { onConflict: 'id' });
     refreshLocalData();
     setEditingUser(null);
     showToast(`تم تحديث بيانات الطالب (${editingUser.name}) بنجاح`);
@@ -178,10 +188,18 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     e.preventDefault();
     if (!teacherName.trim() || !teacherUsername.trim()) return;
 
+    const schoolSlug = school.slug || school.name;
+    const uniqueUsername = generateUniqueUsername(
+      teacherUsername,
+      schoolSlug,
+      'teacher',
+      users.map(u => u.username)
+    );
+
     const newTeacher: UserProfile = {
-      id: `usr_tch_${Date.now()}`,
+      id: generateValidUUID(),
       name: teacherName.trim(),
-      username: teacherUsername.trim(),
+      username: uniqueUsername,
       password: teacherPassword.trim() || '123456',
       role: 'teacher',
       school_id: school.id,
@@ -192,13 +210,13 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
     };
 
-    await saveUser(newTeacher);
+    await saveUser(newTeacher, { onConflict: 'username' });
     refreshLocalData();
     setTeacherName('');
     setTeacherUsername('');
     setTeacherPassword('123456');
     setIsAddTeacherOpen(false);
-    showToast(`تمت إضافة المعلم (${newTeacher.name}) إلى مدرسة ${school.name}`);
+    showToast(`تمت إضافة المعلم (${newTeacher.name}) باسم المستخدم [${newTeacher.username}]`);
   };
 
   const handleOpenEditTeacher = (teacher: UserProfile) => {

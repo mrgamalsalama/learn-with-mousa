@@ -10,7 +10,8 @@ import {
   downloadStudentImportTemplate, 
   getGradeLabel 
 } from '../utils/gradebookExport';
-import { saveStudentsBulk } from '../storage';
+import { saveStudentsBulk, generateUniqueUsername } from '../storage';
+import { generateValidUUID } from '../supabaseClient';
 
 interface BulkStudentImportModalProps {
   isOpen: boolean;
@@ -95,21 +96,24 @@ export const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({
       const teacherId = currentUser.role === 'teacher' ? currentUser.id : undefined;
 
       const newStudents: UserProfile[] = validRows.map((r) => {
-        // إنشاء اسم مستخدم فريد وآمن
-        const sanitizedUsername = r.academicId
-          ? r.academicId.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-          : `stu_${Date.now()}_${r.index}`;
+        // إنشاء اسم مستخدم فريد وآمن ومربوط بنطاق المدرسة
+        const studentUsername = generateUniqueUsername(
+          r.academicId || `stu_${r.index}`,
+          currentUser.school_id,
+          'student'
+        );
 
         return {
-          id: `usr_student_${r.academicId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+          id: generateValidUUID(),
           name: r.name,
-          username: sanitizedUsername || `student_${Date.now()}_${r.index}`,
+          username: studentUsername,
           password: '123',
           role: 'student',
           stage: 'primary',
           grade: r.grade || defaultGrade,
           track: r.track || defaultTrack,
           teacherId,
+          school_id: currentUser.school_id,
           email: r.email || undefined,
           loginCount: 0,
           delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS },

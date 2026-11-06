@@ -1,7 +1,15 @@
 import { UserProfile, School, SchoolClass, Activity, ActivityType, GameData, StudentSubmission, StoryBankItem, BookItem, ReadingBookAssignment, ChildBadge, ChildPhonicsRecord, AIGovernanceRules, Exam, ExamSession, ExamQuestion, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, TeacherTask, PadletBoard, PadletPost, PadletComment, PadletTheme, PadletCardColor, ChallengeQuiz, ChallengeRoom, ChallengeQuestion, ChallengePlayer, LiveClassSession, ORFAssessmentSession, NodeMasteryState, LanguagePassportEntry, UILanguage, GameGovernanceRule, ORFAssignmentTask, CEFROverrideRecord, TargetAssignmentType, RemedialPlan } from './types';
 import { INITIAL_BOOKS } from './booksData';
 import { INITIAL_CHALLENGE_QUIZZES } from './data/challengeData';
-import { supabase, upsertUserInSupabase } from './supabaseClient';
+import { 
+  supabase, 
+  upsertUserInSupabase, 
+  insertSchoolInSupabase, 
+  updateSchoolInSupabase, 
+  generateValidUUID,
+  generateUniqueUsername
+} from './supabaseClient';
+export { generateUniqueUsername };
 import { canManageTeacherTasks, sanitizeDelegatedPermissions } from './utils/permissions';
 import { 
   cacheMultipleGamesOffline, 
@@ -280,33 +288,94 @@ export const getSchools = (): School[] => {
   return INITIAL_SCHOOLS;
 };
 
-export const saveSchool = async (school: School): Promise<School[]> => {
+export interface CreateSchoolCloudResult {
+  schools: School[];
+  school: School;
+  cloudSuccess: boolean;
+  cloudError?: string | null;
+  cloudData?: any;
+}
+
+/**
+ * دالة إنشاء مدرسة جديدة وإرسالها فعلياً إلى جدول public.schools في Supabase مع إرجاع تقرير النجاح أو تفاصيل الخطأ
+ */
+export const createSchoolWithCloudFeedback = async (
+  school: School
+): Promise<CreateSchoolCloudResult> => {
+  // 1. ضمان وجود معرّف UUID قياسي صالح لقاعدة البيانات
+  const isValidUUID = school.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(school.id);
+  const safeId = isValidUUID ? school.id : generateValidUUID();
+  const safeSchool: School = {
+    ...school,
+    id: safeId,
+    slug: (school.slug || school.name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+  };
+
+  // 2. محاولة إدراج المدرسة فعلياً في جدول public.schools في Supabase عبر insert
+  const { data: cloudData, error: cloudError } = await insertSchoolInSupabase(safeSchool);
+
+  // 3. تحديث التخزين المحلي لضمان استمرارية تجربة المستخدم
   const current = getSchools();
-  const index = current.findIndex(s => s.id === school.id || s.slug === school.slug);
+  const index = current.findIndex(s => s.id === safeSchool.id || s.slug === safeSchool.slug);
   let updated: School[];
   if (index >= 0) {
     updated = [...current];
-    updated[index] = { ...updated[index], ...school };
+    updated[index] = safeSchool;
   } else {
-    updated = [school, ...current];
+    updated = [safeSchool, ...current];
   }
   localStorage.setItem(SCHOOLS_KEY, JSON.stringify(updated));
 
-  // مزامنة غير معطلة مع Supabase
+  const errorMsg = cloudError ? (cloudError.message || JSON.stringify(cloudError)) : null;
+
+  return {
+    schools: updated,
+    school: safeSchool,
+    cloudSuccess: !cloudError,
+    cloudError: errorMsg,
+    cloudData
+  };
+};
+
+export const saveSchool = async (school: School): Promise<School[]> => {
+  // التحقق من صحة الـ UUID
+  const isValidUUID = school.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(school.id);
+  const safeId = isValidUUID ? school.id : generateValidUUID();
+  const safeSchool: School = {
+    ...school,
+    id: safeId,
+    slug: (school.slug || school.name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+  };
+
+  const current = getSchools();
+  const index = current.findIndex(s => s.id === safeSchool.id || s.slug === safeSchool.slug);
+  let updated: School[];
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = { ...updated[index], ...safeSchool };
+  } else {
+    updated = [safeSchool, ...current];
+  }
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(updated));
+
+  // عملية حفظ وتحديث سحابية فعلية في جدول public.schools في Supabase
   try {
-    await supabase.from('schools').upsert({
-      id: school.id,
-      name: school.name,
-      slug: school.slug,
-      status: school.status,
-      plan_tier: school.plan_tier,
-      subscription_start_date: school.subscription_start_date,
-      subscription_end_date: school.subscription_end_date,
-      ai_enabled: school.ai_enabled,
-      max_students: school.max_students
-    });
+    if (index >= 0) {
+      await updateSchoolInSupabase(safeSchool.id, {
+        name: safeSchool.name,
+        slug: safeSchool.slug,
+        status: safeSchool.status,
+        plan_tier: safeSchool.plan_tier,
+        subscription_start_date: safeSchool.subscription_start_date,
+        subscription_end_date: safeSchool.subscription_end_date,
+        ai_enabled: safeSchool.ai_enabled,
+        max_students: safeSchool.max_students
+      });
+    } else {
+      await insertSchoolInSupabase(safeSchool);
+    }
   } catch (err) {
-    console.warn('Failed to upsert school to cloud:', err);
+    console.warn('Failed to sync school with Supabase:', err);
   }
 
   return updated;
@@ -638,30 +707,54 @@ export const saveUsers = (usersList: UserProfile[]): void => {
   }
 };
 
-export const saveUser = async (user: UserProfile): Promise<{ user: UserProfile; error?: any }> => {
-  // 1. الحفظ الفوري في التخزين المحلي كنسخة احتياطية سريعة ومضمونة
+export const saveUser = async (
+  user: UserProfile,
+  options?: { onConflict?: 'id' | 'username' }
+): Promise<{ user: UserProfile; error?: any }> => {
+  // 1. تنظيف اسم المستخدم وضمان عدم فراغه
+  const cleanUsername = (user.username || '').trim().toLowerCase();
+  const safeUsername = cleanUsername || generateUniqueUsername('', user.school_id, user.role);
+
+  const safeUser: UserProfile = {
+    ...user,
+    id: user.id || generateValidUUID(),
+    username: safeUsername
+  };
+
+  // 2. الحفظ الفوري في التخزين المحلي كنسخة احتياطية سريعة ومضمونة
   const users = getUsers();
-  const existingIdx = users.findIndex(u => u.id === user.id);
+  const existingIdx = users.findIndex(u => u.id === safeUser.id || (safeUser.username && u.username.toLowerCase() === safeUser.username.toLowerCase()));
   if (existingIdx >= 0) {
-    users[existingIdx] = user;
+    users[existingIdx] = safeUser;
   } else {
-    users.push(user);
+    users.push(safeUser);
   }
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-  // 2. الحفظ السحابي عبر upsertUserInSupabase مع مطابقة دقيقة للأعمدة
+  // 3. الحفظ السحابي عبر upsertUserInSupabase مع تحديد خيار onConflict وحل التعارض تلقائياً
   try {
-    const { data, error } = await upsertUserInSupabase(user);
+    const { data, error } = await upsertUserInSupabase(safeUser, options);
 
     if (error) {
       console.error("Supabase Save Error Details:", error.message, error.details, error.hint);
-      return { user, error };
+      return { user: safeUser, error };
     }
 
-    return { user, error: null };
+    // إذا تم تعديل اسم المستخدم لفك تعارض، نحدّث الكائن المحلي
+    if (data && data[0] && data[0].username && data[0].username !== safeUser.username) {
+      safeUser.username = data[0].username;
+      const currentList = getUsers();
+      const idx = currentList.findIndex(u => u.id === safeUser.id);
+      if (idx >= 0) {
+        currentList[idx] = safeUser;
+        localStorage.setItem(USERS_KEY, JSON.stringify(currentList));
+      }
+    }
+
+    return { user: safeUser, error: null };
   } catch (err: any) {
     console.error("Supabase Save Exception:", err);
-    return { user, error: err };
+    return { user: safeUser, error: err };
   }
 };
 
@@ -700,10 +793,10 @@ export const saveStudentsBulk = async (newStudents: UserProfile[]): Promise<{ co
   }
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-  // 2. الحفظ السحابي في Supabase لجميع الطلاب
+  // 2. الحفظ السحابي في Supabase لجميع الطلاب باستخدام onConflict: 'username' لمنع تكرار أسماء الطلاب
   try {
     for (const st of newStudents) {
-      await upsertUserInSupabase(st);
+      await upsertUserInSupabase(st, { onConflict: 'username' });
     }
     return { count: updatedCount, error: null };
   } catch (err: any) {

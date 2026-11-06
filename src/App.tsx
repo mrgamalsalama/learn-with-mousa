@@ -994,7 +994,7 @@ function AppContent() {
         : {}),
     };
 
-    const saveResult = await saveUser(newUser);
+    const saveResult = await saveUser(newUser, { onConflict: 'username' });
     // تحديث واجهة المستخدم فوراً بالبيانات المحفوظة لضمان عدم توقف أو تجميد العملية
     setUsers(getUsers());
     

@@ -6,8 +6,8 @@ import {
   GraduationCap, BookOpen, Layers
 } from 'lucide-react';
 import { School, UserProfile, SchoolStage, GradeLevel, ArabicTrack } from '../types';
-import { saveSchool, saveUser, getUsers } from '../storage';
-import { supabase } from '../supabaseClient';
+import { saveSchool, saveUser, getUsers, generateUniqueUsername } from '../storage';
+import { supabase, generateValidUUID } from '../supabaseClient';
 
 interface BulkSchoolOnboardingModalProps {
   isOpen: boolean;
@@ -320,13 +320,22 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
       await saveSchool(newSchool);
 
       const credentialsList: Array<{ name: string; username: string; role: string; password: string }> = [];
+      const existingUsernames = new Set(getUsers().map(u => u.username));
 
-      // 2. إنشاء حساب مدير المدرسة
+      // 2. إنشاء حساب مدير المدرسة باسم مستخدم فريد مرتبط بالمدرسة
+      const adminUsername = generateUniqueUsername(
+        parsedSchool.adminUsername || 'admin',
+        parsedSchool.slug,
+        'school_admin',
+        existingUsernames
+      );
+      existingUsernames.add(adminUsername);
+
       const adminUser: UserProfile = {
-        id: `usr_adm_${Date.now()}`,
+        id: generateValidUUID(),
         name: parsedSchool.adminName,
-        username: parsedSchool.adminUsername,
-        password: parsedSchool.adminPassword,
+        username: adminUsername,
+        password: parsedSchool.adminPassword || '123456',
         email: parsedSchool.adminEmail,
         role: 'school_admin',
         school_id: schoolId,
@@ -335,7 +344,7 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         allowedTracks: ['arabic-a', 'arabic-b'],
         loginCount: 0
       };
-      await saveUser(adminUser);
+      await saveUser(adminUser, { onConflict: 'username' });
       credentialsList.push({
         name: adminUser.name,
         username: adminUser.username,
@@ -343,14 +352,22 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         password: adminUser.password || ''
       });
 
-      // 3. إنشاء حسابات المعلمين
+      // 3. إنشاء حسابات المعلمين بأسماء فريدة ومربوطة بنطاق المدرسة
       for (let i = 0; i < parsedTeachers.length; i++) {
         const t = parsedTeachers[i];
+        const teacherUsername = generateUniqueUsername(
+          t.username || `teacher_${i + 1}`,
+          parsedSchool.slug,
+          'teacher',
+          existingUsernames
+        );
+        existingUsernames.add(teacherUsername);
+
         const teacherUser: UserProfile = {
-          id: `usr_t_${Date.now()}_${i}`,
+          id: generateValidUUID(),
           name: t.name,
-          username: t.username,
-          password: t.password,
+          username: teacherUsername,
+          password: t.password || '123456',
           role: 'teacher',
           school_id: schoolId,
           allowedStages: ['primary'],
@@ -358,7 +375,7 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
           allowedTracks: t.allowedTracks,
           loginCount: 0
         };
-        await saveUser(teacherUser);
+        await saveUser(teacherUser, { onConflict: 'username' });
         credentialsList.push({
           name: teacherUser.name,
           username: teacherUser.username,
@@ -367,14 +384,22 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         });
       }
 
-      // 4. إنشاء حسابات الطلاب
+      // 4. إنشاء حسابات الطلاب بأسماء فريدة ومربوطة بنطاق المدرسة
       for (let i = 0; i < parsedStudents.length; i++) {
         const s = parsedStudents[i];
+        const studentUsername = generateUniqueUsername(
+          s.username || `student_${i + 1}`,
+          parsedSchool.slug,
+          'student',
+          existingUsernames
+        );
+        existingUsernames.add(studentUsername);
+
         const studentUser: UserProfile = {
-          id: `usr_s_${Date.now()}_${i}`,
+          id: generateValidUUID(),
           name: s.name,
-          username: s.username,
-          password: s.password,
+          username: studentUsername,
+          password: s.password || '123',
           role: 'student',
           school_id: schoolId,
           stage: s.stage,
@@ -382,7 +407,7 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
           track: s.track,
           loginCount: 0
         };
-        await saveUser(studentUser);
+        await saveUser(studentUser, { onConflict: 'username' });
         credentialsList.push({
           name: studentUser.name,
           username: studentUser.username,

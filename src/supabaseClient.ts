@@ -21,40 +21,104 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 /**
- * دالة حفظ/مزامنة المستخدم في جدول users السحابي في Supabase مع مطابقة الأعمدة والتحقق الصارم من الأخطاء
+ * توليد اسم مستخدم فريد تماماً بربطه بكود المدرسة لمنع أي تعارض في Supabase
+ * النمط المتبع: ${schoolSlug}_${baseName}_${randomDigits} أو ${schoolSlug}_admin_${timestamp}
  */
-export async function upsertUserInSupabase(user: {
-  id: string;
-  name: string;
-  username: string;
-  password?: string;
-  role: string;
-  stage?: string | null;
-  grade?: string | null;
-  track?: string | null;
-  studentId?: string | null;
-  allowedGrades?: string[];
-  allowedTracks?: string[];
-  loginCount?: number;
-  lastLogin?: string | null;
-  ai_access_status?: 'inherit' | 'allowed' | 'blocked';
-  delegated_admin_permissions?: any;
-  avatar?: string;
-  email?: string;
-  timezone?: string;
-  preferences?: any;
-  school_id?: string;
-}): Promise<{ data: any; error: any }> {
-  // 1. ضمان وجود معرّف سليم (نصي أو UUID)
-  const safeId = user.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now());
+export function generateUniqueUsername(
+  baseUsername?: string | null,
+  schoolSlug?: string | null,
+  role?: string,
+  existingUsernames?: Set<string> | string[]
+): string {
+  // تنظيف slug المدرسة وجعله صالحاً كاسم مستخدم
+  const cleanSlug = (schoolSlug || 'school')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24) || 'school';
 
-  // 2. تصفية الحقول لتطابق تماماً أعمدة جدول users في قاعدة بيانات Supabase
+  let raw = (baseUsername || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  // إذا لم يُعطَ اسم أساسي، نستعين بالدور الوظيفي (admin, teacher, student)
+  if (!raw) {
+    const defaultBase = role === 'school_admin' || role === 'admin' ? 'admin' : (role || 'user');
+    raw = defaultBase.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  }
+
+  // إذا كان الاسم يبدأ بالفعل بـ slug المدرسة، نزيله لتفادي تكراره (مثل school_school_admin)
+  if (raw.startsWith(`${cleanSlug}_`)) {
+    raw = raw.slice(cleanSlug.length + 1);
+  }
+
+  // توليد رقم عشوائي يضمن الفرادة
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  let candidate = `${cleanSlug}_${raw}_${randomSuffix}`;
+
+  // إذا تم توفير قائمة الأسماء الموجودة محلياً أو سحابياً، نضمن عدم التصادم
+  if (existingUsernames) {
+    const nameSet = existingUsernames instanceof Set ? existingUsernames : new Set(existingUsernames);
+    let attempts = 0;
+    while (nameSet.has(candidate) && attempts < 20) {
+      candidate = `${cleanSlug}_${raw}_${Date.now().toString().slice(-6)}_${Math.floor(100 + Math.random() * 900)}`;
+      attempts++;
+    }
+  }
+
+  return candidate;
+}
+
+/**
+ * دالة حفظ/مزامنة المستخدم في جدول users السحابي في Supabase مع مطابقة الأعمدة والتحقق الصارم من الأخطاء
+ * مع دعم تحديد عمود الدمج onConflict ('id' أو 'username') والحل التلقائي لأخطاء users_username_key
+ */
+export async function upsertUserInSupabase(
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    password?: string;
+    role: string;
+    stage?: string | null;
+    grade?: string | null;
+    track?: string | null;
+    studentId?: string | null;
+    allowedGrades?: string[];
+    allowedTracks?: string[];
+    loginCount?: number;
+    lastLogin?: string | null;
+    ai_access_status?: 'inherit' | 'allowed' | 'blocked';
+    delegated_admin_permissions?: any;
+    avatar?: string;
+    email?: string;
+    timezone?: string;
+    preferences?: any;
+    school_id?: string;
+  },
+  options?: {
+    onConflict?: 'id' | 'username';
+  }
+): Promise<{ data: any; error: any }> {
+  // 1. ضمان وجود معرّف سليم (UUID قياسي عند الإنشاء الجديد)
+  const safeId = user.id && user.id.trim() ? user.id.trim() : generateValidUUID();
+
+  // 2. ضمان عدم فراغ اسم المستخدم وتوليد اسم فريد مرتبط بالمدرسة إذا كان فارغاً
+  let cleanUsername = (user.username || '').trim().toLowerCase();
+  if (!cleanUsername) {
+    cleanUsername = generateUniqueUsername('', user.school_id, user.role);
+  }
+
+  // 3. تصفية الحقول لتطابق تماماً أعمدة جدول users في قاعدة بيانات Supabase
   const userData: Record<string, any> = {
     id: safeId,
-    name: user.name,
-    username: user.username.trim().toLowerCase(),
-    role: user.role,
-    school_id: user.school_id || 'school_demo_mousa',
+    name: user.name || cleanUsername,
+    username: cleanUsername,
+    role: user.role || 'student',
+    school_id: user.school_id || '00000000-0000-0000-0000-000000000001',
   };
 
   if (user.password !== undefined) {
@@ -103,10 +167,13 @@ export async function upsertUserInSupabase(user: {
     userData.last_login = user.lastLogin || null;
   }
 
+  // 4. تحديد عمود الدمج الصريح: 'username' أو 'id'
+  const conflictTarget = options?.onConflict || 'id';
+
   try {
     let { data, error } = await supabase
       .from('users')
-      .upsert(userData, { onConflict: 'id' })
+      .upsert(userData, { onConflict: conflictTarget })
       .select();
 
     // في حال عدم وجود بعض الأعمدة الإضافية في جدول users سحابياً (كود 42703)، نعيد المحاولة تدريجياً
@@ -119,10 +186,44 @@ export async function upsertUserInSupabase(user: {
       }
       const retry = await supabase
         .from('users')
-        .upsert(copy, { onConflict: 'id' })
+        .upsert(copy, { onConflict: conflictTarget })
         .select();
       data = retry.data;
       error = retry.error;
+    }
+
+    // معالجة تعارض القيد الفريد لاسم المستخدم (users_username_key / code 23505)
+    if (error && (error.code === '23505' || error.message?.includes('users_username_key'))) {
+      console.warn('[Supabase users upsert] تم رصد تعارض في users_username_key، جارٍ الحل التلقائي...');
+
+      // إذا كان الدمج مقصوداً على اسم المستخدم، نقوم بتحديث السجل الذي يملك نفس اسم المستخدم
+      if (conflictTarget === 'username') {
+        const updateRes = await supabase
+          .from('users')
+          .update(userData)
+          .eq('username', userData.username)
+          .select();
+        if (!updateRes.error) {
+          console.log('[Supabase users] تم تحديث المستخدم بنجاح وفق username:', userData.username);
+          return { data: updateRes.data, error: null };
+        }
+      }
+
+      // في حال الإدراج كحساب جديد وكان اسم المستخدم مأخوذاً، يتم توليد لاحقة فريدة والمحاولة من جديد
+      const newUniqueUsername = `${userData.username}_${Date.now().toString().slice(-4)}_${Math.floor(100 + Math.random() * 900)}`;
+      userData.username = newUniqueUsername;
+
+      const retryUnique = await supabase
+        .from('users')
+        .upsert(userData, { onConflict: 'id' })
+        .select();
+
+      if (!retryUnique.error) {
+        console.log('[Supabase users] تم حل تعارض اسم المستخدم بنجاح بالاسم الفريد:', userData.username);
+        return { data: retryUnique.data, error: null };
+      }
+
+      error = retryUnique.error;
     }
 
     if (error) {
@@ -134,6 +235,99 @@ export async function upsertUserInSupabase(user: {
     return { data, error: null };
   } catch (err: any) {
     console.error('Supabase users upsert exception:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * دالة توليد UUID v4 قياسي صالح لقواعد بيانات PostgreSQL
+ */
+export function generateValidUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * دالة إدراج مدرسة جديدة فعلياً في جدول public.schools في Supabase مع التحقق الكامل وإرجاع رسالة النجاح أو كود وتفاصيل الخطأ
+ */
+export async function insertSchoolInSupabase(school: {
+  id?: string;
+  name: string;
+  slug: string;
+  status?: string;
+  plan_tier?: string;
+  subscription_start_date?: string;
+  subscription_end_date?: string;
+  ai_enabled?: boolean;
+  max_students?: number;
+}): Promise<{ data: any; error: any }> {
+  // التحقق من صحة الـ UUID
+  const isValidUUID = school.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(school.id);
+  const safeId = isValidUUID ? school.id! : generateValidUUID();
+
+  const schoolData: Record<string, any> = {
+    id: safeId,
+    name: school.name.trim(),
+    slug: (school.slug || school.name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+    status: school.status || 'active',
+    plan_tier: school.plan_tier || 'annual',
+    subscription_start_date: school.subscription_start_date || new Date().toISOString(),
+    subscription_end_date: school.subscription_end_date || new Date(Date.now() + 365 * 86400000).toISOString(),
+    ai_enabled: school.ai_enabled !== false,
+    max_students: Number(school.max_students) || 500,
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('schools')
+      .insert(schoolData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Supabase schools insert error]:', error.message, error.details, error.code, error.hint);
+      return { data: null, error };
+    }
+
+    console.log('[Supabase schools insert success]:', data);
+    return { data, error: null };
+  } catch (err: any) {
+    console.error('[Supabase schools insert exception]:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * دالة تحديث بيانات مدرسة موجودة في جدول public.schools في Supabase
+ */
+export async function updateSchoolInSupabase(
+  schoolId: string,
+  updates: Record<string, any>
+): Promise<{ data: any; error: any }> {
+  try {
+    const { data, error } = await supabase
+      .from('schools')
+      .update(updates)
+      .eq('id', schoolId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Supabase schools update error]:', error.message, error.details, error.code);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (err: any) {
+    console.error('[Supabase schools update exception]:', err);
     return { data: null, error: err };
   }
 }

@@ -10,8 +10,10 @@ import { School, UserProfile, SchoolStatus, SchoolPlanTier, SchoolAiMetrics } fr
 import { 
   getSchools, saveSchool, deleteSchool, syncSchoolsFromCloud,
   getUsers, saveUser, setCurrentUser,
-  getAIGovernanceRules, saveAIGovernanceRules, syncAIGovernanceRulesFromCloud
+  getAIGovernanceRules, saveAIGovernanceRules, syncAIGovernanceRulesFromCloud,
+  createSchoolWithCloudFeedback, generateUniqueUsername
 } from '../storage';
+import { generateValidUUID } from '../supabaseClient';
 import { BulkSchoolOnboardingModal } from './BulkSchoolOnboardingModal';
 import { SchoolStaffManagementModal } from './SchoolStaffManagementModal';
 
@@ -41,6 +43,8 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
   const [selectedSchoolForStaff, setSelectedSchoolForStaff] = useState<School | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Global AI Governance rules
   const [governanceRules, setGovernanceRules] = useState(() => getAIGovernanceRules());
@@ -165,9 +169,10 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
   const handleCreateSchool = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionLoadingId('new');
+    setModalError(null);
 
-    const cleanSlug = formSlug.trim().toLowerCase().replace(/\s+/g, '-');
-    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `school_${Date.now()}`;
+    const cleanSlug = formSlug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const newId = generateValidUUID();
     const startDate = new Date().toISOString();
     const endDate = new Date(Date.now() + Number(formDurationDays) * 86400000).toISOString();
 
@@ -185,16 +190,26 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
     };
 
     try {
-      const updatedList = await saveSchool(newSchool);
-      setSchools(updatedList);
+      const result = await createSchoolWithCloudFeedback(newSchool);
+      setSchools(result.schools);
 
-      if (formAdminUsername && formAdminPassword) {
-        const adminId = `usr_adm_${Date.now()}`;
+      let createdAdminUsername = '';
+      if (formAdminUsername || formAdminName) {
+        const adminId = generateValidUUID();
+        // توليد اسم مستخدم فريد تماماً بربطه بكود المدرسة لمنع أي تعارض في Supabase
+        const uniqueAdminUsername = generateUniqueUsername(
+          formAdminUsername || 'admin',
+          cleanSlug,
+          'school_admin',
+          users.map(u => u.username)
+        );
+        createdAdminUsername = uniqueAdminUsername;
+
         const newAdminUser: UserProfile = {
           id: adminId,
           name: formAdminName.trim() || `مدير ${newSchool.name}`,
-          username: formAdminUsername.trim(),
-          password: formAdminPassword,
+          username: uniqueAdminUsername,
+          password: formAdminPassword || '123456',
           email: formAdminEmail.trim() || undefined,
           role: 'school_admin',
           school_id: newId,
@@ -203,7 +218,10 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
           allowedTracks: ['arabic-a', 'arabic-b'],
           loginCount: 0
         };
-        await saveUser(newAdminUser);
+        const userSaveRes = await saveUser(newAdminUser, { onConflict: 'username' });
+        if (userSaveRes.error) {
+          console.warn('تحذير أثناء حفظ مدير المدرسة سحابياً:', userSaveRes.error);
+        }
         setUsers(getUsers());
       }
 
@@ -214,8 +232,17 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
       setFormAdminUsername('');
       setFormAdminPassword('123456');
       setFormAdminEmail('');
-      showToast(`تم إنشاء مدرسة "${newSchool.name}" وتعيين مديرها بنجاح`);
+
+      if (result.cloudSuccess) {
+        const adminMsg = createdAdminUsername ? ` وحساب المدير (${createdAdminUsername})` : '';
+        setSuccessToast(`تم إرسال وحفظ مدرسة "${newSchool.name}"${adminMsg} بنجاح في جدول public.schools في Supabase ☁️✨`);
+      } else {
+        const errDetail = result.cloudError || 'تعذر الاتصال بالسحابة';
+        setErrorToast(`تم الحفظ محلياً! تعذر إدراج السجل في جدول schools في Supabase: ${errDetail}`);
+      }
       onSchoolsUpdated?.();
+    } catch (err: any) {
+      setModalError(err?.message || 'حدث خطأ غير متوقع أثناء إرسال السجل إلى Supabase');
     } finally {
       setActionLoadingId(null);
     }
@@ -270,6 +297,16 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
             <span>{successToast}</span>
           </div>
           <button onClick={() => setSuccessToast(null)} className="p-1 hover:bg-emerald-700 rounded-lg">✕</button>
+        </div>
+      )}
+
+      {errorToast && (
+        <div className="p-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-xs flex items-center justify-between shadow-xl animate-fade-in border border-amber-600">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-950 shrink-0" />
+            <span>{errorToast}</span>
+          </div>
+          <button onClick={() => setErrorToast(null)} className="p-1 hover:bg-amber-600 rounded-lg text-slate-900 font-bold">✕</button>
         </div>
       )}
 
@@ -826,6 +863,15 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
             </div>
 
             <form onSubmit={handleCreateSchool} className="space-y-4">
+              {modalError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1 animate-fade-in">
+                  <div className="flex items-center gap-2 font-bold text-rose-900">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>خطأ أثناء الإرسال لـ Supabase:</span>
+                  </div>
+                  <p className="leading-relaxed font-mono text-[11px] break-all">{modalError}</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-slate-700 mb-1">اسم المدرسة الرسمي</label>
@@ -902,14 +948,29 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">اسم الدخول</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-600">اسم الدخول</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const slug = formSlug || 'school';
+                          setFormAdminUsername(generateUniqueUsername('admin', slug, 'school_admin'));
+                        }}
+                        className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold underline"
+                      >
+                        توليد فريد 🎲
+                      </button>
+                    </div>
                     <input
                       type="text"
-                      placeholder="nokhba_admin"
+                      placeholder={formSlug ? `${formSlug.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}_admin` : 'nokhba_admin'}
                       value={formAdminUsername}
                       onChange={e => setFormAdminUsername(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-mono"
                     />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">
+                      يتم ربطه بكود المدرسة تلقائياً لمنع أي تعارض في Supabase
+                    </span>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 mb-1">كلمة المرور</label>
