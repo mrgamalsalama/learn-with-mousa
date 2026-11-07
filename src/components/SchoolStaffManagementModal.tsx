@@ -6,15 +6,16 @@ import {
 } from 'lucide-react';
 import { 
   School, UserProfile, SchoolClass, SchoolStage, GradeLevel, ArabicTrack, 
-  STAGES_CONFIG, DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades 
+  STAGES_CONFIG, DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades,
+  getStageForGrade, SCHOOL_STAGES_LIST
 } from '../types';
 import { 
   getUsers, saveUser, deleteUser, 
   getClasses, saveClass, deleteClass,
-  generateUniqueUsername
+  generateUniqueUsername, syncClassesFromCloud
 } from '../storage';
 import { generateValidUUID } from '../supabaseClient';
-import { TeacherGradeMatrixSelector } from './TeacherGradeMatrixSelector';
+import { TeacherGradeMatrixSelector, AllGradesSelectOptions, getGradesForStage } from './TeacherGradeMatrixSelector';
 
 interface SchoolStaffManagementModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [editGrade, setEditGrade] = useState<GradeLevel>('grade-1');
   const [editTrack, setEditTrack] = useState<ArabicTrack>('arabic-a');
+  const [editClassId, setEditClassId] = useState<string>('');
   const [editTeacherGrades, setEditTeacherGrades] = useState<GradeLevel[]>([]);
   const [editTeacherTracks, setEditTeacherTracks] = useState<ArabicTrack[]>([]);
 
@@ -61,6 +63,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
   const [studentGrade, setStudentGrade] = useState<GradeLevel>('grade-1');
   const [studentTrack, setStudentTrack] = useState<ArabicTrack>('arabic-a');
   const [studentStage, setStudentStage] = useState<SchoolStage>('primary');
+  const [studentClassId, setStudentClassId] = useState<string>('');
 
   // New Teacher Form State
   const [teacherName, setTeacherName] = useState('');
@@ -76,9 +79,12 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
   const [classTrack, setClassTrack] = useState<ArabicTrack>('arabic-a');
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && school?.id) {
       setUsers(getUsers());
       setClasses(getClasses());
+      syncClassesFromCloud(school.id).then(latest => {
+        if (latest && latest.length > 0) setClasses(latest);
+      });
       setSearchQuery('');
       setIsAddStudentOpen(false);
       setIsAddTeacherOpen(false);
@@ -134,6 +140,9 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       users.map(u => u.username)
     );
 
+    const derivedStage = getStageForGrade(studentGrade);
+    const assignedClass = classes.find(c => c.id === studentClassId);
+
     const newStudent: UserProfile = {
       id: generateValidUUID(),
       name: studentName.trim(),
@@ -141,9 +150,11 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       password: studentPassword.trim() || '123',
       role: 'student',
       school_id: school.id,
-      stage: studentStage,
+      stage: derivedStage,
       grade: studentGrade,
       track: studentTrack,
+      class_id: studentClassId || undefined,
+      className: assignedClass?.name || undefined,
       loginCount: 0,
       delegated_admin_permissions: { ...DEFAULT_DELEGATED_PERMISSIONS }
     };
@@ -153,6 +164,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     setStudentName('');
     setStudentUsername('');
     setStudentPassword('123');
+    setStudentClassId('');
     setIsAddStudentOpen(false);
     showToast(`تمت إضافة الطالب (${newStudent.name}) باسم المستخدم [${newStudent.username}]`);
   };
@@ -169,14 +181,21 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     setEditingUser(student);
     setEditGrade(student.grade || 'grade-1');
     setEditTrack(student.track || 'arabic-a');
+    setEditClassId(student.class_id || '');
   };
 
   const handleSaveEditStudent = async () => {
     if (!editingUser) return;
+    const derivedStage = getStageForGrade(editGrade);
+    const assignedClass = classes.find(c => c.id === editClassId);
+
     const updated: UserProfile = {
       ...editingUser,
+      stage: derivedStage,
       grade: editGrade,
-      track: editTrack
+      track: editTrack,
+      class_id: editClassId || undefined,
+      className: assignedClass?.name || undefined,
     };
     await saveUser(updated, { onConflict: 'id' });
     refreshLocalData();
@@ -480,18 +499,20 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الصف الدراسي</label>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الصف الدراسي (كافة المراحل)</label>
                       <select
                         value={studentGrade}
-                        onChange={e => setStudentGrade(e.target.value as GradeLevel)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                        onChange={e => {
+                          const g = e.target.value as GradeLevel;
+                          setStudentGrade(g);
+                          setStudentStage(getStageForGrade(g));
+                          // Auto-select first matching class if available
+                          const match = schoolClasses.find(c => c.grade === g);
+                          if (match) setStudentClassId(match.id);
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold"
                       >
-                        <option value="grade-1">الصف الأول الابتدائي</option>
-                        <option value="grade-2">الصف الثاني الابتدائي</option>
-                        <option value="grade-3">الصف الثالث الابتدائي</option>
-                        <option value="grade-4">الصف الرابع الابتدائي</option>
-                        <option value="grade-5">الصف الخامس الابتدائي</option>
-                        <option value="grade-6">الصف السادس الابتدائي</option>
+                        <AllGradesSelectOptions />
                       </select>
                     </div>
                     <div>
@@ -505,7 +526,39 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                         <option value="arabic-b">غير ناطقين (Arabic B)</option>
                       </select>
                     </div>
-                    <div className="sm:col-span-2 lg:col-span-5 flex justify-end gap-2 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الفصل الدراسي / الشعبة</label>
+                      <select
+                        value={studentClassId}
+                        onChange={e => setStudentClassId(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                      >
+                        <option value="">-- بدون فصل مسند حالياً --</option>
+                        {schoolClasses.filter(c => c.grade === studentGrade).length > 0 && (
+                          <optgroup label={`فصول ${formatGradeDisplay(studentGrade)} المسجلة`}>
+                            {schoolClasses
+                              .filter(c => c.grade === studentGrade)
+                              .map(cls => (
+                                <option key={cls.id} value={cls.id}>
+                                  {cls.name} ({cls.track === 'arabic-b' ? 'عرب B' : 'عرب A'})
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {schoolClasses.filter(c => c.grade !== studentGrade).length > 0 && (
+                          <optgroup label="فصول أخرى بالمدرسة">
+                            {schoolClasses
+                              .filter(c => c.grade !== studentGrade)
+                              .map(cls => (
+                                <option key={cls.id} value={cls.id}>
+                                  {cls.name} - {formatGradeDisplay(cls.grade)}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-3 flex justify-end gap-2 pt-2">
                       <button
                         type="button"
                         onClick={() => setIsAddStudentOpen(false)}
@@ -533,6 +586,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                       <th className="p-3">اسم الدخول</th>
                       <th className="p-3">كلمة المرور</th>
                       <th className="p-3">الصف الدراسي</th>
+                      <th className="p-3">الفصل والشعبة</th>
                       <th className="p-3">المسار اللغوي</th>
                       <th className="p-3 text-center">الإجراءات والتحكم</th>
                     </tr>
@@ -540,6 +594,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredStudents.map(student => {
                       const isPwdVisible = showPasswordMap[student.id];
+                      const studentCls = classes.find(c => c.id === student.class_id);
                       return (
                         <tr key={student.id} className="hover:bg-slate-50/60 transition">
                           <td className="p-3 font-extrabold text-slate-800">
@@ -574,8 +629,17 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                           </td>
                           <td className="p-3">
                             <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-bold border border-blue-200 text-[10px]">
-                              {student.grade?.replace('grade-', 'الصف ') || 'ابتدائي'}
+                              {formatGradeDisplay(student.grade)}
                             </span>
+                          </td>
+                          <td className="p-3">
+                            {student.class_id || student.className ? (
+                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 font-bold border border-purple-200 text-[10px]">
+                                {studentCls?.name || student.className || 'فصل مسند'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-medium">غير مسند</span>
+                            )}
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${
@@ -866,7 +930,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
 
                   <form onSubmit={handleAddClass} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الفصل</label>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الفصل / الشعبة</label>
                       <input
                         type="text"
                         required
@@ -877,18 +941,34 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الصف الدراسي</label>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">المرحلة التعليمية (Stage)</label>
+                      <select
+                        value={classStage}
+                        onChange={e => {
+                          const newStage = e.target.value as SchoolStage;
+                          setClassStage(newStage);
+                          const stageGrades = getGradesForStage(newStage);
+                          if (stageGrades.length > 0) {
+                            setClassGrade(stageGrades[0].id);
+                          }
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold"
+                      >
+                        {SCHOOL_STAGES_LIST.map(st => (
+                          <option key={st.id} value={st.id}>{st.labelAr}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الصف الدراسي (Grade)</label>
                       <select
                         value={classGrade}
                         onChange={e => setClassGrade(e.target.value as GradeLevel)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold"
                       >
-                        <option value="grade-1">الصف الأول</option>
-                        <option value="grade-2">الصف الثاني</option>
-                        <option value="grade-3">الصف الثالث</option>
-                        <option value="grade-4">الصف الرابع</option>
-                        <option value="grade-5">الصف الخامس</option>
-                        <option value="grade-6">الصف السادس</option>
+                        {getGradesForStage(classStage).map(g => (
+                          <option key={g.id} value={g.id}>{g.labelAr}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -925,7 +1005,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
               {/* Classes Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {filteredClasses.map(cls => {
-                  const studentCount = schoolStudents.filter(s => s.grade === cls.grade && s.track === cls.track).length;
+                  const studentCount = schoolStudents.filter(s => s.class_id === cls.id || (s.grade === cls.grade && s.track === cls.track)).length;
                   return (
                     <div key={cls.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white transition flex flex-col justify-between shadow-xs">
                       <div>
@@ -940,8 +1020,11 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mb-3">
+                          <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">
+                            {cls.stage === 'kg' ? 'رياض الأطفال' : cls.stage === 'primary' ? 'ابتدائي' : cls.stage === 'middle' ? 'متوسط' : 'ثانوي'}
+                          </span>
                           <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
-                            {cls.grade.replace('grade-', 'الصف ')}
+                            {formatGradeDisplay(cls.grade)}
                           </span>
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                             cls.track === 'arabic-b' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
@@ -991,18 +1074,51 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي (كافة المراحل المعتمدة)</label>
                 <select
                   value={editGrade}
-                  onChange={e => setEditGrade(e.target.value as GradeLevel)}
+                  onChange={e => {
+                    const g = e.target.value as GradeLevel;
+                    setEditGrade(g);
+                    const match = schoolClasses.find(c => c.grade === g);
+                    if (match) setEditClassId(match.id);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
                 >
-                  <option value="grade-1">الصف الأول الابتدائي</option>
-                  <option value="grade-2">الصف الثاني الابتدائي</option>
-                  <option value="grade-3">الصف الثالث الابتدائي</option>
-                  <option value="grade-4">الصف الرابع الابتدائي</option>
-                  <option value="grade-5">الصف الخامس الابتدائي</option>
-                  <option value="grade-6">الصف السادس الابتدائي</option>
+                  <AllGradesSelectOptions />
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الفصل الدراسي / الشعبة</label>
+                <select
+                  value={editClassId}
+                  onChange={e => setEditClassId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                >
+                  <option value="">-- بدون فصل مسند حالياً --</option>
+                  {schoolClasses.filter(c => c.grade === editGrade).length > 0 && (
+                    <optgroup label={`فصول ${formatGradeDisplay(editGrade)} المتاحة`}>
+                      {schoolClasses
+                        .filter(c => c.grade === editGrade)
+                        .map(cls => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name} ({cls.track === 'arabic-b' ? 'عرب B' : 'عرب A'})
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                  {schoolClasses.filter(c => c.grade !== editGrade).length > 0 && (
+                    <optgroup label="فصول أخرى بالمدرسة">
+                      {schoolClasses
+                        .filter(c => c.grade !== editGrade)
+                        .map(cls => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name} - {formatGradeDisplay(cls.grade)}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 

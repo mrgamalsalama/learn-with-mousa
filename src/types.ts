@@ -177,6 +177,8 @@ export interface UserProfile {
   stage?: SchoolStage;
   grade?: GradeLevel;
   track?: ArabicTrack;
+  class_id?: string;
+  className?: string;
   teacherId?: string;
 
   // بيانات ولي الأمر
@@ -518,6 +520,24 @@ export function getStagesForGrades(grades: (GradeLevel | string)[]): SchoolStage
   });
   return stages.length > 0 ? stages : ['primary'];
 }
+
+// دالة مساعدة لمعرفة المرحلة التعليمية لصف دراسي محدد
+export function getStageForGrade(gradeId: GradeLevel | string | undefined): SchoolStage {
+  if (!gradeId) return 'primary';
+  if (gradeId === 'kg' || gradeId === 'kg-1' || gradeId === 'kg-2') return 'kg';
+  if (['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'].includes(gradeId)) return 'primary';
+  if (['grade-7', 'grade-8', 'grade-9'].includes(gradeId)) return 'middle';
+  if (['grade-10', 'grade-11', 'grade-12'].includes(gradeId)) return 'high';
+  return 'primary';
+}
+
+// قائمة المراحل التعليمية الأربعة المعتمدة
+export const SCHOOL_STAGES_LIST: { id: SchoolStage; labelAr: string; descAr: string }[] = [
+  { id: 'kg', labelAr: 'مرحلة رياض الأطفال (KG)', descAr: 'روضة 1 وروضة 2' },
+  { id: 'primary', labelAr: 'المرحلة الابتدائية', descAr: 'من الصف الأول حتى السادس' },
+  { id: 'middle', labelAr: 'المرحلة المتوسطة', descAr: 'الصف السابع والثامن والتاسع' },
+  { id: 'high', labelAr: 'المرحلة الثانوية', descAr: 'الصف العاشر والحادي عشر والثاني عشر' },
+];
 
 // ===================== نماذج الذكاء الاصطناعي (Gemini AI Engine) =====================
 

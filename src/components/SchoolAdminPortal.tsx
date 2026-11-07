@@ -9,7 +9,7 @@ import {
 import { 
   School, UserProfile, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, TeacherTask, AIGovernanceRules, StudentSubmission,
-  DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades
+  DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades, getStageForGrade
 } from '../types';
 import { 
   getSchools, saveSchool, getUsers, saveUser, deleteUser,
@@ -20,7 +20,7 @@ import { generateValidUUID } from '../supabaseClient';
 import { AdminDelegationModal } from './AdminDelegationModal';
 import { EditTeacherGradesModal } from './EditTeacherGradesModal';
 import { TeacherTasksManager } from './TeacherTasksManager';
-import { TeacherGradeMatrixSelector } from './TeacherGradeMatrixSelector';
+import { TeacherGradeMatrixSelector, AllGradesSelectOptions } from './TeacherGradeMatrixSelector';
 
 interface SchoolAdminPortalProps {
   currentUser: UserProfile;
@@ -141,7 +141,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
       newUser.allowedGrades = selectedGrades;
       newUser.allowedTracks = selectedTracks;
     } else if (formRole === 'student') {
-      newUser.stage = formStage;
+      newUser.stage = getStageForGrade(formGrade);
       newUser.grade = formGrade;
       newUser.track = formTrack;
     } else if (formRole === 'parent') {
@@ -503,18 +503,17 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
                   {formRole === 'student' && (
                     <div className="pt-3 border-t border-slate-100 space-y-3">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">المرحلة والصف</label>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي (كافة المراحل المعتمدة)</label>
                         <select
                           value={formGrade}
-                          onChange={(e) => setFormGrade(e.target.value as GradeLevel)}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-medium"
+                          onChange={(e) => {
+                            const g = e.target.value as GradeLevel;
+                            setFormGrade(g);
+                            setFormStage(getStageForGrade(g));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-bold"
                         >
-                          <option value="grade-1">الصف الأول الابتدائي</option>
-                          <option value="grade-2">الصف الثاني الابتدائي</option>
-                          <option value="grade-3">الصف الثالث الابتدائي</option>
-                          <option value="grade-4">الصف الرابع الابتدائي</option>
-                          <option value="grade-5">الصف الخامس الابتدائي</option>
-                          <option value="grade-6">الصف السادس الابتدائي</option>
+                          <AllGradesSelectOptions />
                         </select>
                       </div>
 
@@ -735,7 +734,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
                           </p>
                           <div className="flex gap-2 mt-2">
                             <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                              {st.grade?.replace('grade-', 'الصف ') || 'ابتدائي'}
+                              {formatGradeDisplay(st.grade)}
                             </span>
                             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
                               {st.track === 'arabic-a' ? 'ناطقين (A)' : 'غير ناطقين (B)'}

@@ -19,7 +19,7 @@ import {
   ReadingBookAssignment,
   ChildBadge, AIGameType, AIGovernanceRules, Exam, ExamSession,
   TeacherTask, DelegatedAdminPermissions, DEFAULT_DELEGATED_PERMISSIONS, LiveClassSession,
-  UILanguage
+  UILanguage, getStageForGrade, formatGradeDisplay
 } from './types';
 import { 
   getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, recordUserLogin,
@@ -982,7 +982,7 @@ function AppContent() {
         : {}),
       ...(formRole === 'student'
         ? {
-            stage: studentStage,
+            stage: getStageForGrade(studentGrade),
             grade: studentGrade,
             track: studentTrack,
           }

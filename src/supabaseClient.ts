@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { SchoolClass, UserProfile } from './types';
 
 // إعدادات الربط السحابي مع Supabase لمنصة تعلّم مع موسى
 const metaEnv = typeof import.meta !== 'undefined' && (import.meta as any).env ? (import.meta as any).env : {};
@@ -87,6 +88,8 @@ export async function upsertUserInSupabase(
     grade?: string | null;
     track?: string | null;
     studentId?: string | null;
+    class_id?: string | null;
+    className?: string | null;
     allowedGrades?: string[];
     allowedTracks?: string[];
     loginCount?: number;
@@ -154,6 +157,9 @@ export async function upsertUserInSupabase(
   if (user.studentId !== undefined) {
     userData.student_id = user.studentId || null;
   }
+  if (user.class_id !== undefined) {
+    userData.class_id = user.class_id || null;
+  }
   if (Array.isArray(user.allowedGrades)) {
     userData.allowed_grades = user.allowedGrades;
   }
@@ -197,7 +203,7 @@ export async function upsertUserInSupabase(
     if (error && error.code === '42703') {
       const copy = { ...userData };
       // فحص الأعمدة غير الأساسية وإزالتها في حال غيابها في قاعدة البيانات القديمة
-      const optionalCols = ['avatar', 'timezone', 'preferences', 'email', 'delegated_admin_permissions'];
+      const optionalCols = ['avatar', 'timezone', 'preferences', 'email', 'delegated_admin_permissions', 'class_id'];
       for (const col of optionalCols) {
         delete copy[col];
       }
@@ -245,6 +251,11 @@ export async function upsertUserInSupabase(
     if (error) {
       console.error('Supabase users upsert error:', error.message, error.details, error.hint);
       return { data: null, error };
+    }
+
+    // في حال نجاح حفظ مستخدم بدور طالب، نزامن سجله تلقائياً في جدول students
+    if (user.role === 'student') {
+      syncStudentToSupabase(user as any).catch(syncErr => console.warn('[Supabase students sync]:', syncErr));
     }
 
     console.log('تم حفظ المستخدم في Supabase بنجاح:', userData.username);
@@ -347,5 +358,194 @@ export async function updateSchoolInSupabase(
     console.error('[Supabase schools update exception]:', err);
     return { data: null, error: err };
   }
+}
+
+/**
+ * دالة مزامنة الطالب في جدول public.students في Supabase
+ */
+export async function syncStudentToSupabase(student: any): Promise<{ data: any; error: any }> {
+  try {
+    const parts = (student.name || '').trim().split(/\s+/);
+    const firstName = parts[0] || 'طالب';
+    const lastName = parts.slice(1).join(' ') || 'المدرسة';
+    const stageEnum = student.stage === 'kg' ? 'kindergarten' : (student.stage || 'primary');
+
+    const studentPayload: Record<string, any> = {
+      student_id: student.id,
+      school_id: student.school_id || '00000000-0000-0000-0000-000000000001',
+      first_name: firstName,
+      last_name: lastName,
+      full_name_ar: student.name,
+      gender: 'male',
+      birth_date: '2018-01-01',
+      grade_level: student.grade || 'grade-1',
+      section_code: student.className || 'General',
+      class_id: student.class_id || null,
+      track: student.track || 'arabic-a',
+      guardian_name: 'ولي أمر ' + student.name,
+      guardian_phone: '0500000000',
+      status: 'active',
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('students')
+      .upsert(studentPayload, { onConflict: 'student_id' })
+      .select();
+
+    if (error) {
+      console.warn('[Supabase students upsert error]:', error.message);
+      return { data: null, error };
+    }
+    return { data, error: null };
+  } catch (err: any) {
+    console.warn('[Supabase students exception]:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * دالة حفظ ومزامنة الفصل الدراسي في جدول public.classes_grades و public.classes
+ */
+export async function syncClassToSupabase(cls: SchoolClass): Promise<{ data: any; error: any }> {
+  let primaryError: any = null;
+  let savedData: any = null;
+
+  // 1. الحفظ في جدول classes_grades
+  try {
+    const stageEnum = cls.stage === 'kg' ? 'kindergarten' : cls.stage;
+    const cleanSectionCode = cls.name.replace(/[^a-zA-Z0-9_\u0621-\u064A-]/g, '').slice(0, 30) || `SEC-${cls.id.slice(-6)}`;
+
+    const classesGradesPayload = {
+      class_id: cls.id,
+      school_id: cls.school_id || '00000000-0000-0000-0000-000000000001',
+      section_code: cleanSectionCode,
+      class_name_ar: cls.name,
+      stage: stageEnum,
+      grade_level: cls.grade,
+      track: cls.track || 'arabic-a',
+      academic_year: '2026-2027',
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+
+    const res1 = await supabase
+      .from('classes_grades')
+      .upsert(classesGradesPayload, { onConflict: 'class_id' })
+      .select();
+
+    if (!res1.error) {
+      savedData = res1.data;
+      console.log('[Supabase classes_grades] تم الحفظ بنجاح:', cls.name);
+    } else {
+      primaryError = res1.error;
+      console.warn('[Supabase classes_grades upsert warning]:', res1.error.message);
+    }
+  } catch (err) {
+    primaryError = err;
+  }
+
+  // 2. الحفظ الاحتياطي في جدول classes إن وُجد
+  try {
+    const classesPayload = {
+      id: cls.id,
+      school_id: cls.school_id || '00000000-0000-0000-0000-000000000001',
+      name: cls.name,
+      stage: cls.stage,
+      grade: cls.grade,
+      track: cls.track || 'arabic-a',
+      created_at: cls.created_at || new Date().toISOString()
+    };
+
+    const res2 = await supabase
+      .from('classes')
+      .upsert(classesPayload, { onConflict: 'id' })
+      .select();
+
+    if (!res2.error && !savedData) {
+      savedData = res2.data;
+    }
+  } catch (err) {
+    // optional fallback
+  }
+
+  return { data: savedData, error: primaryError };
+}
+
+/**
+ * دالة حذف الفصل الدراسي من Supabase
+ */
+export async function deleteClassFromSupabase(classId: string): Promise<void> {
+  try {
+    await supabase.from('classes_grades').delete().eq('class_id', classId);
+  } catch (e) {}
+  try {
+    await supabase.from('classes').delete().eq('id', classId);
+  } catch (e) {}
+}
+
+/**
+ * دالة جلب الفصول المحدثة من Supabase
+ */
+export async function fetchClassesFromSupabase(schoolId?: string): Promise<SchoolClass[]> {
+  const loadedClasses: SchoolClass[] = [];
+
+  try {
+    // 1. محاولة القراءة من classes_grades
+    let query = supabase.from('classes_grades').select('*');
+    if (schoolId) {
+      query = query.eq('school_id', schoolId);
+    }
+    const { data: cgData, error: cgError } = await query;
+
+    if (!cgError && Array.isArray(cgData) && cgData.length > 0) {
+      cgData.forEach(row => {
+        const rawStage = String(row.stage || 'primary');
+        const stage = (rawStage === 'kindergarten' ? 'kg' : rawStage) as any;
+        loadedClasses.push({
+          id: row.class_id,
+          school_id: row.school_id,
+          name: row.class_name_ar || row.section_code,
+          stage,
+          grade: row.grade_level,
+          track: row.track,
+          created_at: row.created_at
+        });
+      });
+      return loadedClasses;
+    }
+  } catch (e) {
+    console.warn('[Supabase fetch classes_grades]:', e);
+  }
+
+  try {
+    // 2. محاولة القراءة من classes
+    let query2 = supabase.from('classes').select('*');
+    if (schoolId) {
+      query2 = query2.eq('school_id', schoolId);
+    }
+    const { data: cData, error: cError } = await query2;
+
+    if (!cError && Array.isArray(cData) && cData.length > 0) {
+      cData.forEach(row => {
+        const rawStage = String(row.stage || 'primary');
+        const stage = (rawStage === 'kindergarten' ? 'kg' : rawStage) as any;
+        loadedClasses.push({
+          id: row.id,
+          school_id: row.school_id,
+          name: row.name,
+          stage,
+          grade: row.grade,
+          track: row.track,
+          created_at: row.created_at
+        });
+      });
+      return loadedClasses;
+    }
+  } catch (e) {
+    console.warn('[Supabase fetch classes]:', e);
+  }
+
+  return loadedClasses;
 }
 

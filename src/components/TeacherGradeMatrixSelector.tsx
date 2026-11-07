@@ -258,3 +258,43 @@ export const TeacherGradeMatrixSelector: React.FC<TeacherGradeMatrixSelectorProp
     </div>
   );
 };
+
+/**
+ * مكون لعرض كافة خيارات الصفوف الـ 14 مقسمة حسب المراحل داخل قوائم الاختيار المنسدلة <select>
+ */
+export const AllGradesSelectOptions: React.FC = () => {
+  return (
+    <>
+      <optgroup label="🌱 مرحلة رياض الأطفال (KG)">
+        <option value="kg-1">روضة أولى (KG1)</option>
+        <option value="kg-2">روضة ثانية (KG2)</option>
+      </optgroup>
+      <optgroup label="📘 المرحلة الابتدائية (1 - 6)">
+        <option value="grade-1">الصف الأول الابتدائي</option>
+        <option value="grade-2">الصف الثاني الابتدائي</option>
+        <option value="grade-3">الصف الثالث الابتدائي</option>
+        <option value="grade-4">الصف الرابع الابتدائي</option>
+        <option value="grade-5">الصف الخامس الابتدائي</option>
+        <option value="grade-6">الصف السادس الابتدائي</option>
+      </optgroup>
+      <optgroup label="📗 المرحلة المتوسطة (7 - 9)">
+        <option value="grade-7">الصف السابع (متوسط)</option>
+        <option value="grade-8">الصف الثامن (متوسط)</option>
+        <option value="grade-9">الصف التاسع (متوسط)</option>
+      </optgroup>
+      <optgroup label="🎓 المرحلة الثانوية (10 - 12)">
+        <option value="grade-10">الصف العاشر (ثانوي)</option>
+        <option value="grade-11">الصف الحادي عشر (ثانوي)</option>
+        <option value="grade-12">الصف الثاني عشر (ثانوي)</option>
+      </optgroup>
+    </>
+  );
+};
+
+/**
+ * دالة مساعدة لجلب قائمة صفوف مرحلة تعليمية محددة
+ */
+export function getGradesForStage(stage: SchoolStage): { id: GradeLevel; labelAr: string; shortLabelAr?: string }[] {
+  const found = SYSTEM_STAGES_MATRIX.find(s => s.stageId === stage);
+  return found ? found.grades : [];
+}

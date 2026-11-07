@@ -5,9 +5,10 @@ import {
   X, RefreshCw, Users, Building2, KeyRound, ArrowRight, ShieldCheck, 
   GraduationCap, BookOpen, Layers
 } from 'lucide-react';
-import { School, UserProfile, SchoolStage, GradeLevel, ArabicTrack } from '../types';
+import { School, UserProfile, SchoolStage, GradeLevel, ArabicTrack, getStageForGrade } from '../types';
 import { saveSchool, saveUser, getUsers, generateUniqueUsername } from '../storage';
 import { supabase, generateValidUUID } from '../supabaseClient';
+import { mapTextToGradeId } from '../utils/gradebookExport';
 
 interface BulkSchoolOnboardingModalProps {
   isOpen: boolean;
@@ -230,10 +231,8 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
             const username = String(r[0]).toLowerCase().replace(/[^a-z0-9_-]/g, '_');
             const password = '123';
             const gradeRaw = String(r[7] || 'Grade 1');
-            const grade = (gradeRaw.toLowerCase().includes('kg') ? 'kg' : 
-                          gradeRaw.includes('2') ? 'grade-2' : 
-                          gradeRaw.includes('3') ? 'grade-3' : 'grade-1') as GradeLevel;
-            const stage = (grade === 'kg' ? 'kindergarten' : 'primary') as SchoolStage;
+            const grade = mapTextToGradeId(gradeRaw);
+            const stage = getStageForGrade(grade);
             const track = (String(r[10] || '').toLowerCase().includes('b') ? 'arabic-b' : 'arabic-a') as ArabicTrack;
 
             studentsList.push({ name, username, password, stage, grade, track });
@@ -420,7 +419,7 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         });
       }
 
-      // 5. حفظ الفصول في Supabase
+      // 5. حفظ الفصول في Supabase (classes_grades & classes)
       if (parsedClasses.length > 0) {
         try {
           const classesPayload = parsedClasses.map((c, idx) => ({
@@ -432,6 +431,19 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
             track: c.track
           }));
           await supabase.from('classes').insert(classesPayload);
+
+          const classesGradesPayload = parsedClasses.map((c, idx) => ({
+            class_id: `cls_${Date.now()}_${idx}`,
+            school_id: schoolId,
+            section_code: c.name.replace(/[^a-zA-Z0-9_\u0621-\u064A-]/g, '').slice(0, 30) || `SEC-${idx + 1}`,
+            class_name_ar: c.name,
+            stage: c.stage === 'kg' ? 'kindergarten' : c.stage,
+            grade_level: c.grade,
+            track: c.track || 'arabic-a',
+            academic_year: '2026-2027',
+            is_active: true
+          }));
+          await supabase.from('classes_grades').upsert(classesGradesPayload, { onConflict: 'class_id' });
         } catch (e) {
           console.warn('Classes insert error:', e);
         }

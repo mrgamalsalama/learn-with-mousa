@@ -7,7 +7,10 @@ import {
   insertSchoolInSupabase, 
   updateSchoolInSupabase, 
   generateValidUUID,
-  generateUniqueUsername
+  generateUniqueUsername,
+  syncClassToSupabase,
+  deleteClassFromSupabase,
+  fetchClassesFromSupabase
 } from './supabaseClient';
 export { generateUniqueUsername };
 import { canManageTeacherTasks, sanitizeDelegatedPermissions } from './utils/permissions';
@@ -509,6 +512,15 @@ export const CLASSES_KEY = 'lwm_school_classes';
 
 export const INITIAL_CLASSES: SchoolClass[] = [
   {
+    id: 'cls_demo_kg1',
+    school_id: '00000000-0000-0000-0000-000000000001',
+    name: 'فصل الروضة (أ) - العصافير المغردة',
+    stage: 'kg',
+    grade: 'kg-1',
+    track: 'arabic-a',
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
     id: 'cls_demo_1',
     school_id: '00000000-0000-0000-0000-000000000001',
     name: 'الصف الأول (أ) - براعم الفصحى',
@@ -527,12 +539,21 @@ export const INITIAL_CLASSES: SchoolClass[] = [
     created_at: '2026-01-01T00:00:00.000Z'
   },
   {
-    id: 'cls_demo_3',
+    id: 'cls_demo_mid',
     school_id: '00000000-0000-0000-0000-000000000001',
-    name: 'الصف الثاني (ب) - جسور اللغات (تأسيس)',
-    stage: 'primary',
-    grade: 'grade-2',
-    track: 'arabic-b',
+    name: 'الصف السابع (أ) - فرسان الضاد',
+    stage: 'middle',
+    grade: 'grade-7',
+    track: 'arabic-a',
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_demo_high',
+    school_id: '00000000-0000-0000-0000-000000000001',
+    name: 'الصف العاشر (أ) - قادة المستقبل',
+    stage: 'high',
+    grade: 'grade-10',
+    track: 'arabic-a',
     created_at: '2026-01-01T00:00:00.000Z'
   }
 ];
@@ -561,6 +582,12 @@ export const saveClass = (cls: SchoolClass): SchoolClass[] => {
     updated = [cls, ...all];
   }
   localStorage.setItem(CLASSES_KEY, JSON.stringify(updated));
+
+  // مزامنة سحابية غير معطلة في جدول classes_grades و classes بـ Supabase
+  syncClassToSupabase(cls).catch(err => {
+    console.warn('[Supabase saveClass sync error]:', err);
+  });
+
   return updated;
 };
 
@@ -568,7 +595,34 @@ export const deleteClass = (classId: string): SchoolClass[] => {
   const all = getClasses();
   const updated = all.filter(c => c.id !== classId);
   localStorage.setItem(CLASSES_KEY, JSON.stringify(updated));
+
+  // حذف سحابي في Supabase
+  deleteClassFromSupabase(classId).catch(err => {
+    console.warn('[Supabase deleteClass sync error]:', err);
+  });
+
   return updated;
+};
+
+/**
+ * دالة مزامنة وجلب أحدث فصول المدرسة من Supabase
+ */
+export const syncClassesFromCloud = async (schoolId?: string): Promise<SchoolClass[]> => {
+  try {
+    const cloudClasses = await fetchClassesFromSupabase(schoolId);
+    if (cloudClasses.length > 0) {
+      const localClasses = getClasses();
+      const mergedMap = new Map<string, SchoolClass>();
+      localClasses.forEach(c => mergedMap.set(c.id, c));
+      cloudClasses.forEach(c => mergedMap.set(c.id, c));
+      const merged = Array.from(mergedMap.values());
+      localStorage.setItem(CLASSES_KEY, JSON.stringify(merged));
+      return schoolId ? merged.filter(c => c.school_id === schoolId) : merged;
+    }
+  } catch (err) {
+    console.warn('[syncClassesFromCloud]:', err);
+  }
+  return getClasses(schoolId);
 };
 
 export const INITIAL_TEACHER_TASKS: TeacherTask[] = [
