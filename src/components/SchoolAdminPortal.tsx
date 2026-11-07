@@ -87,6 +87,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
   const [formRole, setFormRole] = useState<'teacher' | 'hod' | 'student' | 'parent'>('teacher');
   const [formName, setFormName] = useState('');
   const [formUsername, setFormUsername] = useState('');
+  const [isFormUsernameCustom, setIsFormUsernameCustom] = useState(false);
   const [formPassword, setFormPassword] = useState('123');
   const [formStage, setFormStage] = useState<SchoolStage>('primary');
   const [formGrade, setFormGrade] = useState<GradeLevel>('grade-1');
@@ -121,7 +122,8 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
       formUsername,
       currentSchool.slug,
       formRole,
-      users.map(u => u.username)
+      users.map(u => u.username),
+      { isManual: true }
     );
 
     const newId = generateValidUUID();
@@ -154,6 +156,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
     // Reset Form
     setFormName('');
     setFormUsername('');
+    setIsFormUsernameCustom(false);
     setFormPassword('123');
     showToast(`تمت إضافة حساب ${newUser.name} بنجاح باسم مستخدم [${newUser.username}]`);
   };
@@ -419,23 +422,48 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="مثال: أ. مريم العتيبي أو الطالب خالد"
+                      placeholder="مثال: أ. مريم العتيبي أو الطالب موسى"
                       value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormName(val);
+                        if (!isFormUsernameCustom) {
+                          const generated = generateUniqueUsername(val, currentSchool.slug, formRole, users.map(u => u.username));
+                          setFormUsername(generated);
+                        }
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">اسم الدخول (Username)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700">اسم الدخول (Username)</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const gen = generateUniqueUsername(formName || 'user', currentSchool.slug, formRole, users.map(u => u.username));
+                            setFormUsername(gen);
+                            setIsFormUsernameCustom(false);
+                          }}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 transition-colors"
+                          title="توليد اسم مستخدم جديد بنمط {slug}_{name}_{3digits}"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>توليد 🔄</span>
+                        </button>
+                      </div>
                       <input
                         type="text"
                         required
-                        placeholder="t_maryam"
+                        placeholder="furqan_musa_241"
                         value={formUsername}
-                        onChange={(e) => setFormUsername(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        onChange={(e) => {
+                          setFormUsername(e.target.value);
+                          setIsFormUsernameCustom(true);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
                       />
                     </div>
                     <div>

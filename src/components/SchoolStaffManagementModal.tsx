@@ -59,6 +59,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
   // New Student Form State
   const [studentName, setStudentName] = useState('');
   const [studentUsername, setStudentUsername] = useState('');
+  const [isStudentUsernameCustom, setIsStudentUsernameCustom] = useState(false);
   const [studentPassword, setStudentPassword] = useState('123');
   const [studentGrade, setStudentGrade] = useState<GradeLevel>('grade-1');
   const [studentTrack, setStudentTrack] = useState<ArabicTrack>('arabic-a');
@@ -68,6 +69,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
   // New Teacher Form State
   const [teacherName, setTeacherName] = useState('');
   const [teacherUsername, setTeacherUsername] = useState('');
+  const [isTeacherUsernameCustom, setIsTeacherUsernameCustom] = useState(false);
   const [teacherPassword, setTeacherPassword] = useState('123456');
   const [teacherSelectedGrades, setTeacherSelectedGrades] = useState<GradeLevel[]>(['grade-1', 'grade-2']);
   const [teacherSelectedTracks, setTeacherSelectedTracks] = useState<ArabicTrack[]>(['arabic-a']);
@@ -137,7 +139,8 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       studentUsername,
       schoolSlug,
       'student',
-      users.map(u => u.username)
+      users.map(u => u.username),
+      { isManual: true }
     );
 
     const derivedStage = getStageForGrade(studentGrade);
@@ -163,6 +166,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     refreshLocalData();
     setStudentName('');
     setStudentUsername('');
+    setIsStudentUsernameCustom(false);
     setStudentPassword('123');
     setStudentClassId('');
     setIsAddStudentOpen(false);
@@ -213,7 +217,8 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       teacherUsername,
       schoolSlug,
       'teacher',
-      users.map(u => u.username)
+      users.map(u => u.username),
+      { isManual: true }
     );
 
     const calculatedStages = getStagesForGrades(teacherSelectedGrades);
@@ -236,6 +241,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
     refreshLocalData();
     setTeacherName('');
     setTeacherUsername('');
+    setIsTeacherUsernameCustom(false);
     setTeacherPassword('123456');
     setIsAddTeacherOpen(false);
     showToast(`تمت إضافة المعلم (${newTeacher.name}) باسم المستخدم [${newTeacher.username}]`);
@@ -470,21 +476,48 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                       <input
                         type="text"
                         required
-                        placeholder="مثال: يوسف أحمد"
+                        placeholder="مثال: موسى جمال"
                         value={studentName}
-                        onChange={e => setStudentName(e.target.value)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setStudentName(val);
+                          if (!isStudentUsernameCustom) {
+                            const slug = school.slug || school.name;
+                            const generated = generateUniqueUsername(val, slug, 'student', users.map(u => u.username));
+                            setStudentUsername(generated);
+                          }
+                        }}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدخول (Username)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-bold text-slate-700">اسم الدخول (Username)</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const slug = school.slug || school.name;
+                            const gen = generateUniqueUsername(studentName || 'stu', slug, 'student', users.map(u => u.username));
+                            setStudentUsername(gen);
+                            setIsStudentUsernameCustom(false);
+                          }}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 transition-colors"
+                          title="توليد اسم مستخدم جديد بنمط {slug}_{name}_{3digits}"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>توليد 🔄</span>
+                        </button>
+                      </div>
                       <input
                         type="text"
                         required
-                        placeholder="s_youssef"
+                        placeholder="مثال: furqan_musa_241"
                         value={studentUsername}
-                        onChange={e => setStudentUsername(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        onChange={e => {
+                          setStudentUsername(e.target.value);
+                          setIsStudentUsernameCustom(true);
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
                       />
                     </div>
                     <div>
@@ -709,21 +742,48 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                         <input
                           type="text"
                           required
-                          placeholder="أ. مريم السعيد"
+                          placeholder="مثال: أ. مريم السعيد"
                           value={teacherName}
-                          onChange={e => setTeacherName(e.target.value)}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setTeacherName(val);
+                            if (!isTeacherUsernameCustom) {
+                              const slug = school.slug || school.name;
+                              const generated = generateUniqueUsername(val, slug, 'teacher', users.map(u => u.username));
+                              setTeacherUsername(generated);
+                            }
+                          }}
                           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدخول (Username)</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-700">اسم الدخول (Username)</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const slug = school.slug || school.name;
+                              const gen = generateUniqueUsername(teacherName || 'tch', slug, 'teacher', users.map(u => u.username));
+                              setTeacherUsername(gen);
+                              setIsTeacherUsernameCustom(false);
+                            }}
+                            className="text-[10px] text-teal-600 hover:text-teal-800 font-bold flex items-center gap-1 transition-colors"
+                            title="توليد اسم مستخدم جديد بنمط {slug}_{name}_{3digits}"
+                          >
+                            <RefreshCw className="w-2.5 h-2.5" />
+                            <span>توليد 🔄</span>
+                          </button>
+                        </div>
                         <input
                           type="text"
                           required
-                          placeholder="t_maryam"
+                          placeholder="مثال: furqan_maryam_102"
                           value={teacherUsername}
-                          onChange={e => setTeacherUsername(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                          onChange={e => {
+                            setTeacherUsername(e.target.value);
+                            setIsTeacherUsernameCustom(true);
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none font-mono"
                         />
                       </div>
                       <div>

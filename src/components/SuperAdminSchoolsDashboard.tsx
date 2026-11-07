@@ -217,12 +217,13 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
     if (formAdminUsername || formAdminName) {
       try {
         const adminId = generateValidUUID();
-        // توليد اسم مستخدم فريد حتماً بربطه بكود المدرسة والوقت الحالي لمنع تصادم Unique Constraint
+        // توليد اسم مستخدم فريد بربطه بكود المدرسة مع احترام الإدخال المخصص
         const uniqueAdminUsername = generateUniqueUsername(
           formAdminUsername || 'admin',
           cleanSlug,
           'school_admin',
-          users.map(u => u.username)
+          users.map(u => u.username),
+          { isManual: true }
         );
         createdAdminUsername = uniqueAdminUsername;
 

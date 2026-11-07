@@ -94,14 +94,17 @@ export const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({
     setIsSaving(true);
     try {
       const teacherId = currentUser.role === 'teacher' ? currentUser.id : undefined;
+      const existingUsernames = new Set<string>();
 
       const newStudents: UserProfile[] = validRows.map((r) => {
-        // إنشاء اسم مستخدم فريد وآمن ومربوط بنطاق المدرسة
+        // إنشاء اسم مستخدم قياسي وقصير {slug}_{firstname}_{random3Digits}
         const studentUsername = generateUniqueUsername(
-          r.academicId || `stu_${r.index}`,
+          r.academicId || r.name || `stu_${r.index}`,
           currentUser.school_id,
-          'student'
+          'student',
+          existingUsernames
         );
+        existingUsernames.add(studentUsername);
 
         return {
           id: generateValidUUID(),

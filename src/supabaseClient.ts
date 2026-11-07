@@ -22,53 +22,178 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 /**
- * توليد اسم مستخدم فريد تماماً بربطه بكود المدرسة لمنع أي تعارض في Supabase
- * النمط المتبع: ${schoolSlug}_${baseName}_${randomDigits} أو ${schoolSlug}_admin_${timestamp}
+ * تحويل الحروف العربية والأسماء الشائعة إلى حروف لاتينية مقروءة وموجزة
+ * مثال: "موسى" -> "musa"، "فرقان" -> "furqan"، "جمال" -> "gamal"
+ */
+export function transliterateArabicToLatin(text: string): string {
+  if (!text) return '';
+  const trimmed = text.trim();
+
+  // قاموس لأشهر الأسماء العربية الشائعة لإنتاج مخرجات فائقة الدقة والمطابقة
+  const commonWords: Record<string, string> = {
+    'موسى': 'musa',
+    'محمد': 'mohamed',
+    'احمد': 'ahmed',
+    'أحمد': 'ahmed',
+    'علي': 'ali',
+    'عمر': 'omar',
+    'يوسف': 'youssef',
+    'خالد': 'khaled',
+    'سارة': 'sara',
+    'فاطمة': 'fatima',
+    'مريم': 'maryam',
+    'نور': 'nour',
+    'حسن': 'hassan',
+    'حسين': 'hussein',
+    'طارق': 'tariq',
+    'عبدالله': 'abdullah',
+    'زياد': 'ziad',
+    'ياسين': 'yassin',
+    'ابراهيم': 'ibrahim',
+    'إبراهيم': 'ibrahim',
+    'فرقان': 'furqan',
+    'الفرقان': 'furqan',
+    'دار الفرقان': 'furqan',
+    'جمال': 'gamal',
+    'كريم': 'karim',
+    'ماجد': 'majed',
+    'سالم': 'salem',
+    'سلطان': 'sultan',
+    'فيصل': 'faisal',
+    'سعود': 'saud',
+    'بدر': 'bader',
+    'راشد': 'rashed',
+    'حمد': 'hamad',
+    'زايد': 'zayed',
+    'منصور': 'mansoor',
+    'سعيد': 'saeed',
+    'ناصر': 'nasser',
+    'وليد': 'waleed',
+    'يحيى': 'yahya',
+    'حمزة': 'hamza'
+  };
+
+  const lower = trimmed.toLowerCase();
+  if (commonWords[lower]) {
+    return commonWords[lower];
+  }
+
+  // خريطة الحروف الفونيمية الدقيقة
+  const charMap: Record<string, string> = {
+    'أ': 'a', 'إ': 'e', 'آ': 'a', 'ا': 'a', 'ء': 'a',
+    'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'g',
+    'ح': 'h', 'خ': 'kh', 'د': 'd', 'ذ': 'dh',
+    'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'sh',
+    'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'z',
+    'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
+    'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n',
+    'ه': 'h', 'و': 'u', 'ؤ': 'o', 'ي': 'y',
+    'ى': 'a', 'ئ': 'e', 'ة': 'a',
+    'پ': 'p', 'چ': 'ch', 'ڤ': 'v', 'گ': 'g'
+  };
+
+  return trimmed
+    .split('')
+    .map(ch => charMap[ch] !== undefined ? charMap[ch] : ch)
+    .join('');
+}
+
+/**
+ * توليد اسم مستخدم قياسي وقصير وسهل القراءة للطلاب والمعلمين:
+ * النمط القياسي: {slug}_{firstname}_{random3Digits}
+ * أمثلة: furqan_musa_241 أو musa_g_102
+ *
+ * الميزات:
+ * 1. دعم التخصيص اليدوي: إذا قام المستخدم بإدخال اسم مخصص، يتم اعتماده مباشرة ما لم يتعارض في قاعدة البيانات.
+ * 2. الحفاظ على شرط التحقق الصارم من عدم التكرار (Unique Check).
+ * 3. استبدال الطوابع الميلي ثانية الطويلة بـ 3 أرقام عشوائية أنيقة (100 - 999).
  */
 export function generateUniqueUsername(
   baseUsername?: string | null,
   schoolSlug?: string | null,
   role?: string,
-  existingUsernames?: Set<string> | string[]
+  existingUsernames?: Set<string> | string[],
+  options?: {
+    isManual?: boolean;
+    randomDigits?: number;
+  }
 ): string {
-  // تنظيف slug المدرسة وجعله صالحاً كاسم مستخدم
-  const cleanSlug = (schoolSlug || 'school')
+  // 1. استخراج وتنظيف slug المدرسة (أول 8-10 أحرف لضمان القصر والأناقة)
+  const cleanSlug = transliterateArabicToLatin(schoolSlug || 'school')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 24) || 'school';
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 10) || 'sch';
 
-  let raw = (baseUsername || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, '_')
-    .replace(/^_+|_+$/g, '');
+  const nameSet = existingUsernames
+    ? (existingUsernames instanceof Set ? existingUsernames : new Set(existingUsernames))
+    : new Set<string>();
 
-  // إذا لم يُعطَ اسم أساسي، نستعين بالدور الوظيفي (admin, teacher, student)
-  if (!raw) {
-    const defaultBase = role === 'school_admin' || role === 'admin' ? 'admin' : (role || 'user');
-    raw = defaultBase.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-  }
+  // 2. إذا كان إدخالاً يدوياً مخصصاً (Manual / Custom Username):
+  if (options?.isManual && baseUsername && baseUsername.trim()) {
+    const sanitizedManual = transliterateArabicToLatin(baseUsername.trim())
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 24);
 
-  // إذا كان الاسم يبدأ بالفعل بـ slug المدرسة، نزيله لتفادي تكراره (مثل school_school_admin)
-  if (raw.startsWith(`${cleanSlug}_`)) {
-    raw = raw.slice(cleanSlug.length + 1);
-  }
+    if (sanitizedManual) {
+      // إذا كان الاسم المخصص فريداً ولا يوجد تعارض، نحتفظ به كما أدخله المستخدم تماماً دون فرض أي تغيير
+      if (!nameSet.has(sanitizedManual)) {
+        return sanitizedManual;
+      }
 
-  // استخدام Date.now() مباشرة لضمان عدم التعارض أبداً: ${school.slug}_admin_${Date.now()}
-  const timestamp = Date.now();
-  let candidate = `${cleanSlug}_${raw}_${timestamp}`;
-
-  // إذا تم توفير قائمة الأسماء الموجودة محلياً أو سحابياً، نضمن عدم التصادم
-  if (existingUsernames) {
-    const nameSet = existingUsernames instanceof Set ? existingUsernames : new Set(existingUsernames);
-    let attempts = 0;
-    while (nameSet.has(candidate) && attempts < 20) {
-      candidate = `${cleanSlug}_${raw}_${Date.now()}_${attempts + 1}`;
-      attempts++;
+      // إذا وُجد تعارض فعلي في قاعدة البيانات، نضيف لاحقة أرقام عشوائية ثلاثية لحل التعارض مع صون الاسم المختار
+      let attempt = 0;
+      while (attempt < 50) {
+        const rand3 = Math.floor(100 + Math.random() * 900);
+        const resolved = `${sanitizedManual}_${rand3}`;
+        if (!nameSet.has(resolved)) {
+          return resolved;
+        }
+        attempt++;
+      }
     }
   }
+
+  // 3. الاستخراج التلقائي للاسم الأول (First Name)
+  let rawInput = (baseUsername || '').trim();
+  // إذا كان اسماً كاملاً بمسافات، نأخذ الاسم الأول
+  if (rawInput.includes(' ')) {
+    rawInput = rawInput.split(/\s+/)[0];
+  }
+
+  let firstName = transliterateArabicToLatin(rawInput)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 10);
+
+  // إذا لم يتوفر اسم، نستعين بدور المستخدم كاختصار قصير وسهل
+  if (!firstName) {
+    if (role === 'school_admin' || role === 'admin') firstName = 'admin';
+    else if (role === 'teacher' || role === 'hod') firstName = 'tch';
+    else firstName = 'stu';
+  }
+
+  // تفادي تكرار بادئة المدرسة إذا كان الاسم الأول يبدأ بها (مثل furqan_furqan)
+  if (firstName.startsWith(cleanSlug) && firstName.length > cleanSlug.length) {
+    firstName = firstName.slice(cleanSlug.length).replace(/^_+/, '');
+  }
+
+  // 4. توليد الصيغة القياسية: {slug}_{firstname}_{random3Digits}
+  let candidate = '';
+  let attempts = 0;
+  do {
+    const rand3 = Math.floor(100 + Math.random() * 900); // 100 - 999
+    if (cleanSlug === firstName) {
+      candidate = `${cleanSlug}_${rand3}`;
+    } else {
+      candidate = `${cleanSlug}_${firstName}_${rand3}`;
+    }
+    attempts++;
+  } while (nameSet.has(candidate) && attempts < 100);
 
   return candidate;
 }
@@ -217,7 +342,7 @@ export async function upsertUserInSupabase(
 
     // معالجة تعارض القيد الفريد لاسم المستخدم (users_username_key / code 23505)
     if (error && (error.code === '23505' || error.message?.includes('users_username_key'))) {
-      console.warn('[Supabase users upsert] تم رصد تعارض في users_username_key، جارٍ الحل الذكي والتوليد بـ Date.now()...');
+      console.warn('[Supabase users upsert] تم رصد تعارض في users_username_key، جارٍ الحل الذكي والتوليد برقم عشوائي...');
 
       // 1. محاولة التحديث المباشر بناء على اسم المستخدم
       const updateRes = await supabase
@@ -230,9 +355,12 @@ export async function upsertUserInSupabase(
         return { data: updateRes.data, error: null };
       }
 
-      // 2. توليد اسم مستخدم فريد حتماً بربطه بالوقت الحالي Date.now()
-      const basePrefix = userData.username.split('_')[0] || 'admin';
-      const freshUnique = `${basePrefix}_${Date.now()}`;
+      // 2. توليد اسم مستخدم فريد وموجز: {slug}_{name}_{random3Digits}
+      const parts = userData.username.split('_');
+      const basePrefix = parts[0] || 'sch';
+      const namePart = parts.length > 1 ? parts[1] : 'user';
+      const rand3 = Math.floor(100 + Math.random() * 900);
+      const freshUnique = `${basePrefix}_${namePart}_${rand3}`;
       userData.username = freshUnique;
 
       const retryUnique = await supabase

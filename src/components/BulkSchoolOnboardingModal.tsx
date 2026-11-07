@@ -326,7 +326,8 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
         parsedSchool.adminUsername || 'admin',
         parsedSchool.slug,
         'school_admin',
-        existingUsernames
+        existingUsernames,
+        { isManual: !!parsedSchool.adminUsername }
       );
       existingUsernames.add(adminUsername);
 
@@ -359,10 +360,11 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
       for (let i = 0; i < parsedTeachers.length; i++) {
         const t = parsedTeachers[i];
         const teacherUsername = generateUniqueUsername(
-          t.username || `teacher_${i + 1}`,
+          t.username || t.name || `teacher_${i + 1}`,
           parsedSchool.slug,
           'teacher',
-          existingUsernames
+          existingUsernames,
+          { isManual: !!t.username }
         );
         existingUsernames.add(teacherUsername);
 
@@ -391,10 +393,11 @@ export const BulkSchoolOnboardingModal: React.FC<BulkSchoolOnboardingModalProps>
       for (let i = 0; i < parsedStudents.length; i++) {
         const s = parsedStudents[i];
         const studentUsername = generateUniqueUsername(
-          s.username || `student_${i + 1}`,
+          s.username || s.name || `student_${i + 1}`,
           parsedSchool.slug,
           'student',
-          existingUsernames
+          existingUsernames,
+          { isManual: !!s.username }
         );
         existingUsernames.add(studentUsername);
 
