@@ -13,7 +13,7 @@ import {
   KNOWLEDGE_TREE_NODES, 
   calculateSpacedRepetitionState 
 } from '../data/knowledgeTreeData';
-import { getNodeMasteryStates, recordNodePractice } from '../storage';
+import { getNodeMasteryStates, recordNodePractice, syncNodeMasteryFromCloud } from '../storage';
 import { getGradeLabel } from '../utils/gradebookExport';
 
 interface AdaptiveKnowledgeTreeModalProps {
@@ -49,10 +49,17 @@ export const AdaptiveKnowledgeTreeModal: React.FC<AdaptiveKnowledgeTreeModalProp
   const [correctAnswersCount, setCorrectAnswersCount] = useState(0);
   const [practiceFinished, setPracticeFinished] = useState(false);
 
-  // تحديث الحالات عند فتح النافذة
+  // تحديث الحالات محلياً وسحابياً عند فتح النافذة
   React.useEffect(() => {
     if (isOpen) {
       setMasteryStates(getNodeMasteryStates(student.id));
+      syncNodeMasteryFromCloud(student.id).then(cloudStates => {
+        if (cloudStates && Object.keys(cloudStates).length > 0) {
+          setMasteryStates(cloudStates);
+        }
+      }).catch(err => {
+        console.warn('تخطي مزامنة شجرة المعرفة السحابية:', err);
+      });
     }
   }, [isOpen, student.id]);
 

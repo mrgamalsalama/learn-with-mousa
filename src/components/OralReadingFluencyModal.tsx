@@ -15,7 +15,7 @@ import {
   evaluateORFPerformance, 
   detectArabicPhoneticError 
 } from '../data/orfBenchmarkData';
-import { saveORFSession, getStudentORFAssignments } from '../storage';
+import { saveORFSession, getStudentORFAssignments, syncORFSessionsFromCloud } from '../storage';
 import { getGradeLabel } from '../utils/gradebookExport';
 import { evaluateOralReadingWithAI, evaluateOralReadingLocally } from '../geminiService';
 
@@ -154,6 +154,15 @@ export const OralReadingFluencyModal: React.FC<OralReadingFluencyModalProps> = (
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, []);
+
+  // مزامنة جلسات القراءة السحابية فور فتح النافذة
+  useEffect(() => {
+    if (isOpen && student?.id) {
+      syncORFSessionsFromCloud(student.id).catch(err => {
+        console.warn('تخطي المزامنة السحابية الأولية لـ ORF:', err);
+      });
+    }
+  }, [isOpen, student?.id]);
 
   if (!isOpen) return null;
 

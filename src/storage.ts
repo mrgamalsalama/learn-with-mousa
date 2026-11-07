@@ -1742,7 +1742,47 @@ export const getRemedialPlans = (studentId?: string): RemedialPlan[] => {
   }
 };
 
-export const saveRemedialPlan = (plan: RemedialPlan): void => {
+export const syncRemedialPlansFromCloud = async (studentId?: string): Promise<RemedialPlan[]> => {
+  try {
+    let query = supabase.from('remedial_plans').select('*').order('created_at', { ascending: false });
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) {
+      const cloudPlans: RemedialPlan[] = data.map((d: any) => ({
+        id: d.id,
+        student_id: d.student_id,
+        student_name: d.student_name || '',
+        teacher_id: d.teacher_id,
+        school_id: d.school_id,
+        target_skill: d.target_skill,
+        weak_letters: Array.isArray(d.weak_letters) ? d.weak_letters : [],
+        recommended_game_type: d.recommended_game_type,
+        prescribed_activities: Array.isArray(d.prescribed_activities) ? d.prescribed_activities : [],
+        status: d.status || 'pending',
+        notes: d.notes || '',
+        created_at: d.created_at,
+        updated_at: d.updated_at
+      }));
+
+      // دمج سحابي مع المحلي
+      const local = getRemedialPlans();
+      const planMap = new Map<string, RemedialPlan>();
+      for (const p of local) planMap.set(p.id, p);
+      for (const p of cloudPlans) planMap.set(p.id, p);
+
+      const merged = Array.from(planMap.values());
+      localStorage.setItem(REMEDIAL_PLANS_KEY, JSON.stringify(merged));
+      return studentId ? merged.filter(p => p.student_id === studentId) : merged;
+    }
+  } catch (err) {
+    console.warn('Failed to sync remedial plans from cloud:', err);
+  }
+  return getRemedialPlans(studentId);
+};
+
+export const saveRemedialPlan = async (plan: RemedialPlan): Promise<void> => {
   try {
     const list = getRemedialPlans();
     const idx = list.findIndex(p => p.id === plan.id);
@@ -1752,15 +1792,35 @@ export const saveRemedialPlan = (plan: RemedialPlan): void => {
       list.unshift(plan);
     }
     localStorage.setItem(REMEDIAL_PLANS_KEY, JSON.stringify(list));
+
+    // مزامنة سحابية مع جدول remedial_plans
+    const currentUser = getCurrentUser();
+    const payload = {
+      id: plan.id,
+      student_id: plan.student_id,
+      student_name: plan.student_name || '',
+      teacher_id: plan.teacher_id,
+      school_id: plan.school_id || currentUser?.school_id || '00000000-0000-0000-0000-000000000001',
+      target_skill: plan.target_skill,
+      weak_letters: plan.weak_letters || [],
+      recommended_game_type: plan.recommended_game_type || null,
+      prescribed_activities: plan.prescribed_activities || [],
+      status: plan.status || 'pending',
+      notes: plan.notes || '',
+      created_at: plan.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    await supabase.from('remedial_plans').upsert(payload, { onConflict: 'id' });
   } catch (e) {
     console.error('Error saving remedial plan:', e);
   }
 };
 
-export const deleteRemedialPlan = (id: string): void => {
+export const deleteRemedialPlan = async (id: string): Promise<void> => {
   try {
     const list = getRemedialPlans().filter(p => p.id !== id);
     localStorage.setItem(REMEDIAL_PLANS_KEY, JSON.stringify(list));
+    await supabase.from('remedial_plans').delete().eq('id', id);
   } catch (e) {
     console.error('Error deleting remedial plan:', e);
   }
@@ -4130,11 +4190,100 @@ export const getORFSessions = (studentId?: string): ORFAssessmentSession[] => {
   }
 };
 
+export const syncORFSessionsFromCloud = async (studentId?: string): Promise<ORFAssessmentSession[]> => {
+  try {
+    let query = supabase.from('reading_fluency_sessions').select('*').order('created_at', { ascending: false });
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) {
+      const cloudSessions: ORFAssessmentSession[] = data.map((d: any) => ({
+        id: d.id,
+        studentId: d.student_id,
+        studentName: d.student_name || '',
+        grade: d.grade,
+        track: d.track,
+        passageId: d.passage_id,
+        passageTitle: d.passage_title,
+        passageText: d.passage_text || '',
+        totalWords: Number(d.total_words) || 0,
+        durationSeconds: Number(d.duration_seconds) || 0,
+        wordsRead: Number(d.words_read) || 0,
+        wordsCorrect: Number(d.words_correct) || 0,
+        wcpm: Number(d.wcpm) || 0,
+        accuracyRate: Number(d.accuracy_rate) || 0,
+        prosodyScore: Number(d.prosody_score) || 3,
+        assessorRole: d.assessor_role || 'student_self',
+        assessorName: d.assessor_name || '',
+        date: d.date || '',
+        errorBreakdown: d.error_breakdown || {},
+        annotations: Array.isArray(d.annotations) ? d.annotations : [],
+        gradeBenchmarkLevel: d.grade_benchmark_level || 'proficient',
+        certificateNumber: d.certificate_number || '',
+        spokenTranscript: d.spoken_transcript,
+        aiDiagnosticNote: d.ai_diagnostic_note,
+        audioUrl: d.audio_url
+      }));
+
+      const local = getORFSessions();
+      const map = new Map<string, ORFAssessmentSession>();
+      for (const s of local) map.set(s.id, s);
+      for (const s of cloudSessions) map.set(s.id, s);
+
+      const merged = Array.from(map.values());
+      localStorage.setItem(ORF_SESSIONS_KEY, JSON.stringify(merged));
+      return studentId ? merged.filter(s => s.studentId === studentId) : merged;
+    }
+  } catch (err) {
+    console.warn('Failed to sync ORF sessions from cloud:', err);
+  }
+  return getORFSessions(studentId);
+};
+
 export const saveORFSession = (session: ORFAssessmentSession): ORFAssessmentSession[] => {
   try {
     const existing = getORFSessions();
     const updated = [session, ...existing.filter(s => s.id !== session.id)];
     localStorage.setItem(ORF_SESSIONS_KEY, JSON.stringify(updated));
+
+    // مزامنة سحابية غير متزامنة مع جدول reading_fluency_sessions في Supabase
+    const currentUser = getCurrentUser();
+    const payload = {
+      id: session.id,
+      student_id: session.studentId,
+      student_name: session.studentName || '',
+      school_id: currentUser?.school_id || '00000000-0000-0000-0000-000000000001',
+      grade: session.grade,
+      track: session.track || 'arabic-a',
+      passage_id: session.passageId,
+      passage_title: session.passageTitle,
+      passage_text: session.passageText || '',
+      total_words: session.totalWords || 0,
+      duration_seconds: session.durationSeconds || 0,
+      words_read: session.wordsRead || 0,
+      words_correct: session.wordsCorrect || 0,
+      wcpm: session.wcpm || 0,
+      accuracy_rate: session.accuracyRate || 0,
+      prosody_score: session.prosodyScore || 3,
+      assessor_role: session.assessorRole || 'student_self',
+      assessor_name: session.assessorName || '',
+      date: session.date || new Date().toLocaleDateString('ar-EG'),
+      error_breakdown: session.errorBreakdown || {},
+      annotations: session.annotations || [],
+      grade_benchmark_level: session.gradeBenchmarkLevel || 'proficient',
+      certificate_number: session.certificateNumber || '',
+      spoken_transcript: session.spokenTranscript || '',
+      ai_diagnostic_note: session.aiDiagnosticNote || '',
+      audio_url: session.audioUrl || null
+    };
+
+    supabase.from('reading_fluency_sessions').upsert(payload, { onConflict: 'id' }).then(({ error }) => {
+      if (error) {
+        console.warn('[Supabase ORF upsert error]:', error.message);
+      }
+    });
+
     return updated;
   } catch {
     return [session];
@@ -4153,11 +4302,64 @@ export const getNodeMasteryStates = (studentId: string): Record<string, NodeMast
   }
 };
 
+export const syncNodeMasteryFromCloud = async (studentId: string): Promise<Record<string, NodeMasteryState>> => {
+  try {
+    const { data, error } = await supabase
+      .from('skill_mastery')
+      .select('*')
+      .eq('student_id', studentId);
+
+    if (!error && Array.isArray(data)) {
+      const local = getNodeMasteryStates(studentId);
+      const updated = { ...local };
+      for (const d of data) {
+        updated[d.node_id] = {
+          nodeId: d.node_id,
+          studentId: d.student_id,
+          status: d.status,
+          masteryScore: Number(d.mastery_score) || 0,
+          crowns: Number(d.crowns) || 0,
+          lastPracticedDate: d.last_practiced_date || '',
+          retentionStrength: Number(d.retention_strength) || 1,
+          decayPercentage: Number(d.decay_percentage) || 0
+        };
+      }
+      localStorage.setItem(`${KNOWLEDGE_MASTERY_PREFIX}${studentId}`, JSON.stringify(updated));
+      return updated;
+    }
+  } catch (err) {
+    console.warn('Failed to sync node mastery from cloud:', err);
+  }
+  return getNodeMasteryStates(studentId);
+};
+
 export const saveNodeMasteryState = (studentId: string, state: NodeMasteryState): Record<string, NodeMasteryState> => {
   try {
     const all = getNodeMasteryStates(studentId);
     all[state.nodeId] = state;
     localStorage.setItem(`${KNOWLEDGE_MASTERY_PREFIX}${studentId}`, JSON.stringify(all));
+
+    // مزامنة سحابية مع جدول skill_mastery
+    const currentUser = getCurrentUser();
+    const payload = {
+      id: `${studentId}_${state.nodeId}`,
+      student_id: studentId,
+      node_id: state.nodeId,
+      school_id: currentUser?.school_id || '00000000-0000-0000-0000-000000000001',
+      status: state.status,
+      mastery_score: state.masteryScore || 0,
+      crowns: state.crowns || 0,
+      retention_strength: state.retentionStrength || 1,
+      decay_percentage: state.decayPercentage || 0,
+      last_practiced_date: state.lastPracticedDate || new Date().toISOString()
+    };
+
+    supabase.from('skill_mastery').upsert(payload, { onConflict: 'id' }).then(({ error }) => {
+      if (error) {
+        console.warn('[Supabase skill_mastery upsert error]:', error.message);
+      }
+    });
+
     return all;
   } catch {
     return { [state.nodeId]: state };

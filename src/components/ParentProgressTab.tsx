@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sparkles, Brain, Printer, Award, Volume2, VolumeX, 
   RefreshCw, CheckCircle2, TrendingUp, BookOpen, Layers, 
   PenTool, MessageCircle, Share2, Copy, Check, ShieldAlert,
-  ChevronLeft, Lightbulb, Star
+  ChevronLeft, Lightbulb, Star, Mic, FileText, AlertCircle
 } from 'lucide-react';
-import { UserProfile, StudentSubmission, GradeLevel, STAGES_CONFIG } from '../types';
+import { UserProfile, StudentSubmission, GradeLevel, STAGES_CONFIG, ORFAssessmentSession, RemedialPlan } from '../types';
 import { speakMousa, stopMousaVoice } from '../geminiService';
+import { getORFSessions, syncORFSessionsFromCloud, getRemedialPlans, syncRemedialPlansFromCloud } from '../storage';
 
 interface ParentProgressTabProps {
   student: UserProfile;
@@ -118,6 +119,20 @@ export const ParentProgressTab: React.FC<ParentProgressTabProps> = ({
   const [isSpeakingMousa, setIsSpeakingMousa] = useState(false);
   const [selectedTipIndex, setSelectedTipIndex] = useState(0);
   const [copiedShareNotice, setCopiedShareNotice] = useState(false);
+
+  const [orfSessions, setOrfSessions] = useState<ORFAssessmentSession[]>(() => getORFSessions(student.id));
+  const [remedialPlans, setRemedialPlans] = useState<RemedialPlan[]>(() => getRemedialPlans(student.id));
+
+  useEffect(() => {
+    setOrfSessions(getORFSessions(student.id));
+    setRemedialPlans(getRemedialPlans(student.id));
+    syncORFSessionsFromCloud(student.id).then(sessions => {
+      setOrfSessions(sessions);
+    }).catch(err => console.warn('ORF sync error in parent tab:', err));
+    syncRemedialPlansFromCloud(student.id).then(plans => {
+      setRemedialPlans(plans);
+    }).catch(err => console.warn('Remedial sync error in parent tab:', err));
+  }, [student.id]);
 
   // دالة مساعدة للحصول على مسمى الصف
   const getGradeLabel = (gId: GradeLevel): string => {
@@ -665,6 +680,105 @@ _منصة تعلَّم مع موسى للغة العربية الذكية_`;
               <span className="italic text-slate-600">«{currentTip.encouragementTip}»</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 4. قسم الطلاقة القرائية الشفهية والخطط العلاجية المتزامنة سحابياً */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* بطاقة الطلاقة الشفهية ORF */}
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold">
+                <Mic className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-xs text-slate-800">مؤشرات الطلاقة القرائية (ORF)</h4>
+                <p className="text-[10px] text-slate-400">تقييم النطق والسرعة والدقة المزامنة سحابياً</p>
+              </div>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-50 text-teal-700 border border-teal-200">
+              {orfSessions.length} جلسة
+            </span>
+          </div>
+
+          {orfSessions.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-400">
+              لا توجد جلسات طلاقة شفهية مسجلة بعد. عندما يقرأ الطالب نصوص الطلاقة، ستظهر مؤشرات دقته وسرعته هنا.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {orfSessions.slice(0, 3).map((sess) => (
+                <div key={sess.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-800 block text-xs">{sess.passageTitle}</span>
+                    <span className="text-[10px] text-slate-400">{sess.date}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-center px-2 py-1 bg-white rounded-xl border border-slate-200 font-mono text-[11px] font-bold text-slate-700">
+                      {sess.wcpm} <span className="text-[9px] font-sans text-slate-400">ك/د</span>
+                    </span>
+                    <span className={`px-2 py-1 rounded-xl text-[10px] font-bold ${
+                      sess.accuracyRate >= 90 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {sess.accuracyRate}% دقة
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* بطاقة خطط الدعم والتمكين العلاجي Remedial Plans */}
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-xs text-slate-800">توصيات وخطط المعلم العلاجية</h4>
+                <p className="text-[10px] text-slate-400">المهام المخصصة لتمكين الطالب ومعالجة الفجوات</p>
+              </div>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {remedialPlans.length} خطة
+            </span>
+          </div>
+
+          {remedialPlans.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-400">
+              لا توجد خطط علاجية مخصصة حالياً، مستوى الطالب يسير بشكل منتظم وطبيعي.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {remedialPlans.slice(0, 3).map((plan) => (
+                <div key={plan.id} className="p-3 rounded-2xl bg-indigo-50/40 border border-indigo-100 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-indigo-950">{plan.target_skill}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                      plan.status === 'mastered' ? 'bg-emerald-100 text-emerald-800' :
+                      plan.status === 'in_progress' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {plan.status === 'mastered' ? 'تم الإتقان ✅' : plan.status === 'in_progress' ? 'قيد التدريب 🎯' : 'في الانتظار ⏳'}
+                    </span>
+                  </div>
+                  {plan.notes && (
+                    <p className="text-[11px] text-slate-600 leading-relaxed bg-white/70 p-2 rounded-xl border border-indigo-100/60">
+                      💡 <b>ملاحظة المعلم:</b> {plan.notes}
+                    </p>
+                  )}
+                  {plan.weak_letters && plan.weak_letters.length > 0 && (
+                    <div className="flex items-center gap-1 text-[10px] text-indigo-700">
+                      <span>الحروف المستهدفة:</span>
+                      <span className="font-bold">{plan.weak_letters.join('، ')}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

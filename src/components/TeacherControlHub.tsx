@@ -24,7 +24,7 @@ import {
   getORFAssignments, saveORFAssignment, deleteORFAssignment,
   getORFSessions, saveORFSession,
   getActivities, saveActivity, deleteActivity,
-  saveRemedialPlan, getRemedialPlans,
+  saveRemedialPlan, getRemedialPlans, syncRemedialPlansFromCloud,
   getUsers, saveUsers,
   getLanguagePassport, saveLanguagePassport,
   isGatekeeperUnlockedForStudent, setGatekeeperUnlockedForStudent, setGatekeeperUnlockedForClass
@@ -452,6 +452,14 @@ export const TeacherControlHub: React.FC<TeacherControlHubProps> = ({
   const [remedialNotes, setRemedialNotes] = useState<string>('توجد فجوة في التمييز الصوتي بين الفتحة ومد الألف، تتطلب تدريباً علاجياً متكرراً في بيئة خاصة.');
   const [remedialGameType, setRemedialGameType] = useState<AIGameType>('vowel_train');
   const [remedialPlansList, setRemedialPlansList] = useState<RemedialPlan[]>(() => getRemedialPlans());
+
+  React.useEffect(() => {
+    syncRemedialPlansFromCloud().then(plans => {
+      setRemedialPlansList(plans);
+    }).catch(err => {
+      console.warn('تخطي مزامنة الخطط العلاجية السحابية:', err);
+    });
+  }, []);
 
   const targetRemedialStudent = useMemo(() => {
     return students.find(s => s.id === remedialStudentId) || teacherStudents[0];
