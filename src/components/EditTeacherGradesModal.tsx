@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SchoolStage, GradeLevel, ArabicTrack } from '../types';
+import { UserProfile, SchoolStage, GradeLevel, ArabicTrack, getStagesForGrades } from '../types';
 import { saveUser } from '../storage';
 import { canManageTeacherGrades } from '../utils/permissions';
 import { GraduationCap, Check, X, ShieldAlert, BookOpen, Layers, CheckSquare, Square } from 'lucide-react';
+import { TeacherGradeMatrixSelector } from './TeacherGradeMatrixSelector';
 
 interface EditTeacherGradesModalProps {
   teacher: UserProfile | null;
@@ -91,9 +92,12 @@ export const EditTeacherGradesModal: React.FC<EditTeacherGradesModalProps> = ({
     setIsSaving(true);
     setErrorMsg(null);
 
+    const derivedStages = getStagesForGrades(selectedGrades);
+    const finalStages = Array.from(new Set([...selectedStages, ...derivedStages]));
+
     const updated: UserProfile = {
       ...teacher,
-      allowedStages: selectedStages.length > 0 ? selectedStages : ['primary'],
+      allowedStages: finalStages.length > 0 ? finalStages : ['primary'],
       allowedGrades: selectedGrades,
       allowedTracks: selectedTracks.length > 0 ? selectedTracks : ['arabic-a'],
     };
@@ -181,55 +185,26 @@ export const EditTeacherGradesModal: React.FC<EditTeacherGradesModalProps> = ({
             </div>
           </div>
 
-          {/* Grades Selection */}
+          {/* Grades Selection with All Accredited Stages (KG1-2, 1-6, 7-9, 10-12) */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-indigo-600" />
-                الصفوف الدراسية المسندة للمعلم
+                الصفوف الدراسية المصرح بتدريسها (كافة المراحل المعتمدة)
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedGrades(['grade-1', 'grade-2'])}
-                  className="text-[11px] text-indigo-600 hover:underline font-semibold"
-                >
-                  صفوف التأسيس (1-2)
-                </button>
-                <span className="text-slate-300">|</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedGrades(['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'])}
-                  className="text-[11px] text-indigo-600 hover:underline font-semibold"
-                >
-                  الكل
-                </button>
-              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {AVAILABLE_GRADES.map(grade => {
-                const isSelected = selectedGrades.includes(grade.id);
-                return (
-                  <button
-                    key={grade.id}
-                    type="button"
-                    onClick={() => toggleGrade(grade.id)}
-                    className={`p-3 rounded-xl border text-xs font-bold text-right flex items-center justify-between transition-all ${
-                      isSelected
-                        ? 'border-blue-600 bg-blue-50 text-blue-900 shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
-                    }`}
-                  >
-                    <span>{grade.label}</span>
-                    {isSelected ? (
-                      <CheckSquare className="w-4 h-4 text-blue-600" />
-                    ) : (
-                      <Square className="w-4 h-4 text-slate-300" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            
+            <TeacherGradeMatrixSelector
+              selectedGrades={selectedGrades}
+              onChange={(newGrades) => {
+                setSelectedGrades(newGrades);
+                const derivedStages = getStagesForGrades(newGrades);
+                setSelectedStages(prev => Array.from(new Set([...prev, ...derivedStages])));
+              }}
+              onStagesChange={(stages) => {
+                setSelectedStages(stages);
+              }}
+            />
           </div>
 
           {/* Tracks Selection */}

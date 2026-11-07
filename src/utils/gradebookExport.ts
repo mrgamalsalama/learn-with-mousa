@@ -41,7 +41,9 @@ export const getGradeLabel = (gId: GradeLevel | string | undefined): string => {
 export const mapTextToGradeId = (text: string | undefined): GradeLevel => {
   if (!text) return 'grade-1';
   const t = text.trim().toLowerCase();
-  if (t.includes('رياض') || t.includes('روضة') || t === 'kg') return 'kg';
+  if (t.includes('kg1') || t.includes('kg-1') || t.includes('روضة أولى') || t.includes('روضة 1') || t.includes('تمهيدي أول')) return 'kg-1';
+  if (t.includes('kg2') || t.includes('kg-2') || t.includes('روضة ثانية') || t.includes('روضة 2') || t.includes('تمهيدي ثان')) return 'kg-2';
+  if (t.includes('رياض') || t.includes('روضة') || t === 'kg') return 'kg-1';
   if (t.includes('أول') || t.includes('اول') || t === '1' || t === 'grade-1') return 'grade-1';
   if (t.includes('ثاني') || t === '2' || t === 'grade-2') return 'grade-2';
   if (t.includes('ثالث') || t === '3' || t === 'grade-3') return 'grade-3';

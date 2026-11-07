@@ -233,9 +233,13 @@ export const SuperAdminSchoolsDashboard: React.FC<SuperAdminSchoolsDashboardProp
           password: formAdminPassword || '123456',
           email: formAdminEmail.trim() || undefined,
           role: 'school_admin',
-          school_id: newId,
-          allowedStages: ['primary', 'middle', 'high'],
-          allowedGrades: ['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'],
+          allowedStages: ['kg', 'primary', 'middle', 'high'],
+          allowedGrades: [
+            'kg-1', 'kg-2',
+            'grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6',
+            'grade-7', 'grade-8', 'grade-9',
+            'grade-10', 'grade-11', 'grade-12'
+          ],
           allowedTracks: ['arabic-a', 'arabic-b'],
           loginCount: 0
         };

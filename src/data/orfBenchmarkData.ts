@@ -29,6 +29,32 @@ export const ORF_GRADE_BENCHMARKS: Record<GradeLevel, ORFGradeBenchmark> = {
       advancedMin: 41,
     },
   },
+  'kg-1': {
+    grade: 'kg-1',
+    gradeLabel: 'روضة أولى (KG1)',
+    fallTargetWCPM: 10,
+    winterTargetWCPM: 20,
+    springTargetWCPM: 30,
+    benchmarks: {
+      belowBasicMax: 10,
+      basicMax: 20,
+      proficientMax: 35,
+      advancedMin: 36,
+    },
+  },
+  'kg-2': {
+    grade: 'kg-2',
+    gradeLabel: 'روضة ثانية (KG2)',
+    fallTargetWCPM: 15,
+    winterTargetWCPM: 25,
+    springTargetWCPM: 40,
+    benchmarks: {
+      belowBasicMax: 15,
+      basicMax: 25,
+      proficientMax: 45,
+      advancedMin: 46,
+    },
+  },
   'grade-1': {
     grade: 'grade-1',
     gradeLabel: 'الصف الأول الابتدائي',

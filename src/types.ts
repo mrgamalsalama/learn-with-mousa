@@ -23,6 +23,7 @@ export type SchoolPlanTier = 'trial' | 'annual';
 // قائمة الصفوف الدراسية كاملة
 export type GradeLevel =
   | 'kg'
+  | 'kg-1' | 'kg-2'
   | 'grade-1' | 'grade-2' | 'grade-3' | 'grade-4' | 'grade-5'
   | 'grade-6' | 'grade-7' | 'grade-8'
   | 'grade-9' | 'grade-10' | 'grade-11' | 'grade-12';
@@ -453,39 +454,70 @@ export interface StudentSubmission {
 }
 
 // ثوابت المراحل والصفوف
-export const STAGES_CONFIG: Record<SchoolStage, { nameAr: string; grades: { id: GradeLevel; labelAr: string }[] }> = {
+export const STAGES_CONFIG: Record<SchoolStage, { nameAr: string; grades: { id: GradeLevel; labelAr: string; shortLabelAr?: string }[] }> = {
   kg: {
     nameAr: 'مرحلة رياض الأطفال',
-    grades: [{ id: 'kg', labelAr: 'روضة الأطفال' }],
+    grades: [
+      { id: 'kg-1', labelAr: 'روضة أولى (KG1)', shortLabelAr: 'KG1' },
+      { id: 'kg-2', labelAr: 'روضة ثانية (KG2)', shortLabelAr: 'KG2' },
+    ],
   },
   primary: {
     nameAr: 'المرحلة الابتدائية',
     grades: [
-      { id: 'grade-1', labelAr: 'الصف الأول' },
-      { id: 'grade-2', labelAr: 'الصف الثاني' },
-      { id: 'grade-3', labelAr: 'الصف الثالث' },
-      { id: 'grade-4', labelAr: 'الصف الرابع' },
-      { id: 'grade-5', labelAr: 'الصف الخامس' },
+      { id: 'grade-1', labelAr: 'الصف الأول الابتدائي', shortLabelAr: 'الصف 1' },
+      { id: 'grade-2', labelAr: 'الصف الثاني الابتدائي', shortLabelAr: 'الصف 2' },
+      { id: 'grade-3', labelAr: 'الصف الثالث الابتدائي', shortLabelAr: 'الصف 3' },
+      { id: 'grade-4', labelAr: 'الصف الرابع الابتدائي', shortLabelAr: 'الصف 4' },
+      { id: 'grade-5', labelAr: 'الصف الخامس الابتدائي', shortLabelAr: 'الصف 5' },
+      { id: 'grade-6', labelAr: 'الصف السادس الابتدائي', shortLabelAr: 'الصف 6' },
     ],
   },
   middle: {
     nameAr: 'المرحلة المتوسطة',
     grades: [
-      { id: 'grade-6', labelAr: 'الصف السادس' },
-      { id: 'grade-7', labelAr: 'الصف السابع' },
-      { id: 'grade-8', labelAr: 'الصف الثامن' },
+      { id: 'grade-7', labelAr: 'الصف السابع (متوسط)', shortLabelAr: 'الصف 7' },
+      { id: 'grade-8', labelAr: 'الصف الثامن (متوسط)', shortLabelAr: 'الصف 8' },
+      { id: 'grade-9', labelAr: 'الصف التاسع (متوسط)', shortLabelAr: 'الصف 9' },
     ],
   },
   high: {
-    nameAr: 'المرحلة العليا',
+    nameAr: 'المرحلة الثانوية',
     grades: [
-      { id: 'grade-9', labelAr: 'الصف التاسع' },
-      { id: 'grade-10', labelAr: 'الصف العاشر' },
-      { id: 'grade-11', labelAr: 'الصف الحادي عشر' },
-      { id: 'grade-12', labelAr: 'الصف الثاني عشر' },
+      { id: 'grade-10', labelAr: 'الصف العاشر (ثانوي)', shortLabelAr: 'الصف 10' },
+      { id: 'grade-11', labelAr: 'الصف الحادي عشر (ثانوي)', shortLabelAr: 'الصف 11' },
+      { id: 'grade-12', labelAr: 'الصف الثاني عشر (ثانوي)', shortLabelAr: 'الصف 12' },
     ],
   },
 };
+
+// دالة مساعدة لتنسيق اسم الصف بدقة وبشكل مختصر أو كامل
+export function formatGradeDisplay(gradeId: GradeLevel | string | undefined): string {
+  if (!gradeId) return 'غير محدد';
+  if (gradeId === 'kg') return 'رياض الأطفال (KG)';
+  if (gradeId === 'kg-1') return 'روضة أولى (KG1)';
+  if (gradeId === 'kg-2') return 'روضة ثانية (KG2)';
+  for (const st of Object.values(STAGES_CONFIG)) {
+    const found = st.grades.find(g => g.id === gradeId);
+    if (found) return found.shortLabelAr || found.labelAr;
+  }
+  return String(gradeId).replace('grade-', 'الصف ');
+}
+
+// دالة مساعدة لاستخراج المراحل المرتبطة بقائمة الصفوف المحددة للمعلم
+export function getStagesForGrades(grades: (GradeLevel | string)[]): SchoolStage[] {
+  const stages: SchoolStage[] = [];
+  (Object.keys(STAGES_CONFIG) as SchoolStage[]).forEach(stage => {
+    const stageGradeIds = STAGES_CONFIG[stage].grades.map(g => g.id as string);
+    if (stage === 'kg' && (grades.includes('kg') || grades.includes('kg-1') || grades.includes('kg-2'))) {
+      if (!stages.includes('kg')) stages.push('kg');
+    }
+    if (grades.some(g => stageGradeIds.includes(g))) {
+      if (!stages.includes(stage)) stages.push(stage);
+    }
+  });
+  return stages.length > 0 ? stages : ['primary'];
+}
 
 // ===================== نماذج الذكاء الاصطناعي (Gemini AI Engine) =====================
 

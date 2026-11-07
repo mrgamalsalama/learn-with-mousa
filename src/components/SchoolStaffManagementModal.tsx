@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { 
   School, UserProfile, SchoolClass, SchoolStage, GradeLevel, ArabicTrack, 
-  STAGES_CONFIG, DEFAULT_DELEGATED_PERMISSIONS 
+  STAGES_CONFIG, DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades 
 } from '../types';
 import { 
   getUsers, saveUser, deleteUser, 
@@ -14,6 +14,7 @@ import {
   generateUniqueUsername
 } from '../storage';
 import { generateValidUUID } from '../supabaseClient';
+import { TeacherGradeMatrixSelector } from './TeacherGradeMatrixSelector';
 
 interface SchoolStaffManagementModalProps {
   isOpen: boolean;
@@ -196,6 +197,8 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       users.map(u => u.username)
     );
 
+    const calculatedStages = getStagesForGrades(teacherSelectedGrades);
+
     const newTeacher: UserProfile = {
       id: generateValidUUID(),
       name: teacherName.trim(),
@@ -203,7 +206,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
       password: teacherPassword.trim() || '123456',
       role: 'teacher',
       school_id: school.id,
-      allowedStages: ['primary'],
+      allowedStages: calculatedStages,
       allowedGrades: teacherSelectedGrades,
       allowedTracks: teacherSelectedTracks,
       loginCount: 0,
@@ -227,8 +230,10 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
 
   const handleSaveEditTeacher = async () => {
     if (!editingUser) return;
+    const calculatedStages = getStagesForGrades(editTeacherGrades);
     const updated: UserProfile = {
       ...editingUser,
+      allowedStages: calculatedStages,
       allowedGrades: editTeacherGrades,
       allowedTracks: editTeacherTracks
     };
@@ -706,27 +711,14 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1.5">الصفوف المصرح بتدريسها</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'].map(g => (
-                            <button
-                              key={g}
-                              type="button"
-                              onClick={() => {
-                                setTeacherSelectedGrades(prev => 
-                                  prev.includes(g as GradeLevel) ? prev.filter(x => x !== g) : [...prev, g as GradeLevel]
-                                );
-                              }}
-                              className={`px-2 py-1 rounded-lg border text-[10px] font-bold transition ${
-                                teacherSelectedGrades.includes(g as GradeLevel) 
-                                  ? 'bg-teal-600 text-white border-teal-600' 
-                                  : 'bg-white text-slate-600 border-slate-200'
-                              }`}
-                            >
-                              {g.replace('grade-', 'الصف ')}
-                            </button>
-                          ))}
-                        </div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                          الصفوف المصرح بتدريسها (كافة المراحل المعتمدة)
+                        </label>
+                        <TeacherGradeMatrixSelector
+                          selectedGrades={teacherSelectedGrades}
+                          onChange={setTeacherSelectedGrades}
+                          compact={true}
+                        />
                       </div>
                     </div>
 
@@ -806,7 +798,7 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
                             <div className="flex flex-wrap gap-1">
                               {teacher.allowedGrades?.map(g => (
                                 <span key={g} className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-700 text-[10px] font-semibold">
-                                  {g.replace('grade-', 'الصف ')}
+                                  {formatGradeDisplay(g)}
                                 </span>
                               ))}
                             </div>
@@ -1095,28 +1087,14 @@ export const SchoolStaffManagementModal: React.FC<SchoolStaffManagementModalProp
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">الصفوف المصرح بتدريسها</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'].map(g => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => {
-                        setEditTeacherGrades(prev => 
-                          prev.includes(g as GradeLevel) ? prev.filter(x => x !== g) : [...prev, g as GradeLevel]
-                        );
-                      }}
-                      className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                        editTeacherGrades.includes(g as GradeLevel) 
-                          ? 'bg-teal-600 text-white border-teal-600' 
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span>{g.replace('grade-', 'الصف ')}</span>
-                      {editTeacherGrades.includes(g as GradeLevel) && <Check className="w-3.5 h-3.5 text-white" />}
-                    </button>
-                  ))}
-                </div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  الصفوف المصرح بتدريسها (كافة المراحل المعتمدة)
+                </label>
+                <TeacherGradeMatrixSelector
+                  selectedGrades={editTeacherGrades}
+                  onChange={setEditTeacherGrades}
+                  compact={false}
+                />
               </div>
             </div>
 

@@ -9,7 +9,7 @@ import {
 import { 
   School, UserProfile, SchoolStage, GradeLevel, ArabicTrack, 
   STAGES_CONFIG, TeacherTask, AIGovernanceRules, StudentSubmission,
-  DEFAULT_DELEGATED_PERMISSIONS
+  DEFAULT_DELEGATED_PERMISSIONS, formatGradeDisplay, getStagesForGrades
 } from '../types';
 import { 
   getSchools, saveSchool, getUsers, saveUser, deleteUser,
@@ -20,6 +20,7 @@ import { generateValidUUID } from '../supabaseClient';
 import { AdminDelegationModal } from './AdminDelegationModal';
 import { EditTeacherGradesModal } from './EditTeacherGradesModal';
 import { TeacherTasksManager } from './TeacherTasksManager';
+import { TeacherGradeMatrixSelector } from './TeacherGradeMatrixSelector';
 
 interface SchoolAdminPortalProps {
   currentUser: UserProfile;
@@ -136,7 +137,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
     };
 
     if (formRole === 'teacher' || formRole === 'hod') {
-      newUser.allowedStages = [formStage];
+      newUser.allowedStages = getStagesForGrades(selectedGrades);
       newUser.allowedGrades = selectedGrades;
       newUser.allowedTracks = selectedTracks;
     } else if (formRole === 'student') {
@@ -487,28 +488,14 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1.5">الصفوف المصرح بها:</label>
-                        <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-50 border border-slate-100 rounded-xl">
-                          {['grade-1', 'grade-2', 'grade-3', 'grade-4', 'grade-5', 'grade-6'].map(gId => (
-                            <button
-                              key={gId}
-                              type="button"
-                              onClick={() => {
-                                setSelectedGrades(prev => 
-                                  prev.includes(gId as GradeLevel) ? prev.filter(g => g !== gId) : [...prev, gId as GradeLevel]
-                                );
-                              }}
-                              className={`p-1.5 rounded-lg border text-[11px] font-bold transition flex items-center justify-between ${
-                                selectedGrades.includes(gId as GradeLevel) 
-                                  ? 'bg-indigo-600 text-white border-indigo-600' 
-                                  : 'bg-white text-slate-600 border-slate-200'
-                              }`}
-                            >
-                              <span>{gId.replace('grade-', 'الصف ')}</span>
-                              {selectedGrades.includes(gId as GradeLevel) && <Check className="w-3 h-3 text-white" />}
-                            </button>
-                          ))}
-                        </div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          الصفوف المصرح بها (كافة المراحل المعتمدة):
+                        </label>
+                        <TeacherGradeMatrixSelector
+                          selectedGrades={selectedGrades}
+                          onChange={setSelectedGrades}
+                          compact={true}
+                        />
                       </div>
                     </div>
                   )}
@@ -656,7 +643,7 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {t.allowedGrades?.map(g => (
                               <span key={g} className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold">
-                                {g.replace('grade-', 'الصف ')}
+                                {formatGradeDisplay(g)}
                               </span>
                             ))}
                             {t.allowedTracks?.map(tr => (
